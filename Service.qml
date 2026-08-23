@@ -625,18 +625,30 @@ Item {
     if (!Core.shouldApplyGeneration(activeSettingsReadGeneration, generation))
       return
     settingsReadBusy = false
-    if (exitCode !== 0 || !settingsState || settingsState.phase === "closed")
+    if (!settingsState || settingsState.phase === "closed")
       return
-    try {
-      var doc = JSON.parse(String(stdout || "").trim())
-      if (!Settings.validateSettingsDraft(doc).ok)
-        return
-      settingsState = Settings.settingsFinishLoad(settingsState, generation, doc)
-      settingsDraft = settingsState.draft
-      appliedSettings = doc
-    } catch (e) {
-      // keep loading/locked; user can close and reopen
+    // SET-026: any failure is a visible terminal state, never an endless
+    // locked "Loading". The helper's message is not shown (plain-text rule);
+    // the dialog renders its own fixed copy.
+    if (exitCode !== 0) {
+      settingsState = Settings.settingsFailLoad(settingsState, generation)
+      settingsDraft = null
+      return
     }
+    var doc = null
+    try {
+      doc = JSON.parse(String(stdout || "").trim())
+    } catch (e) {
+      doc = null
+    }
+    if (!doc || !Settings.validateSettingsDraft(doc).ok) {
+      settingsState = Settings.settingsFailLoad(settingsState, generation)
+      settingsDraft = null
+      return
+    }
+    settingsState = Settings.settingsFinishLoad(settingsState, generation, doc)
+    settingsDraft = settingsState.draft
+    appliedSettings = doc
   }
 
   function kickSettingsWrite() {

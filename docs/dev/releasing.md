@@ -110,7 +110,9 @@ After merging:
    ```
 
    Then glance at the bar: chips must render with live data after the
-   automatic shell rescan.
+   automatic shell rescan. Open Settings too: if it stays on "Loading" or
+   reports "could not be loaded", the rescan did not replace the running
+   QML — run `omarchy-restart-shell` and reopen before judging the release.
 
 `omarchy update` (the system-wide update) does not update plugins by
 design; installs that want it hook `omarchy-plugin-update --yes` into
