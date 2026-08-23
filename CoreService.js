@@ -309,7 +309,7 @@ function defaultSettings() {
       { id: "codex", enabled: true },
       { id: "amp", enabled: true },
       { id: "grok", enabled: true },
-      { id: "antigravity", enabled: true }
+      { id: "antigravity", enabled: false }
     ],
     display: { metric: "remaining" },
     refreshIntervalSeconds: 60,

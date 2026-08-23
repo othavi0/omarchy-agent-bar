@@ -641,7 +641,7 @@ TestCase {
   }
 
   function test_icon_files_exist_with_approved_names() {
-    var names = ["claude.png", "codex.png", "amp.svg", "grok.svg"]
+    var names = ["claude.png", "codex.png", "amp.svg", "grok.svg", "antigravity.png"]
     for (var i = 0; i < names.length; i++) {
       var path = "file://" + repoRoot + "/icons/" + names[i]
       var xhr = new XMLHttpRequest()
@@ -655,6 +655,7 @@ TestCase {
     compare(Core.iconFileName("codex"), "codex.png")
     compare(Core.iconFileName("amp"), "amp.svg")
     compare(Core.iconFileName("grok"), "grok.svg")
+    compare(Core.iconFileName("antigravity"), "antigravity.png")
   }
 
   Component {
