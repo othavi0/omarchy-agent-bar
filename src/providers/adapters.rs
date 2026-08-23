@@ -2,6 +2,7 @@
 
 use crate::cli::ProviderId;
 use crate::status::schema::{Account, Plan, ProviderResult};
+use crate::support::redact::strip_ansi_and_controls;
 
 use super::adapter::{
     collection_exe, login_available, missing_collection, unauthenticated, BoxFuture,
@@ -12,7 +13,7 @@ use super::codex_app_server::{fetch_rate_limits_via_appserver, AppServerOutcome}
 use super::codex_session_log::find_latest_rate_limits;
 use super::process::{ProcessOutput, ProcessSpec};
 use super::v2_map::{
-    amp_from_usage_text, antigravity_from_usage_text, claude_from_usage_json,
+    amp_from_usage_text, antigravity_from_usage_json, claude_from_usage_json,
     codex_from_rate_limits_json, grok_from_billing_json,
 };
 use super::{Discovery, ProviderDescriptor};
@@ -574,11 +575,43 @@ impl ProviderAdapter for AntigravityAdapter {
                 );
             };
 
-            let spec = ProcessSpec::new(exe, ["--print", "/usage"])
-                .with_timeout(ANTIGRAVITY.timeout)
-                .with_max_output(ANTIGRAVITY.max_output_bytes)
-                .with_env("NO_COLOR", "1")
-                .with_env("TERM", "dumb");
+            // Version guard before the usage call: on releases older than
+            // ANTIGRAVITY_MIN_VERSION the slash command is not intercepted and
+            // "/usage" reaches the model as an ordinary prompt, spending the
+            // very quota we are trying to report.
+            match context
+                .process
+                .run(&antigravity_spec(exe, &["--version"]))
+                .await
+            {
+                Ok(out) if out.timed_out => {
+                    return ProviderResult::NetworkError {
+                        id: ProviderId::Antigravity,
+                        name: ANTIGRAVITY.display_name.to_owned(),
+                        message: "Antigravity usage command timed out.".into(),
+                    };
+                }
+                Err(_) => {
+                    return ProviderResult::NetworkError {
+                        id: ProviderId::Antigravity,
+                        name: ANTIGRAVITY.display_name.to_owned(),
+                        message: "Failed to run Antigravity usage.".into(),
+                    };
+                }
+                Ok(out) => {
+                    // A non-zero exit leaves us without a version, which is
+                    // the same answer as an unparseable one: we may not run
+                    // the usage command.
+                    let supported = out.exit_code == Some(0)
+                        && parse_version_prefix(&out.stdout)
+                            .is_some_and(|found| found >= ANTIGRAVITY_MIN_VERSION);
+                    if !supported {
+                        return antigravity_unsupported_version();
+                    }
+                }
+            }
+
+            let spec = antigravity_spec(exe, ANTIGRAVITY_USAGE_ARGV);
 
             match context.process.run(&spec).await {
                 Ok(out) if out.timed_out => ProviderResult::NetworkError {
@@ -589,7 +622,18 @@ impl ProviderAdapter for AntigravityAdapter {
                 Ok(out) if out.exit_code != Some(0) => {
                     classify_antigravity_failure(&out, login_available(discovery))
                 }
-                Ok(out) => antigravity_from_usage_text(&out.stdout, context.clock.now_utc()),
+                // A logged-out `agy` prints its banner and still exits 0, so
+                // the marker has to be checked before parsing; otherwise the
+                // empty quota block would render as a connected provider.
+                Ok(out) if antigravity_logged_out(&out) => unauthenticated(
+                    ProviderId::Antigravity,
+                    ANTIGRAVITY.display_name,
+                    "Antigravity is not authenticated.",
+                    login_available(discovery),
+                    ANTIGRAVITY.installation_url,
+                    false,
+                ),
+                Ok(out) => antigravity_from_usage_json(&out.stdout, context.clock.now_utc()),
                 Err(_) => ProviderResult::NetworkError {
                     id: ProviderId::Antigravity,
                     name: ANTIGRAVITY.display_name.to_owned(),
@@ -600,8 +644,82 @@ impl ProviderAdapter for AntigravityAdapter {
     }
 }
 
+/// Oldest `agy` release Agent Bar is willing to query.
+///
+/// From 1.1.11 the CLI intercepts `-p "/usage"` and answers it from local
+/// state without starting an agent turn; on earlier releases the same text is
+/// forwarded to the model as an ordinary prompt, which spends the quota this
+/// provider exists to report. Sourced from the changelog embedded in the
+/// `agy` 1.1.18 binary.
+const ANTIGRAVITY_MIN_VERSION: (u32, u32, u32) = (1, 1, 11);
+
+/// Usage argv. `--output-format json` landed in the same 1.1.11 release the
+/// version guard above requires, so the guard is what makes this argv safe to
+/// send: an older CLI would neither intercept the slash command nor know the
+/// flag.
+const ANTIGRAVITY_USAGE_ARGV: &[&str] = &["--print", "/usage", "--output-format", "json"];
+
+/// Build one `agy` invocation. Every call shares the catalog's timeout and
+/// output cap, and both env vars: `agy` renders a coloured TUI when it
+/// believes it has a terminal, and the escapes would reach the parser.
+fn antigravity_spec(exe: &std::path::Path, args: &[&str]) -> ProcessSpec {
+    ProcessSpec::new(exe, args.iter().copied())
+        .with_timeout(ANTIGRAVITY.timeout)
+        .with_max_output(ANTIGRAVITY.max_output_bytes)
+        .with_env("NO_COLOR", "1")
+        .with_env("TERM", "dumb")
+}
+
+/// Typed refusal for a CLI too old to answer `/usage` without spending quota.
+/// Not retryable: only reinstalling the CLI can change the answer.
+fn antigravity_unsupported_version() -> ProviderResult {
+    let (major, minor, patch) = ANTIGRAVITY_MIN_VERSION;
+    ProviderResult::ProviderError {
+        id: ProviderId::Antigravity,
+        name: ANTIGRAVITY.display_name.to_owned(),
+        message: format!("Antigravity CLI {major}.{minor}.{patch} or newer is required."),
+        retryable: false,
+    }
+}
+
+/// Leading `major.minor.patch` of `agy --version` output ("1.1.18\n").
+///
+/// A `v` prefix and anything after the patch number are tolerated so a future
+/// "v1.2.0-rc1" or "1.2.0 (build 4)" still reads as a version. The provider
+/// output itself never reaches a message — only this triple is kept.
+fn parse_version_prefix(text: &str) -> Option<(u32, u32, u32)> {
+    let line = strip_ansi_and_controls(text);
+    let token = line.trim().lines().next()?.trim();
+    let token = token.strip_prefix(['v', 'V']).unwrap_or(token);
+    let mut fields = token.splitn(3, '.');
+    let major = fields.next()?.parse().ok()?;
+    let minor = fields.next()?.parse().ok()?;
+    let patch_field = fields.next()?;
+    let digits: String = patch_field
+        .chars()
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
+    Some((major, minor, digits.parse().ok()?))
+}
+
+/// Explicit logged-out marker, matched on ANSI-stripped stdout and stderr —
+/// same shape as [`classify_amp_failure`], deliberately narrow so an
+/// unrelated "auth" mention never reads as a login problem.
+///
+/// The banner is the only logged-out signal: it is printed on an exit-0 run
+/// (captured fixture), and the CLI documents no exit code to lean on.
+fn antigravity_logged_out(out: &ProcessOutput) -> bool {
+    const MARKER: &str = "not signed in";
+    let stdout = strip_ansi_and_controls(&out.stdout).to_ascii_lowercase();
+    let stderr = strip_ansi_and_controls(&out.stderr).to_ascii_lowercase();
+    stdout.contains(MARKER) || stderr.contains(MARKER)
+}
+
+/// Classify a non-zero `agy` exit. The CLI documents no exit codes, so the
+/// logged-out banner on stdout/stderr is the only signal trusted here;
+/// anything else is a fixed provider error that echoes no provider output.
 fn classify_antigravity_failure(out: &ProcessOutput, login_available: bool) -> ProviderResult {
-    if out.exit_code == Some(41) {
+    if antigravity_logged_out(out) {
         return unauthenticated(
             ProviderId::Antigravity,
             ANTIGRAVITY.display_name,
@@ -614,10 +732,7 @@ fn classify_antigravity_failure(out: &ProcessOutput, login_available: bool) -> P
     ProviderResult::ProviderError {
         id: ProviderId::Antigravity,
         name: ANTIGRAVITY.display_name.to_owned(),
-        message: format!(
-            "Antigravity usage command failed (exit code {:?}).",
-            out.exit_code
-        ),
+        message: "Antigravity usage command failed.".into(),
         retryable: false,
     }
 }
@@ -664,16 +779,32 @@ mod tests {
     use time::macros::datetime;
 
     struct ScriptedProcess {
+        /// Pending results in reverse order: `run` pops from the back.
         outputs: Mutex<Vec<Result<ProcessOutput, ProcessError>>>,
         pub last_spec: Mutex<Option<ProcessSpec>>,
+        /// Every spec seen, in call order, so a multi-call adapter can be
+        /// asserted invocation by invocation.
+        pub specs: Mutex<Vec<ProcessSpec>>,
     }
 
     impl ScriptedProcess {
         fn one(out: ProcessOutput) -> Self {
+            Self::sequence(vec![Ok(out)])
+        }
+
+        /// Script consecutive runs: `outputs[0]` answers the first call.
+        fn sequence(outputs: Vec<Result<ProcessOutput, ProcessError>>) -> Self {
+            let mut reversed = outputs;
+            reversed.reverse();
             Self {
-                outputs: Mutex::new(vec![Ok(out)]),
+                outputs: Mutex::new(reversed),
                 last_spec: Mutex::new(None),
+                specs: Mutex::new(Vec::new()),
             }
+        }
+
+        fn calls(&self) -> Vec<ProcessSpec> {
+            self.specs.lock().unwrap().clone()
         }
     }
 
@@ -685,6 +816,7 @@ mod tests {
             Box<dyn std::future::Future<Output = Result<ProcessOutput, ProcessError>> + Send + 'a>,
         > {
             *self.last_spec.lock().unwrap() = Some(spec.clone());
+            self.specs.lock().unwrap().push(spec.clone());
             let next = self
                 .outputs
                 .lock()
@@ -1207,15 +1339,11 @@ mod tests {
 
     #[tokio::test]
     async fn antigravity_collect_ready_from_fixture() {
-        let fixture = include_str!("../../tests/fixtures/antigravity/usage.txt");
-        let process = ScriptedProcess::one(ProcessOutput {
-            exit_code: Some(0),
-            stdout: fixture.to_owned(),
-            stderr: String::new(),
-            timed_out: false,
-            stdout_truncated: false,
-            stderr_truncated: false,
-        });
+        let fixture = include_str!("../../tests/fixtures/antigravity/usage.json");
+        let process = ScriptedProcess::sequence(vec![
+            Ok(antigravity_output(0, "1.1.18\n")),
+            Ok(antigravity_output(0, fixture)),
+        ]);
         let http = ScriptedHttpClient::default();
         let fs = MapFileSystem::default();
         let env = ExecutionEnvironment {
@@ -1243,16 +1371,274 @@ mod tests {
             }
             other => panic!("expected ready, got {other:?}"),
         }
-        let spec = process.last_spec.lock().unwrap().clone().unwrap();
-        assert_eq!(spec.args, vec!["--print".to_owned(), "/usage".to_owned()]);
+
+        // The version guard runs first, then the usage call; both must carry
+        // the catalog timeout/cap and the two env vars that keep `agy` from
+        // drawing a TUI.
+        let calls = process.calls();
+        assert_eq!(calls.len(), 2, "{calls:?}");
+        assert_eq!(calls[0].args, vec!["--version".to_owned()]);
+        assert_eq!(
+            calls[1].args,
+            vec![
+                "--print".to_owned(),
+                "/usage".to_owned(),
+                "--output-format".to_owned(),
+                "json".to_owned()
+            ]
+        );
+        for spec in &calls {
+            assert_eq!(spec.timeout, ANTIGRAVITY.timeout);
+            assert_eq!(spec.max_stdout_bytes, ANTIGRAVITY.max_output_bytes);
+            assert_eq!(spec.max_stderr_bytes, ANTIGRAVITY.max_output_bytes);
+            assert!(
+                spec.env.contains(&("NO_COLOR".to_owned(), "1".to_owned())),
+                "{:?}",
+                spec.env
+            );
+            assert!(
+                spec.env.contains(&("TERM".to_owned(), "dumb".to_owned())),
+                "{:?}",
+                spec.env
+            );
+        }
+    }
+
+    /// Run the Antigravity adapter against a scripted `--version` result
+    /// followed by a scripted usage result.
+    async fn antigravity_collect_scripted(process: ScriptedProcess) -> (ProviderResult, usize) {
+        let http = ScriptedHttpClient::default();
+        let fs = MapFileSystem::default();
+        let env = ExecutionEnvironment {
+            home: std::path::PathBuf::from("/tmp/home"),
+            path_dirs: vec![],
+            grok_home: None,
+        };
+        let clock = FixedClock(datetime!(2026-08-21 12:00:00 UTC));
+        let ctx = CollectionContext {
+            env: &env,
+            clock: &clock,
+            fs: &fs,
+            process: &process,
+            http: &http,
+            plugin_root: None,
+        };
+        let discovery = discovery_with_exe(Path::new("/usr/bin/agy"));
+        let result = ANTIGRAVITY_ADAPTER.collect(&ctx, &discovery).await;
+        let calls = process.calls().len();
+        (result, calls)
+    }
+
+    /// Collect with a supported CLI version, scripting only the usage result.
+    async fn antigravity_collect(usage: ProcessOutput) -> ProviderResult {
+        let (result, _) = antigravity_collect_scripted(ScriptedProcess::sequence(vec![
+            Ok(antigravity_output(0, "1.1.18\n")),
+            Ok(usage),
+        ]))
+        .await;
+        result
+    }
+
+    /// Collect with `--version` answering `version`, and a usage call that
+    /// would succeed — so a refusal proves the guard, not the usage path.
+    async fn antigravity_collect_at_version(version: ProcessOutput) -> (ProviderResult, usize) {
+        let fixture = include_str!("../../tests/fixtures/antigravity/usage.json");
+        antigravity_collect_scripted(ScriptedProcess::sequence(vec![
+            Ok(version),
+            Ok(antigravity_output(0, fixture)),
+        ]))
+        .await
+    }
+
+    fn antigravity_output(exit_code: i32, stdout: &str) -> ProcessOutput {
+        ProcessOutput {
+            exit_code: Some(exit_code),
+            stdout: stdout.to_owned(),
+            stderr: String::new(),
+            timed_out: false,
+            stdout_truncated: false,
+            stderr_truncated: false,
+        }
     }
 
     #[tokio::test]
     async fn antigravity_collect_unauthenticated() {
-        let fixture = include_str!("../../tests/fixtures/antigravity/unauthorized.txt");
+        // A non-zero exit is only a login problem when the banner says so.
+        let fixture = include_str!("../../tests/fixtures/antigravity/unauthorized.json");
+        let result = antigravity_collect(antigravity_output(1, fixture)).await;
+        assert_no_money(&result);
+        match result {
+            ProviderResult::Unauthenticated { id, .. } => {
+                assert_eq!(id, ProviderId::Antigravity);
+            }
+            other => panic!("expected Unauthenticated, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn antigravity_logged_out_banner_on_exit_zero_is_unauthenticated() {
+        // `agy` prints the logged-out banner and still exits 0, so the exit
+        // code alone would let an empty Ready through.
+        let fixture = include_str!("../../tests/fixtures/antigravity/unauthorized.json");
+        let result = antigravity_collect(antigravity_output(0, fixture)).await;
+        match result {
+            ProviderResult::Unauthenticated { id, .. } => {
+                assert_eq!(id, ProviderId::Antigravity);
+            }
+            other => panic!("expected Unauthenticated, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn antigravity_timeout_is_network_error() {
+        let result = antigravity_collect(ProcessOutput {
+            exit_code: None,
+            stdout: String::new(),
+            stderr: String::new(),
+            timed_out: true,
+            stdout_truncated: false,
+            stderr_truncated: false,
+        })
+        .await;
+        match result {
+            ProviderResult::NetworkError { id, message, .. } => {
+                assert_eq!(id, ProviderId::Antigravity);
+                assert!(message.contains("timed out"), "{message}");
+            }
+            other => panic!("expected NetworkError, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn antigravity_too_old_a_cli_is_refused_before_the_usage_call() {
+        // The whole point of the guard: on 1.1.10 the "/usage" text reaches
+        // the model as a prompt and spends quota, so the usage call must never
+        // be made.
+        let (result, calls) =
+            antigravity_collect_at_version(antigravity_output(0, "1.1.10\n")).await;
+        assert_eq!(calls, 1, "the usage command must not run");
+        match result {
+            ProviderResult::ProviderError {
+                id,
+                message,
+                retryable,
+                ..
+            } => {
+                assert_eq!(id, ProviderId::Antigravity);
+                assert_eq!(message, "Antigravity CLI 1.1.11 or newer is required.");
+                assert!(!retryable, "reinstalling is the only fix");
+            }
+            other => panic!("expected ProviderError, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn antigravity_accepts_a_newer_version_with_a_v_prefix() {
+        let (result, calls) =
+            antigravity_collect_at_version(antigravity_output(0, "v1.2.0\n")).await;
+        assert_eq!(calls, 2, "a supported version proceeds to the usage call");
+        match result {
+            ProviderResult::Ready { windows, .. } => assert_eq!(windows.len(), 2),
+            other => panic!("expected ready, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn antigravity_unparseable_version_is_refused_not_assumed_new() {
+        // Failing open would spend quota on an unknown build; the guard treats
+        // "no version" exactly like "too old".
+        for stdout in ["not a version\n", "", "1.1\n", "abc.def.ghi\n"] {
+            let (result, calls) =
+                antigravity_collect_at_version(antigravity_output(0, stdout)).await;
+            assert_eq!(calls, 1, "{stdout:?} must not reach the usage call");
+            match result {
+                ProviderResult::ProviderError { message, .. } => {
+                    assert_eq!(message, "Antigravity CLI 1.1.11 or newer is required.");
+                }
+                other => panic!("expected ProviderError for {stdout:?}, got {other:?}"),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn antigravity_failing_version_command_is_refused() {
+        // A non-zero `--version` leaves us without a version, which is the
+        // same answer as an unparseable one.
+        let (result, calls) =
+            antigravity_collect_at_version(antigravity_output(1, "1.1.18\n")).await;
+        assert_eq!(calls, 1);
+        assert!(matches!(result, ProviderResult::ProviderError { .. }));
+    }
+
+    #[tokio::test]
+    async fn antigravity_version_timeout_is_network_error() {
+        let (result, calls) = antigravity_collect_at_version(ProcessOutput {
+            exit_code: None,
+            stdout: String::new(),
+            stderr: String::new(),
+            timed_out: true,
+            stdout_truncated: false,
+            stderr_truncated: false,
+        })
+        .await;
+        assert_eq!(calls, 1);
+        match result {
+            ProviderResult::NetworkError { id, message, .. } => {
+                assert_eq!(id, ProviderId::Antigravity);
+                assert!(message.contains("timed out"), "{message}");
+            }
+            other => panic!("expected NetworkError, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn antigravity_version_spawn_failure_is_network_error() {
+        let (result, _) = antigravity_collect_scripted(ScriptedProcess::sequence(vec![Err(
+            ProcessError::Spawn("boom".into()),
+        )]))
+        .await;
+        match result {
+            ProviderResult::NetworkError { id, message, .. } => {
+                assert_eq!(id, ProviderId::Antigravity);
+                assert_eq!(message, "Failed to run Antigravity usage.");
+            }
+            other => panic!("expected NetworkError, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn antigravity_version_parse_tolerates_prefix_and_trailing_junk() {
+        assert_eq!(parse_version_prefix("1.1.18\n"), Some((1, 1, 18)));
+        assert_eq!(parse_version_prefix("v1.2.0"), Some((1, 2, 0)));
+        assert_eq!(parse_version_prefix("1.1.18-rc1"), Some((1, 1, 18)));
+        assert_eq!(parse_version_prefix("1.1.18 (build 4)"), Some((1, 1, 18)));
+        assert_eq!(parse_version_prefix("1.1"), None);
+        assert_eq!(parse_version_prefix("nope"), None);
+        assert_eq!(parse_version_prefix(""), None);
+        // The boundary the constant encodes.
+        assert!(parse_version_prefix("1.1.11").unwrap() >= ANTIGRAVITY_MIN_VERSION);
+        assert!(parse_version_prefix("1.1.10").unwrap() < ANTIGRAVITY_MIN_VERSION);
+        assert!(parse_version_prefix("1.0.99").unwrap() < ANTIGRAVITY_MIN_VERSION);
+        assert!(parse_version_prefix("2.0.0").unwrap() >= ANTIGRAVITY_MIN_VERSION);
+    }
+
+    #[tokio::test]
+    async fn antigravity_other_failure_message_has_no_debug_residue() {
+        let result = antigravity_collect(antigravity_output(2, "boom")).await;
+        match result {
+            ProviderResult::ProviderError { id, message, .. } => {
+                assert_eq!(id, ProviderId::Antigravity);
+                assert_eq!(message, "Antigravity usage command failed.");
+            }
+            other => panic!("expected ProviderError, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn antigravity_missing_collection_source() {
         let process = ScriptedProcess::one(ProcessOutput {
-            exit_code: Some(41),
-            stdout: fixture.to_owned(),
+            exit_code: Some(0),
+            stdout: String::new(),
             stderr: String::new(),
             timed_out: false,
             stdout_truncated: false,
@@ -1274,14 +1660,26 @@ mod tests {
             http: &http,
             plugin_root: None,
         };
-        let discovery = discovery_with_exe(Path::new("/usr/bin/agy"));
+        let discovery = Discovery {
+            collection: CollectionAvailability::Missing,
+            login: LoginAvailability::Missing,
+        };
         let result = ANTIGRAVITY_ADAPTER.collect(&ctx, &discovery).await;
-        assert_no_money(&result);
+        assert!(matches!(result, ProviderResult::CliMissing { .. }));
+        // Neither the version guard nor the usage call may run without an
+        // executable to run them with.
+        assert_eq!(process.calls().len(), 0, "{:?}", process.calls());
+    }
+
+    #[tokio::test]
+    async fn antigravity_failed_exit_without_the_banner_is_a_provider_error() {
+        let result = antigravity_collect(antigravity_output(41, "{\"status\":\"ERROR\"}")).await;
         match result {
-            ProviderResult::Unauthenticated { id, .. } => {
+            ProviderResult::ProviderError { id, message, .. } => {
                 assert_eq!(id, ProviderId::Antigravity);
+                assert_eq!(message, "Antigravity usage command failed.");
             }
-            other => panic!("expected Unauthenticated, got {other:?}"),
+            other => panic!("expected ProviderError, got {other:?}"),
         }
     }
 

@@ -265,22 +265,23 @@ pub static ANTIGRAVITY: ProviderDescriptor = ProviderDescriptor {
     display_name: "Antigravity",
     icon_key: "antigravity",
     executable_name: "agy",
-    fallback_executable_paths: &[
-        ExecutablePath {
-            root: PathRoot::Home,
-            segments: &[".local", "bin", "agy"],
-        },
-        ExecutablePath {
-            root: PathRoot::Home,
-            segments: &[".gemini", "antigravity-cli", "bin", "agy"],
-        },
-    ],
+    // The installer only ever drops `agy` here; `~/.gemini/antigravity-cli/`
+    // was checked on a real install and holds no executable, so listing it
+    // would just be a stat that can never succeed.
+    fallback_executable_paths: &[ExecutablePath {
+        root: PathRoot::Home,
+        segments: &[".local", "bin", "agy"],
+    }],
     installation_url: "https://antigravity.google",
     login_argv: &[],
-    cache_ttl: Duration::from_secs(60),
+    cache_ttl: Duration::from_secs(90),
     timeout: Duration::from_secs(10),
     max_output_bytes: ONE_MIB,
-    retry_policy: RetryPolicy::OneTransient,
+    // Collection costs two `agy` invocations (version guard, then usage), and
+    // the CLI answers from local state rather than a flaky network hop: a
+    // retry would double an already-doubled cost for no transient to recover
+    // from.
+    retry_policy: RetryPolicy::None,
 };
 
 /// Look up a descriptor by closed provider id.
@@ -463,6 +464,49 @@ mod tests {
         assert_eq!(GROK.installation_url, "https://x.ai/cli");
         assert_eq!(GROK.retry_policy, RetryPolicy::OneTransient);
         assert_eq!(GROK.fallback_executable_paths[0].root, PathRoot::GrokHome);
+
+        assert_eq!(ANTIGRAVITY.display_name, "Antigravity");
+        assert_eq!(ANTIGRAVITY.icon_key, "antigravity");
+        assert_eq!(ANTIGRAVITY.executable_name, "agy");
+        assert_eq!(
+            ANTIGRAVITY.fallback_executable_paths,
+            &[ExecutablePath {
+                root: PathRoot::Home,
+                segments: &[".local", "bin", "agy"],
+            }]
+        );
+        // Empty because `agy` has no non-interactive login verb: the popup
+        // must offer the installation URL instead of a login action.
+        assert_eq!(ANTIGRAVITY.login_argv, &[] as &[&str]);
+        assert_eq!(ANTIGRAVITY.installation_url, "https://antigravity.google");
+        assert_eq!(ANTIGRAVITY.cache_ttl, Duration::from_secs(90));
+        assert_eq!(ANTIGRAVITY.timeout, Duration::from_secs(10));
+        assert_eq!(ANTIGRAVITY.max_output_bytes, ONE_MIB);
+        // The only catalog entry that does not retry: see the descriptor.
+        assert_eq!(ANTIGRAVITY.retry_policy, RetryPolicy::None);
+        assert_eq!(ANTIGRAVITY.retry_delay(), None);
+    }
+
+    #[test]
+    fn empty_login_argv_keeps_login_missing_even_with_the_executable() {
+        // Collection availability and login availability are distinct: `agy`
+        // being on PATH must never advertise a login action.
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().join("home");
+        let path_dir = dir.path().join("path");
+        write_exec(&path_dir.join("agy"), true);
+        let env = ExecutionEnvironment {
+            home,
+            path_dirs: vec![path_dir],
+            grok_home: None,
+        };
+        let discovery = discover(&ANTIGRAVITY, &env).unwrap();
+        assert!(matches!(
+            discovery.collection,
+            CollectionAvailability::Available { .. }
+        ));
+        assert_eq!(discovery.login, LoginAvailability::Missing);
+        assert!(login_process_argv(&ANTIGRAVITY, &discovery).is_none());
     }
 
     #[test]

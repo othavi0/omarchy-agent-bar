@@ -23,6 +23,17 @@ pub fn version_stdout() -> String {
     format!("{}\n", env!("CARGO_PKG_VERSION"))
 }
 
+/// Closed provider vocabulary as help prose: exactly the words `status
+/// provider <id>` accepts, in catalog order, derived so a new provider can
+/// never be missing from the footer.
+fn provider_word_list() -> String {
+    ProviderId::ALL
+        .iter()
+        .map(|id| id.as_str())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 /// Public help text for the plugin-first product.
 pub fn help_text(topic: Option<HelpTopic>) -> String {
     match topic {
@@ -47,7 +58,7 @@ pub fn help_text(topic: Option<HelpTopic>) -> String {
             out.push_str("  agent-bar help [<command>]\n");
             out.push_str("  agent-bar version\n");
             out.push('\n');
-            out.push_str("Providers: claude, codex, amp, grok\n");
+            out.push_str(&format!("Providers: {}\n", provider_word_list()));
             out
         }
         Some(HelpTopic::Status) => "status — collect provider quota windows\n\
@@ -60,6 +71,9 @@ pub fn help_text(topic: Option<HelpTopic>) -> String {
              \n\
              Bare agent-bar equals status format human.\n"
             .to_owned(),
+        // The login topic lists fewer providers than the footer on purpose:
+        // only these four ship an official login command (catalog
+        // `login_argv`); Antigravity signs in inside its own CLI.
         Some(HelpTopic::Login) => {
             "login <provider> — delegate to the official provider login command\n\
              Providers: claude, codex, amp, grok\n"
@@ -607,6 +621,15 @@ fn dispatch_login(provider: ProviderId) -> Result<(), CliFailure> {
     let discovery = adapter
         .discover(&env)
         .map_err(|err| CliFailure::validation(err.to_string()))?;
+    if adapter.descriptor().login_argv.is_empty() {
+        return Err(CliFailure {
+            message: format!(
+                "{} has no login command; sign in inside the provider CLI instead",
+                adapter.descriptor().display_name
+            ),
+            exit_code: GENERIC_FAILURE,
+        });
+    }
     if discovery.login_executable().is_none() {
         return Err(CliFailure {
             message: format!(
@@ -689,6 +712,24 @@ fn dispatch_config(command: ConfigCommand) -> Result<(), CliFailure> {
 mod tests {
     use super::*;
     use std::io::Cursor;
+
+    #[test]
+    fn help_footer_lists_every_closed_provider() {
+        let help = help_text(None);
+        let expected = ProviderId::ALL
+            .iter()
+            .map(|id| id.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let line = help
+            .lines()
+            .find(|line| line.starts_with("Providers: "))
+            .unwrap_or_default();
+        assert_eq!(line, format!("Providers: {expected}"));
+        for id in ProviderId::ALL {
+            assert!(line.contains(id.as_str()), "{line}");
+        }
+    }
 
     #[test]
     fn version_stdout_is_package_semver_plus_newline() {

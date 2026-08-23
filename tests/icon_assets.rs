@@ -65,6 +65,38 @@ fn icon_assets_are_the_approved_mark_grade_assets() {
         "codex.png color type drifted from truecolor+alpha (6); the old puck was gray+alpha (4)"
     );
 
+    // Antigravity (adopted 2026-08-22): a 48x48 truecolor+alpha PNG mark.
+    // Pinned the same way as Codex so a re-export at the wrong size or a
+    // palette/gray encoding (which the bar tints differently) fails here.
+    let antigravity = fs::read("icons/antigravity.png").expect("read antigravity.png");
+    assert_eq!(
+        &antigravity[0..8],
+        &PNG_SIGNATURE,
+        "antigravity.png is missing the PNG signature"
+    );
+    let width = u32::from_be_bytes([
+        antigravity[16],
+        antigravity[17],
+        antigravity[18],
+        antigravity[19],
+    ]);
+    let height = u32::from_be_bytes([
+        antigravity[20],
+        antigravity[21],
+        antigravity[22],
+        antigravity[23],
+    ]);
+    assert_eq!(width, 48, "antigravity.png width drifted from 48x48");
+    assert_eq!(height, 48, "antigravity.png height drifted from 48x48");
+    assert_eq!(
+        antigravity[24], 8,
+        "antigravity.png bit depth drifted from 8"
+    );
+    assert_eq!(
+        antigravity[25], 6,
+        "antigravity.png color type drifted from truecolor+alpha (6)"
+    );
+
     let grok = fs::read_to_string("icons/grok.svg").expect("read grok.svg");
     let white_fill_count = grok.matches(r#"fill="white""#).count();
     assert_eq!(

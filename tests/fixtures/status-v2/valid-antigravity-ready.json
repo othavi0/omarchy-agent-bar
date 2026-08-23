@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 2,
+  "helperVersion": "10.0.0",
+  "generatedAt": "2026-08-21T12:00:00Z",
+  "request": {
+    "provider": "antigravity",
+    "cache": "use"
+  },
+  "providers": [
+    {
+      "id": "antigravity",
+      "name": "Antigravity",
+      "state": "ready",
+      "source": "live",
+      "plan": null,
+      "account": null,
+      "windows": [
+        {
+          "id": "gemini-weekly",
+          "label": "Weekly (7d)",
+          "usedPercent": 14.0,
+          "remainingPercent": 86.0,
+          "resetsAt": "2026-08-27T16:18:13Z"
+        },
+        {
+          "id": "gemini-5h",
+          "label": "Session (5h)",
+          "usedPercent": 8.0,
+          "remainingPercent": 92.0,
+          "resetsAt": "2026-08-21T22:09:26Z"
+        }
+      ],
+      "lastSuccessAt": "2026-08-21T12:00:00Z",
+      "error": null,
+      "action": null
+    }
+  ]
+}
