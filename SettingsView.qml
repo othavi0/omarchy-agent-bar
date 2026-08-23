@@ -28,6 +28,7 @@ Item {
       : true
   readonly property bool canSave: agentService ? agentService.canSaveSettings() : false
   readonly property bool loading: phase === "loading"
+  readonly property bool loadFailed: phase === "load_failed"
   readonly property bool saving: phase === "saving"
 
   readonly property var providers: {
@@ -94,6 +95,21 @@ Item {
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
       textFormat: Text.PlainText
+    }
+
+    // SET-026: a failed load names the recovery step instead of locking the
+    // dialog behind "Loading" forever. Plain fixed copy; no helper output.
+    Text {
+      visible: root.loadFailed
+      width: parent.width
+      wrapMode: Text.WordWrap
+      text: "Settings could not be loaded. Restart the shell and try again."
+      color: Color.urgent
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
+      textFormat: Text.PlainText
+      Accessible.role: Accessible.StaticText
+      Accessible.name: text
     }
 
     Text {

@@ -49,6 +49,24 @@ function settingsFinishLoad(state, generation, doc) {
 }
 
 // Legacy alias used by older harnesses: open directly into clean with a doc.
+// SET-026: a failed dialog load is a visible terminal state, not an endless
+// locked "Loading". Generation must match so a stale read never flips a
+// newer load.
+function settingsFailLoad(state, generation) {
+  if (!state || state.generation !== generation)
+    return state
+  if (state.phase !== "loading")
+    return state
+  return {
+    phase: "load_failed",
+    generation: generation,
+    snapshot: null,
+    draft: null,
+    busy: false,
+    pendingPayload: null
+  }
+}
+
 function settingsOpen(state, snapshot, generation) {
   return {
     phase: "clean",
@@ -74,11 +92,13 @@ function cloneState(state) {
 function settingsControlsLocked(state) {
   if (!state)
     return true
-  return state.phase === "closed" || state.phase === "loading" || state.phase === "saving" || !!state.busy
+  return state.phase === "closed" || state.phase === "loading"
+    || state.phase === "load_failed" || state.phase === "saving" || !!state.busy
 }
 
 function settingsMarkDirty(state) {
-  if (!state || state.phase === "closed" || state.phase === "loading" || state.phase === "saving")
+  if (!state || state.phase === "closed" || state.phase === "loading"
+      || state.phase === "load_failed" || state.phase === "saving")
     return state
   var next = cloneState(state)
   next.phase = "dirty"
@@ -88,7 +108,7 @@ function settingsMarkDirty(state) {
 
 // SET-016/018: save receives a new generation; payload is immutable capture.
 function settingsBeginSave(state, generation, payload) {
-  if (!state || state.phase === "closed" || state.phase === "loading")
+  if (!state || state.phase === "closed" || state.phase === "loading" || state.phase === "load_failed")
     return state
   if (state.phase === "saving")
     return state
@@ -120,7 +140,7 @@ function settingsFinishSave(state, generation, ok, canonical) {
 }
 
 function settingsCancel(state) {
-  if (!state || state.phase === "closed" || state.phase === "loading")
+  if (!state || state.phase === "closed" || state.phase === "loading" || state.phase === "load_failed")
     return state
   if (state.phase === "saving")
     return state
@@ -135,7 +155,8 @@ function settingsCancel(state) {
 
 // SET-022: restore defaults mutates draft only.
 function settingsRestoreDefaults(state) {
-  if (!state || state.phase === "closed" || state.phase === "loading" || state.phase === "saving")
+  if (!state || state.phase === "closed" || state.phase === "loading"
+      || state.phase === "load_failed" || state.phase === "saving")
     return state
   var next = cloneState(state)
   next.draft = Kernel.defaultSettings()
@@ -247,13 +268,17 @@ function validateSettingsDraft(draft) {
   if (!isFinite(reminder) || reminder !== Math.floor(reminder)
       || reminder < 15 || reminder > 1440)
     return { ok: false, reason: "notifications.reminderMinutes" }
-  if (!Array.isArray(draft.providers)
-      || draft.providers.length !== Object.keys(Kernel.CLOSED_PROVIDERS).length)
+  if (!Array.isArray(draft.providers))
     return { ok: false, reason: "providers length" }
+  // SET-025: every provider this QML knows must be present exactly once. A
+  // row with an id it does not know is tolerated and kept opaque: a helper
+  // newer than the loaded QML (the direction every update produces until
+  // the shell restarts) lists providers the QML has not heard of, and the
+  // row must round-trip to config apply untouched.
   var seen = {}
   for (var i = 0; i < draft.providers.length; i++) {
     var p = draft.providers[i]
-    if (!p || !Kernel.CLOSED_PROVIDERS[String(p.id)])
+    if (!p || typeof p.id !== "string" || !p.id.length)
       return { ok: false, reason: "provider id" }
     if (seen[p.id])
       return { ok: false, reason: "duplicate provider" }

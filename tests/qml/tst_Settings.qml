@@ -181,6 +181,9 @@ TestCase {
     verify(src.indexOf("Remaining") >= 0)
     verify(src.indexOf("Used") >= 0)
     verify(src.indexOf("MaintenanceView") >= 0)
+    // SET-026: the failed-load copy is rendered by the view itself.
+    verify(src.indexOf("Settings could not be loaded") >= 0)
+    verify(src.indexOf("load_failed") >= 0)
     // No credentials / money / theme / cache editor
     verify(src.indexOf("credential") < 0 || src.toLowerCase().indexOf("no credential") >= 0)
     verify(src.indexOf("password") < 0)
@@ -288,6 +291,54 @@ TestCase {
     compare(Core.settingsBootstrapResult(null, "not json", 0), null)
     var invalid = read("tests/fixtures/settings-v1/invalid-metric.json")
     compare(Core.settingsBootstrapResult(null, invalid, 0), null)
+  }
+
+  // SET-025: a helper newer than the loaded QML may list a provider the
+  // QML does not know. That row must validate, survive in the draft, and
+  // round-trip to config apply untouched — otherwise every catalog addition
+  // wedges Settings in "Loading" until the shell is restarted.
+  function test_unknown_provider_from_newer_helper_validates_and_round_trips() {
+    var doc = Service.defaultSettings()
+    doc.providers.push({ id: "future-provider", enabled: true })
+    compare(Core.validateSettingsDraft(doc).ok, true)
+    var applied = Core.settingsBootstrapResult(null, JSON.stringify(doc), 0)
+    verify(applied !== null)
+    compare(applied.providers.length, doc.providers.length)
+    compare(applied.providers[applied.providers.length - 1].id, "future-provider")
+    var state = Core.settingsOpen(null, applied, 7)
+    state = Core.settingsMarkDirty(state)
+    var payload = JSON.parse(JSON.stringify(state.draft))
+    compare(Core.validateSettingsDraft(payload).ok, true)
+    compare(payload.providers[payload.providers.length - 1].id, "future-provider")
+    compare(payload.providers[payload.providers.length - 1].enabled, true)
+  }
+
+  function test_unknown_provider_still_needs_valid_shape() {
+    var doc = Service.defaultSettings()
+    doc.providers.push({ id: "future-provider", enabled: "yes" })
+    compare(Core.validateSettingsDraft(doc).ok, false)
+    doc = Service.defaultSettings()
+    doc.providers.push({ id: "claude", enabled: true })
+    compare(Core.validateSettingsDraft(doc).reason, "duplicate provider")
+    doc = Service.defaultSettings()
+    doc.providers.pop()
+    compare(Core.validateSettingsDraft(doc).reason, "missing provider")
+  }
+
+  // SET-026: a failed dialog load is a visible terminal state, not an
+  // endless locked "Loading".
+  function test_failed_load_is_visible_and_locked() {
+    var state = Core.settingsBeginLoad(4)
+    state = Core.settingsFailLoad(state, 4)
+    compare(state.phase, "load_failed")
+    compare(state.busy, false)
+    compare(Core.settingsControlsLocked(state), true)
+    compare(Core.settingsCanSave(state, state.draft), false)
+    // A stale generation never flips a newer load.
+    var newer = Core.settingsBeginLoad(5)
+    compare(Core.settingsFailLoad(newer, 4).phase, "loading")
+    // Cancel has no snapshot to fall back to and must not fabricate one.
+    compare(Core.settingsCancel(state).phase, "load_failed")
   }
 
   function test_bootstrap_never_clobbers_dialog_result() {

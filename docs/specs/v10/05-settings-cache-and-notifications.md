@@ -85,6 +85,16 @@ closed
   one of its original providers (not just a provider added later) does not
   qualify for this in-place injection and instead follows the v9/defaults
   migration path.
+- `SET-025`: QML draft validation requires every provider the loaded QML
+  knows to be present exactly once, and tolerates a well-formed row (string
+  `id`, boolean `enabled`) whose id it does not know. Such a row stays in the
+  draft opaque and round-trips to `config apply` untouched. This covers the
+  skew every update produces until the shell restarts: the helper on disk is
+  newer than the QML in memory and lists a provider the QML has not heard of.
+- `SET-026`: A dialog load that fails (non-zero exit, unparseable or invalid
+  document) moves the dialog to a terminal `load_failed` phase: controls stay
+  locked, no snapshot is fabricated, and the view renders fixed copy naming
+  the recovery step (restart the shell). It never stays in `loading`.
 
 ## Cache files
 

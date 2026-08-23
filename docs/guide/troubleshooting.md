@@ -87,6 +87,18 @@ Then inspect:
 Do not run `omarchy bar plugin add` over an existing entry; it can reset
 placement.
 
+## Settings stay on "Loading" or report "could not be loaded" after an update
+
+`omarchy plugin update` replaces the plugin tree and the helper on disk, but
+the QML already running keeps the old code until the shell restarts. When the
+new helper lists a provider the old QML does not know, Settings cannot finish
+its load; a release before 10.3.13 stayed on "Loading" forever, current
+releases show "Settings could not be loaded". Either way:
+
+```bash
+omarchy-restart-shell
+```
+
 ## Settings do not save
 
 ```bash
