@@ -5,7 +5,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use super::schema::{Settings, SettingsError};
+use super::schema::{MissingProviders, Settings, SettingsError};
 use crate::cli::VALIDATION;
 use crate::support::atomic_file::{replace_atomically, replace_atomically_with, FileMutator};
 use crate::support::maintenance_gate::{MaintenanceGate, SharedMaintenanceGate};
@@ -79,10 +79,18 @@ impl SettingsStore {
 
     /// Read-only show: missing file returns defaults without creating anything.
     /// Existing file is never rewritten, migrated, or touched (mtime preserved).
+    ///
+    /// A document that predates a catalog addition is completed in memory from
+    /// the catalog ([`MissingProviders::FillFromCatalog`]) so a settings.json
+    /// written by an older build still yields a usable document. The injection
+    /// is deliberately not persisted: SET-007 forbids a read from writing, and
+    /// only the explicit migration may rewrite the file. Unknown IDs,
+    /// duplicates, and every other validation failure stay hard errors.
     pub fn show(&self) -> Result<Settings, StoreError> {
         match fs::read(&self.path) {
             Ok(bytes) => {
-                let (settings, _) = Settings::parse_and_inject_missing(&bytes)?;
+                let (settings, _injected) =
+                    Settings::parse_with_policy(&bytes, MissingProviders::FillFromCatalog)?;
                 Ok(settings)
             }
             Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(Settings::defaults()),
@@ -200,6 +208,102 @@ mod tests {
         assert_eq!(shown, original);
         assert_eq!(fs::read(store.path()).unwrap(), before_bytes);
         assert_eq!(file_mtime(store.path()).unwrap().unwrap(), before_mtime);
+    }
+
+    /// A settings.json written before Antigravity joined the catalog.
+    const FOUR_PROVIDER_DOCUMENT: &[u8] = br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":true},{"id":"grok","enabled":true}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true}}"#;
+
+    #[test]
+    fn show_fills_a_missing_provider_in_memory_without_writing() {
+        // A document from an older build must still read; SET-007 means the
+        // repair happens in memory only, so the file keeps its exact bytes and
+        // mtime and the explicit migration remains the only writer.
+        let dir = tempfile::tempdir().unwrap();
+        let store = store_in(dir.path());
+        fs::write(store.path(), FOUR_PROVIDER_DOCUMENT).unwrap();
+        let before_bytes = fs::read(store.path()).unwrap();
+        let before_mtime = file_mtime(store.path()).unwrap().unwrap();
+
+        thread::sleep(Duration::from_millis(20));
+        let shown = store.show().unwrap();
+        let antigravity = shown
+            .providers
+            .iter()
+            .find(|p| p.id.0 == crate::cli::ProviderId::Antigravity)
+            .expect("antigravity filled in from the catalog");
+        assert!(!antigravity.enabled);
+        assert_eq!(fs::read(store.path()).unwrap(), before_bytes);
+        assert_eq!(file_mtime(store.path()).unwrap().unwrap(), before_mtime);
+    }
+
+    #[test]
+    fn show_rejects_a_truncated_provider_list() {
+        // Tolerance covers "the catalog grew", never "the user deleted rows":
+        // filling codex/amp/grok back in would re-enable providers the user
+        // removed. Such a file stays a hard error, exactly as on master.
+        let dir = tempfile::tempdir().unwrap();
+        let store = store_in(dir.path());
+        fs::write(
+            store.path(),
+            br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true}}"#,
+        )
+        .unwrap();
+        match store.show().unwrap_err() {
+            StoreError::Validation(v) => {
+                assert!(
+                    v.message().contains("missing provider id"),
+                    "{}",
+                    v.message()
+                )
+            }
+            other => panic!("expected validation, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn show_still_rejects_an_unknown_or_duplicated_provider() {
+        // Tolerance is scoped to "the catalog grew", not to a corrupt file.
+        let dir = tempfile::tempdir().unwrap();
+        let store = store_in(dir.path());
+
+        fs::write(
+            store.path(),
+            br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"nope","enabled":true}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true}}"#,
+        )
+        .unwrap();
+        match store.show().unwrap_err() {
+            StoreError::Validation(v) => assert!(v.message().contains("nope"), "{}", v.message()),
+            other => panic!("expected validation, got {other:?}"),
+        }
+
+        fs::write(
+            store.path(),
+            br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"claude","enabled":false}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true}}"#,
+        )
+        .unwrap();
+        match store.show().unwrap_err() {
+            StoreError::Validation(v) => {
+                assert!(v.message().contains("duplicate"), "{}", v.message())
+            }
+            other => panic!("expected validation, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn apply_raw_still_demands_every_provider() {
+        // SET-006: `config apply` replaces the whole document, so accepting a
+        // partial one would silently drop the caller's intent for the rest.
+        let dir = tempfile::tempdir().unwrap();
+        let store = store_in(dir.path());
+        match store.apply_raw(FOUR_PROVIDER_DOCUMENT).unwrap_err() {
+            StoreError::Validation(v) => assert!(
+                v.message().contains("missing provider id") && v.message().contains("antigravity"),
+                "{}",
+                v.message()
+            ),
+            other => panic!("expected validation, got {other:?}"),
+        }
+        assert!(!store.path().exists());
     }
 
     #[test]

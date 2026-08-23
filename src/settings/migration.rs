@@ -8,7 +8,8 @@ use serde_json::{Map, Value};
 use thiserror::Error;
 
 use super::schema::{
-    DisplayMetric, DisplaySettings, NotificationSettings, ProviderIdJson, ProviderSetting, Settings,
+    default_enabled, DisplayMetric, DisplaySettings, MissingProviders, NotificationSettings,
+    ProviderIdJson, ProviderSetting, Settings,
 };
 use crate::cli::ProviderId;
 /// The v9-era plugin ID exactly as legacy `shell.json` files carry it on
@@ -72,7 +73,17 @@ impl MigrationPlan {
                 (Settings::defaults(), Vec::new(), false)
             }
             Some(raw) => {
-                if let Ok((v10, injected)) = Settings::parse_and_inject_missing(raw) {
+                // Migration is the only path allowed to rewrite a v10 document
+                // that predates a catalog addition; an injection means the file
+                // must be written back, so it is not "already migrated".
+                //
+                // The repair is gated on `carries_original_v10_providers`: a
+                // document whose `providers` array is empty or truncated is not
+                // "v10 minus the providers added later", it is a v9-era or
+                // damaged file, and filling it from the catalog would invent an
+                // enablement set the user never chose. Those fall through to
+                // the v9 path, which derives enablement from the waybar block.
+                if let Some((v10, injected)) = parse_complete_v10(raw) {
                     refresh_from_settings = true;
                     (v10, Vec::new(), !injected)
                 } else {
@@ -247,6 +258,17 @@ pub fn migrate_live_paths(
     };
     let plan = MigrationPlan::from_v9(settings_raw.as_deref(), shell_raw.as_deref())?;
     apply_migration_plan(&plan, settings_path, shell_path, backup_root)
+}
+
+/// Parse `raw` as a v10 document, completing it from the catalog only when it
+/// already lists every original v10 provider (the guard lives in
+/// [`Settings::parse_with_policy`], shared with the read path).
+///
+/// Returns the document plus whether any provider row was filled in (which
+/// obliges the caller to rewrite the file). `None` means "not a v10 document
+/// we may repair" and sends the caller to the v9 migration path.
+fn parse_complete_v10(raw: &[u8]) -> Option<(Settings, bool)> {
+    Settings::parse_with_policy(raw, MissingProviders::FillFromCatalog).ok()
 }
 
 fn waybar_interval_present(raw: &[u8]) -> bool {
@@ -426,11 +448,7 @@ fn migrate_v9_settings(raw: &[u8]) -> Result<(Settings, Vec<String>, bool), Migr
             if seen.insert(id) {
                 providers.push(ProviderSetting {
                     id: ProviderIdJson(id),
-                    enabled: if id == ProviderId::Antigravity {
-                        false
-                    } else {
-                        enabled_set.contains(&id)
-                    },
+                    enabled: default_enabled(id) && enabled_set.contains(&id),
                 });
             }
         }
@@ -439,11 +457,7 @@ fn migrate_v9_settings(raw: &[u8]) -> Result<(Settings, Vec<String>, bool), Migr
         if seen.insert(id) {
             providers.push(ProviderSetting {
                 id: ProviderIdJson(id),
-                enabled: if id == ProviderId::Antigravity {
-                    false
-                } else {
-                    enabled_set.contains(&id)
-                },
+                enabled: default_enabled(id) && enabled_set.contains(&id),
             });
         }
     }
@@ -451,9 +465,7 @@ fn migrate_v9_settings(raw: &[u8]) -> Result<(Settings, Vec<String>, bool), Migr
     // If enabled_list was empty after filtering, enable all (safe default).
     if providers.iter().all(|p| !p.enabled) {
         for p in &mut providers {
-            if p.id.0 != ProviderId::Antigravity {
-                p.enabled = true;
-            }
+            p.enabled = default_enabled(p.id.0);
         }
     }
 
@@ -705,6 +717,86 @@ mod tests {
         let plan = MigrationPlan::from_v9(Some(&v10), None).unwrap();
         assert!(plan.already_migrated);
         assert_eq!(plan.settings, Settings::defaults());
+    }
+
+    #[test]
+    fn v10_document_missing_a_provider_is_repaired_once() {
+        // A v10 file written before Antigravity joined the catalog: the first
+        // plan must rewrite it (injecting the provider disabled), the second
+        // must be a no-op.
+        let dir = tempfile::tempdir().unwrap();
+        let settings_path = dir.path().join("settings.json");
+        let shell_path = dir.path().join("shell.json");
+        let four = br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":true},{"id":"grok","enabled":true}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true}}"#;
+        fs::write(&settings_path, four).unwrap();
+
+        let plan = MigrationPlan::from_v9(Some(four), None).unwrap();
+        assert!(
+            !plan.already_migrated,
+            "injecting a provider means the file must be rewritten"
+        );
+        let report = apply_migration_plan(
+            &plan,
+            &settings_path,
+            &shell_path,
+            &dir.path().join("backup"),
+        )
+        .unwrap();
+        assert!(report.settings_written);
+
+        let written = fs::read(&settings_path).unwrap();
+        let stored = Settings::parse_strict(&written).unwrap();
+        assert_eq!(stored.providers.len(), ProviderId::ALL.len());
+        let antigravity = stored
+            .providers
+            .iter()
+            .find(|p| p.id.0 == ProviderId::Antigravity)
+            .unwrap();
+        assert!(!antigravity.enabled);
+
+        let second = MigrationPlan::from_v9(Some(&written), None).unwrap();
+        assert!(second.already_migrated);
+        assert_eq!(second.settings, stored);
+    }
+
+    #[test]
+    fn injected_rows_follow_default_enabled() {
+        // The injected row must be whatever `default_enabled` says, not a
+        // hard-coded false: the catalog is the single source for that.
+        let four = br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":true},{"id":"grok","enabled":true}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true}}"#;
+        let plan = MigrationPlan::from_v9(Some(four), None).unwrap();
+        for row in &plan.settings.providers {
+            assert_eq!(row.enabled, default_enabled(row.id.0), "{}", row.id.0);
+        }
+    }
+
+    #[test]
+    fn a_truncated_providers_array_is_not_treated_as_a_v10_document() {
+        // An empty or truncated `providers` array is not "v10 minus the
+        // providers added later" — completing it from the catalog would turn
+        // the whole set off. These take the v9 path, which enables everything
+        // `default_enabled` allows.
+        for raw in [
+            br#"{"schemaVersion":1,"providers":[],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true}}"#.as_slice(),
+            br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true}}"#.as_slice(),
+        ] {
+            let plan = MigrationPlan::from_v9(Some(raw), None).unwrap();
+            assert!(
+                !plan.already_migrated,
+                "a repaired document must be rewritten"
+            );
+            assert_eq!(plan.settings.providers.len(), ProviderId::ALL.len());
+            for row in &plan.settings.providers {
+                assert_eq!(row.enabled, default_enabled(row.id.0), "{}", row.id.0);
+            }
+            let antigravity = plan
+                .settings
+                .providers
+                .iter()
+                .find(|p| p.id.0 == ProviderId::Antigravity)
+                .unwrap();
+            assert!(!antigravity.enabled);
+        }
     }
 
     #[test]
