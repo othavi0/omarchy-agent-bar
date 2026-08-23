@@ -117,29 +117,59 @@ impl fmt::Display for SettingsError {
 
 impl std::error::Error for SettingsError {}
 
+/// Whether a provider is on by default in a freshly written document.
+///
+/// Single source for "which providers start enabled": `Settings::defaults`
+/// and every v9 → v10 migration path read it instead of re-testing IDs.
+/// Antigravity ships opt-in (added 2026-08-22): the CLI is not installed for
+/// most users, so enabling it by default would show a permanent CLI-missing
+/// chip.
+pub fn default_enabled(id: ProviderId) -> bool {
+    !matches!(id, ProviderId::Antigravity)
+}
+
+/// What a parse does when the document omits a catalog provider.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MissingProviders {
+    /// SET-006: an incomplete `providers` array is a validation error. This is
+    /// the policy for `config apply`, which writes a complete document and so
+    /// must be handed one.
+    Reject,
+    /// Fill the missing IDs from the catalog with [`default_enabled`] so a
+    /// document written before a catalog addition still parses. Reads use this
+    /// in memory and leave the file alone (SET-007); the migration uses the
+    /// returned "injected" flag to know it must rewrite the file.
+    FillFromCatalog,
+}
+
+/// The provider IDs every v10 document has carried since v10 shipped (SET-024,
+/// MIG-009A). A file listing all of them may be completed from the catalog;
+/// anything less is not a v10 document we may repair.
+pub const ORIGINAL_V10_PROVIDERS: &[ProviderId] = &[
+    ProviderId::Claude,
+    ProviderId::Codex,
+    ProviderId::Amp,
+    ProviderId::Grok,
+];
+
+fn carries_original_v10_providers(providers: &[ProviderSetting]) -> bool {
+    ORIGINAL_V10_PROVIDERS
+        .iter()
+        .all(|id| providers.iter().any(|p| p.id.0 == *id))
+}
+
 impl Settings {
     /// Product defaults (missing file returns these without creating a file).
     pub fn defaults() -> Self {
         Self {
             schema_version: SCHEMA_VERSION,
-            providers: vec![
-                ProviderSetting {
-                    id: ProviderIdJson(ProviderId::Claude),
-                    enabled: true,
-                },
-                ProviderSetting {
-                    id: ProviderIdJson(ProviderId::Codex),
-                    enabled: true,
-                },
-                ProviderSetting {
-                    id: ProviderIdJson(ProviderId::Amp),
-                    enabled: true,
-                },
-                ProviderSetting {
-                    id: ProviderIdJson(ProviderId::Grok),
-                    enabled: true,
-                },
-            ],
+            providers: ProviderId::ALL
+                .into_iter()
+                .map(|id| ProviderSetting {
+                    id: ProviderIdJson(id),
+                    enabled: default_enabled(id),
+                })
+                .collect(),
             display: DisplaySettings {
                 metric: DisplayMetric::Remaining,
             },
@@ -153,13 +183,49 @@ impl Settings {
 
     /// Parse a complete document from JSON bytes without discarding unknown keys.
     pub fn parse_strict(raw: &[u8]) -> Result<Self, SettingsError> {
+        let (settings, _) = Self::parse_with_policy(raw, MissingProviders::Reject)?;
+        Ok(settings)
+    }
+
+    /// Parse a document under an explicit [`MissingProviders`] policy.
+    ///
+    /// Returns the validated document plus whether providers were injected
+    /// (always `false` under [`MissingProviders::Reject`]).
+    pub fn parse_with_policy(
+        raw: &[u8],
+        policy: MissingProviders,
+    ) -> Result<(Self, bool), SettingsError> {
         let value: Value = serde_json::from_slice(raw)
             .map_err(|err| SettingsError::new(format!("invalid settings JSON: {err}")))?;
         reject_unknown_top_level(&value)?;
-        let settings: Self = serde_json::from_value(value)
+        let mut settings: Self = serde_json::from_value(value)
             .map_err(|err| SettingsError::new(format!("invalid settings document: {err}")))?;
+
+        let mut injected = false;
+        // Only a document that already lists every provider v10 shipped with
+        // is a real v10 file that merely predates a later catalog addition.
+        // Anything shorter (hand-edited, truncated) is rejected by
+        // `validate` below exactly as SET-006 demands: filling it from the
+        // catalog would invent an enablement set the user never chose.
+        if policy == MissingProviders::FillFromCatalog
+            && carries_original_v10_providers(&settings.providers)
+        {
+            for id in ProviderId::ALL {
+                if !settings.providers.iter().any(|p| p.id.0 == id) {
+                    // `default_enabled` is the single source for "which
+                    // providers start enabled": a filled-in row must look
+                    // exactly like the one `Settings::defaults` would write.
+                    settings.providers.push(ProviderSetting {
+                        id: ProviderIdJson(id),
+                        enabled: default_enabled(id),
+                    });
+                    injected = true;
+                }
+            }
+        }
+
         settings.validate()?;
-        Ok(settings)
+        Ok((settings, injected))
     }
 
     /// Semantic validation beyond `deny_unknown_fields`.
@@ -181,11 +247,9 @@ impl Settings {
                 "reminderMinutes must be in {MIN_REMINDER_MINUTES}..={MAX_REMINDER_MINUTES}"
             )));
         }
-        if self.providers.len() != ProviderId::ALL.len() {
-            return Err(SettingsError::new(
-                "providers must list every supported provider exactly once",
-            ));
-        }
+        // Name the offending provider before falling back to the cardinality
+        // message: a document written before a catalog addition fails here,
+        // and the operator needs the ID to fix it by hand.
         let mut seen = HashSet::new();
         for item in &self.providers {
             if !seen.insert(item.id.0) {
@@ -202,6 +266,11 @@ impl Settings {
                     required.as_str()
                 )));
             }
+        }
+        if self.providers.len() != ProviderId::ALL.len() {
+            return Err(SettingsError::new(
+                "providers must list every supported provider exactly once",
+            ));
         }
         Ok(())
     }
@@ -300,10 +369,86 @@ mod tests {
     }
 
     #[test]
+    fn missing_provider_is_rejected_only_under_the_strict_policy() {
+        // SET-006 keeps `config apply` strict: it writes the whole document,
+        // so it must be handed the whole document. Reads and the migration
+        // fill the gap from the catalog instead.
+        let four = br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":true},{"id":"grok","enabled":true}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true}}"#;
+        let err = Settings::parse_strict(four).unwrap_err();
+        assert!(err.message().contains("antigravity"), "{}", err.message());
+
+        let (repaired, injected) =
+            Settings::parse_with_policy(four, MissingProviders::FillFromCatalog).unwrap();
+        assert!(injected);
+        assert_eq!(repaired.providers.len(), ProviderId::ALL.len());
+        let antigravity = repaired
+            .providers
+            .iter()
+            .find(|p| p.id.0 == ProviderId::Antigravity)
+            .expect("antigravity injected");
+        assert!(!antigravity.enabled);
+
+        // A complete document reports no injection under either policy.
+        let complete = Settings::defaults().to_canonical_json_line().unwrap();
+        let (parsed, injected) =
+            Settings::parse_with_policy(complete.as_bytes(), MissingProviders::FillFromCatalog)
+                .unwrap();
+        assert!(!injected);
+        assert_eq!(parsed, Settings::defaults());
+    }
+
+    #[test]
+    fn filled_rows_come_from_default_enabled_not_a_hard_coded_false() {
+        // A document with the four original providers but without the later
+        // addition: the filled row must match what `Settings::defaults` would
+        // have written for it, so a future provider that ships enabled is not
+        // silently turned off by a read.
+        let four = br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":true},{"id":"grok","enabled":true}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true}}"#;
+        let (filled, injected) =
+            Settings::parse_with_policy(four, MissingProviders::FillFromCatalog).unwrap();
+        assert!(injected);
+        assert_eq!(filled, Settings::defaults());
+        for row in &filled.providers {
+            assert_eq!(row.enabled, default_enabled(row.id.0), "{}", row.id.0);
+        }
+    }
+
+    #[test]
+    fn fill_from_catalog_never_repairs_a_truncated_document() {
+        // Missing one of the original v10 providers means the user removed a
+        // row (or the file is corrupt); completing it would re-enable
+        // providers they never chose. SET-006 applies on every path.
+        let truncated = br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true}}"#;
+        let err =
+            Settings::parse_with_policy(truncated, MissingProviders::FillFromCatalog).unwrap_err();
+        assert!(
+            err.message().contains("missing provider id"),
+            "{}",
+            err.message()
+        );
+        let empty = br#"{"schemaVersion":1,"providers":[],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true}}"#;
+        assert!(Settings::parse_with_policy(empty, MissingProviders::FillFromCatalog).is_err());
+    }
+
+    #[test]
+    fn default_enabled_is_the_single_source_for_defaults() {
+        for id in ProviderId::ALL {
+            let row = Settings::defaults()
+                .providers
+                .into_iter()
+                .find(|p| p.id.0 == id)
+                .expect("every catalog provider present");
+            assert_eq!(row.enabled, default_enabled(id), "{id}");
+        }
+        assert!(!default_enabled(ProviderId::Antigravity));
+        assert!(default_enabled(ProviderId::Claude));
+    }
+
+    #[test]
     fn reminder_minutes_defaults_when_absent() {
         // Settings reads never rewrite (SET-007), so an existing settings.json
         // predating this field must parse and take the default silently.
-        let doc = br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":true},{"id":"grok","enabled":true}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true}}"#;
+        let doc = br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":true},{"id":"grok","enabled":true},{"id":"antigravity","enabled":false}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true}}"#;
         let parsed = Settings::parse_strict(doc).unwrap();
         assert_eq!(
             parsed.notifications.reminder_minutes,
@@ -333,7 +478,7 @@ mod tests {
         // deny_unknown_fields is not the only gate: reject_unknown_top_level
         // walks raw JSON before deserialization and would reject the key on
         // its own.
-        let doc = br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":true},{"id":"grok","enabled":true}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true,"reminderMinutes":240}}"#;
+        let doc = br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":true},{"id":"grok","enabled":true},{"id":"antigravity","enabled":false}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true,"reminderMinutes":240}}"#;
         let parsed = Settings::parse_strict(doc).unwrap();
         assert_eq!(parsed.notifications.reminder_minutes, 240);
     }

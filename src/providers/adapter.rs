@@ -80,6 +80,16 @@ pub trait ProviderAdapter: Send + Sync {
     }
 
     fn login_command(&self, discovery: &Discovery) -> Result<ProcessSpec, LoginError> {
+        // Two different answers share one `None` from `login_process_argv`:
+        // no executable to run, and a provider that publishes no login argv
+        // at all. Installing a CLI fixes the first and can never fix the
+        // second, so they must not report the same failure.
+        if self.descriptor().login_argv.is_empty() {
+            return Err(LoginError::UnsupportedProvider);
+        }
+        if discovery.login_executable().is_none() {
+            return Err(LoginError::CliMissing);
+        }
         let argv =
             login_process_argv(self.descriptor(), discovery).ok_or(LoginError::CliMissing)?;
         let mut iter = argv.into_iter();
@@ -195,6 +205,7 @@ pub fn adapter_for(id: ProviderId) -> &'static dyn ProviderAdapter {
         ProviderId::Grok => &super::adapters::GROK_ADAPTER,
         ProviderId::Codex => &super::adapters::CODEX_ADAPTER,
         ProviderId::Claude => &super::adapters::CLAUDE_ADAPTER,
+        ProviderId::Antigravity => &super::adapters::ANTIGRAVITY_ADAPTER,
     }
 }
 
@@ -234,5 +245,82 @@ pub(crate) fn collection_exe(discovery: &Discovery) -> Option<&Path> {
     match &discovery.collection {
         CollectionAvailability::Available { executable } => Some(executable.as_path()),
         CollectionAvailability::Missing => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::providers::adapters::{ANTIGRAVITY_ADAPTER, GROK_ADAPTER};
+    use std::path::PathBuf;
+
+    fn discovery_with_login(executable: Option<&str>) -> Discovery {
+        Discovery {
+            collection: CollectionAvailability::Missing,
+            login: match executable {
+                Some(path) => LoginAvailability::Available {
+                    executable: PathBuf::from(path),
+                },
+                None => LoginAvailability::Missing,
+            },
+        }
+    }
+
+    #[test]
+    fn unsupported_login_wins_over_missing_executable_from_real_discovery() {
+        // `discover()` never reports login as available for an empty argv, so
+        // the unsupported answer must come before the executable check or it
+        // is unreachable in production.
+        let env = ExecutionEnvironment {
+            home: PathBuf::from("/nonexistent"),
+            path_dirs: vec![],
+            grok_home: None,
+        };
+        let discovery = ANTIGRAVITY_ADAPTER.discover(&env).unwrap();
+        assert!(discovery.login_executable().is_none());
+        let err = ANTIGRAVITY_ADAPTER.login_command(&discovery).unwrap_err();
+        assert_eq!(err, LoginError::UnsupportedProvider);
+    }
+
+    #[test]
+    fn present_cli_without_login_argv_is_unsupported_not_missing() {
+        // Antigravity ships no official login command: `agy` is right there,
+        // so "install the provider CLI first" would send the user nowhere.
+        assert_eq!(
+            ANTIGRAVITY_ADAPTER.descriptor().login_argv,
+            &[] as &[&str],
+            "test premise: this provider publishes no login argv"
+        );
+        let err = ANTIGRAVITY_ADAPTER
+            .login_command(&discovery_with_login(Some("/usr/bin/agy")))
+            .unwrap_err();
+        assert_eq!(err, LoginError::UnsupportedProvider);
+    }
+
+    #[test]
+    fn absent_login_executable_is_cli_missing() {
+        // Grok publishes a login argv, so a missing executable is the only
+        // reason login cannot run.
+        assert_eq!(
+            GROK_ADAPTER
+                .login_command(&discovery_with_login(None))
+                .unwrap_err(),
+            LoginError::CliMissing
+        );
+        assert_eq!(
+            GROK_ADAPTER
+                .login_command(&discovery_with_login(None))
+                .unwrap_err(),
+            LoginError::CliMissing
+        );
+    }
+
+    #[test]
+    fn login_argv_keeps_the_discovered_executable_as_argv_zero() {
+        let spec = GROK_ADAPTER
+            .login_command(&discovery_with_login(Some("/opt/bin/grok")))
+            .unwrap();
+        assert_eq!(spec.program, PathBuf::from("/opt/bin/grok"));
+        assert_eq!(spec.args, vec!["login".to_owned()]);
     }
 }

@@ -66,6 +66,16 @@ The manifest records:
 - `MIG-009`: Preserve valid provider enablement, order, display metric, refresh
   interval, notification preference, bar section, index, and compatible inline
   layout.
+- `MIG-009A`: Migration is also the sole path that reconciles a current-schema
+  `settings.json` written before a provider was added to the catalog, and
+  that still contains every provider that existed when it was written: it
+  appends the missing provider at the end of the `providers` array with its
+  catalog default `enabled` value (`false` for `antigravity`) and rewrites the
+  document atomically. A document missing one of its original providers
+  instead follows the v9/defaults migration path. An ordinary read
+  (`config show`, `status`) against the pre-migration file tolerates the
+  missing provider in memory as its catalog default without writing; `apply`
+  against the same file is still rejected under `SET-006`; see `SET-024`.
 - `MIG-010`: Move Agent Bar product settings into `settings.json`.
 - `MIG-011`: Remove only Agent Bar-owned inline settings from `shell.json`.
 - `MIG-012`: Never remove and re-add an existing bar entry.

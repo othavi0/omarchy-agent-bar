@@ -8,7 +8,7 @@ documentation.
 ## Adapter
 
 Implement the two required methods; `discover` and `login_command` have
-catalog-driven default bodies that none of the four shipped adapters
+catalog-driven default bodies that none of the five shipped adapters
 override:
 
 ```rust
@@ -77,13 +77,18 @@ CLI discovery verifies executable permission, not only file existence.
 
 Consulting the collection executable is itself optional: Claude and Grok
 collect purely from credential files plus HTTP and never read the
-collection-discovery result; only Amp and Codex resolve the discovered
-executable.
+collection-discovery result; only Amp, Codex, and Antigravity resolve the
+discovered executable.
 
 ## Process invocation notes
 
 - Amp runs its CLI with `NO_COLOR=1` and `TERM=dumb` forced into the
   environment to guarantee plain non-interactive output.
+- Antigravity forces the same `NO_COLOR=1`/`TERM=dumb` pair, plus an
+  `agy --version` guard call before `agy --print /usage --output-format json`
+  (windows are read by their stable bucket ids); a CLI older than
+  1.1.11 is refused without ever running the usage command, because older
+  builds forward `/usage` to the model as an ordinary prompt.
 - Codex retries the app-server RPC once manually (short sleep, one re-run)
   when it times out — independent of, and in addition to, the catalog-level
   retry policy used for HTTP providers.

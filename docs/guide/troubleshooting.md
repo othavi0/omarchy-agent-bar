@@ -50,6 +50,18 @@ then the newest valid rate-limit event under `~/.codex/sessions`. When the
 session-log tier is used, `lastSuccessAt` reflects that event's own
 timestamp, not collection time — the data may be hours or days old.
 
+## Antigravity CLI 1.1.11 or newer is required.
+
+Agent Bar checks `agy --version` before every usage collection. Builds older
+than 1.1.11 forward the `/usage` slash command to the model as an ordinary
+prompt instead of printing usage data, so Agent Bar refuses to run it and
+reports this `provider_error` instead. Update `agy` to 1.1.11 or newer, then
+retry:
+
+```bash
+"$PLUGIN" status provider antigravity format human cache bypass
+```
+
 ## Grok shows `—` or missing Weekly
 
 When billing returns no usable percentage, Grok is connected with empty windows

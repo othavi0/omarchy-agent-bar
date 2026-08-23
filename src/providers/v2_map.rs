@@ -15,7 +15,7 @@ use crate::cli::ProviderId;
 use crate::status::schema::{Account, DataSource, Plan, ProviderResult, UsageWindow};
 use crate::support::redact::strip_ansi_and_controls;
 
-use super::catalog::{AMP, CLAUDE, CODEX, GROK};
+use super::catalog::{AMP, ANTIGRAVITY, CLAUDE, CODEX, GROK};
 
 /// Display labels for the shared window ids. Every provider mapper uses these;
 /// QML renders them verbatim and never re-derives.
@@ -834,6 +834,137 @@ pub fn path_is_absolute_home(path: &Path) -> bool {
     path.is_absolute()
 }
 
+/// Envelope of `agy --print /usage --output-format json`.
+///
+/// Only the fields a domain result needs are modelled. Everything else the
+/// CLI prints — `response`, the human `description` strings, token counters —
+/// is dropped here and never reaches a result, a message, or a log. Unknown
+/// fields are ignored, so a new CLI release adding keys cannot break the
+/// parse.
+#[derive(Deserialize)]
+struct AntigravityUsage {
+    #[serde(default)]
+    status: String,
+    #[serde(default)]
+    command: AntigravityCommand,
+}
+
+#[derive(Deserialize, Default)]
+struct AntigravityCommand {
+    #[serde(default)]
+    data: AntigravityData,
+}
+
+#[derive(Deserialize, Default)]
+struct AntigravityData {
+    #[serde(default)]
+    groups: Vec<AntigravityGroup>,
+}
+
+#[derive(Deserialize)]
+struct AntigravityGroup {
+    #[serde(default)]
+    buckets: Vec<AntigravityBucket>,
+}
+
+/// One quota bucket. The `window` field the CLI also prints is deliberately
+/// not modelled: `id` is the key this parser matches on, and a second field
+/// carrying the same fact would only invite the two to disagree.
+#[derive(Deserialize)]
+struct AntigravityBucket {
+    #[serde(default)]
+    id: String,
+    #[serde(default)]
+    remaining_fraction: Option<f64>,
+    #[serde(default)]
+    reset_time: Option<String>,
+}
+
+/// Typed refusal with a fixed message; provider output never reaches the user.
+fn antigravity_error(message: &str) -> ProviderResult {
+    ProviderResult::ProviderError {
+        id: ProviderId::Antigravity,
+        name: ANTIGRAVITY.display_name.to_owned(),
+        message: message.to_owned(),
+        retryable: false,
+    }
+}
+
+/// Parse `agy --print /usage --output-format json` into a domain result.
+///
+/// Only the Gemini family carries a percentage window Agent Bar reports; the
+/// shared Claude/GPT buckets (`3p-*`) are ignored. A run without any window is
+/// `Ready` with an empty list — a connected provider without a percentage
+/// window is valid, exactly as for Amp.
+///
+/// The logged-out banner is not handled here: `Unauthenticated` needs to know
+/// whether login is available, which is discovery state the adapter owns, so
+/// [`super::adapters`] checks the marker on raw stdout before calling this.
+pub fn antigravity_from_usage_json(stdout: &str, now: OffsetDateTime) -> ProviderResult {
+    let text = strip_ansi_and_controls(stdout);
+
+    let Ok(usage) = serde_json::from_str::<AntigravityUsage>(&text) else {
+        return antigravity_error("Antigravity returned unreadable usage output.");
+    };
+    if usage.status != "SUCCESS" {
+        return antigravity_error("Antigravity usage command failed.");
+    }
+
+    // Two named slots rather than a push list: they give the fixed weekly ->
+    // 5h order and the per-id dedupe (first bucket wins) in one move.
+    let mut weekly: Option<UsageWindow> = None;
+    let mut session: Option<UsageWindow> = None;
+
+    for bucket in usage
+        .command
+        .data
+        .groups
+        .iter()
+        .flat_map(|group| group.buckets.iter())
+    {
+        let (label, slot) = match bucket.id.as_str() {
+            "gemini-weekly" => (LABEL_WEEKLY, &mut weekly),
+            "gemini-5h" => (LABEL_SESSION, &mut session),
+            _ => continue,
+        };
+        if slot.is_some() {
+            continue;
+        }
+        let Some(fraction) = bucket.remaining_fraction.filter(|f| f.is_finite()) else {
+            continue;
+        };
+
+        let remaining_percent = (fraction * 100.0).clamp(0.0, 100.0);
+        let used_percent = (100.0 - remaining_percent).clamp(0.0, 100.0);
+        let resets_at = bucket
+            .reset_time
+            .as_deref()
+            .and_then(|ts| OffsetDateTime::parse(ts, &Rfc3339).ok())
+            .map(|ts| ts.to_offset(UtcOffset::UTC));
+
+        if let Ok(window) = UsageWindow::try_new(
+            bucket.id.as_str(),
+            label,
+            used_percent,
+            remaining_percent,
+            resets_at,
+        ) {
+            *slot = Some(window);
+        }
+    }
+
+    ProviderResult::Ready {
+        id: ProviderId::Antigravity,
+        name: ANTIGRAVITY.display_name.to_owned(),
+        source: DataSource::Live,
+        plan: None,
+        account: None,
+        windows: weekly.into_iter().chain(session).collect(),
+        last_success_at: now,
+        rate_limit_resets_available: None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1370,5 +1501,198 @@ mod tests {
         );
         assert_eq!(format_plan_label(""), "");
         assert_eq!(format_plan_label("_x_"), "X");
+    }
+
+    #[test]
+    fn antigravity_parse_ready_from_fixture() {
+        let fixture = include_str!("../../tests/fixtures/antigravity/usage.json");
+        let result = antigravity_from_usage_json(fixture, datetime!(2026-08-21 12:00:00 UTC));
+        assert_no_money(&result);
+        match result {
+            ProviderResult::Ready {
+                windows,
+                plan,
+                account,
+                ..
+            } => {
+                assert_eq!(windows.len(), 2);
+
+                assert_eq!(windows[0].id(), "gemini-weekly");
+                assert_eq!(windows[0].label(), LABEL_WEEKLY);
+                assert!((windows[0].remaining_percent() - 86.0).abs() < 0.01);
+                assert!((windows[0].used_percent() - 14.0).abs() < 0.01);
+                assert_eq!(
+                    windows[0].resets_at(),
+                    Some(datetime!(2026-08-25 20:40:28 UTC))
+                );
+
+                assert_eq!(windows[1].id(), "gemini-5h");
+                assert_eq!(windows[1].label(), LABEL_SESSION);
+                assert!((windows[1].remaining_percent() - 92.0).abs() < 0.01);
+                assert!((windows[1].used_percent() - 8.0).abs() < 0.01);
+                assert_eq!(
+                    windows[1].resets_at(),
+                    Some(datetime!(2026-08-23 04:25:14 UTC))
+                );
+
+                assert!(plan.is_none());
+                assert!(account.is_none());
+            }
+            other => panic!("expected ready, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn antigravity_ignores_the_shared_third_party_buckets() {
+        // The fixture carries `3p-weekly` and `3p-5h` next to the Gemini pair;
+        // only the Gemini family has a window Agent Bar reports, so the ready
+        // result above must contain exactly two windows and neither of these.
+        let fixture = include_str!("../../tests/fixtures/antigravity/usage.json");
+        match antigravity_from_usage_json(fixture, datetime!(2026-08-21 12:00:00 UTC)) {
+            ProviderResult::Ready { windows, .. } => {
+                assert!(
+                    windows.iter().all(|w| !w.id().starts_with("3p-")),
+                    "{windows:?}"
+                );
+            }
+            other => panic!("expected ready, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn antigravity_zero_windows_is_ready_not_an_error() {
+        // Same rule as Amp: a connected provider without a percentage window
+        // is valid and renders "—" (CLAUDE.md, provider rules). An account
+        // with only the shared Claude/GPT group is exactly this case.
+        let payload = r#"{"status":"SUCCESS","command":{"name":"usage","data":{"groups":[
+            {"name":"Claude and GPT models","buckets":[
+              {"id":"3p-weekly","window":"weekly","remaining_fraction":1,
+               "reset_time":"2026-08-29T23:25:14Z"}]}]}}}"#;
+        let result = antigravity_from_usage_json(payload, datetime!(2026-08-21 12:00:00 UTC));
+        assert_no_money(&result);
+        match result {
+            ProviderResult::Ready { id, windows, .. } => {
+                assert_eq!(id, ProviderId::Antigravity);
+                assert!(windows.is_empty(), "{windows:?}");
+            }
+            other => panic!("expected ready, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn antigravity_error_status_is_a_provider_error() {
+        let fixture = include_str!("../../tests/fixtures/antigravity/failure.json");
+        let result = antigravity_from_usage_json(fixture, datetime!(2026-08-21 12:00:00 UTC));
+        assert_no_money(&result);
+        match result {
+            ProviderResult::ProviderError {
+                id,
+                message,
+                retryable,
+                ..
+            } => {
+                assert_eq!(id, ProviderId::Antigravity);
+                assert_eq!(message, "Antigravity usage command failed.");
+                assert!(!retryable);
+            }
+            other => panic!("expected ProviderError, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn antigravity_unreadable_json_is_a_provider_error() {
+        let result =
+            antigravity_from_usage_json("not json at all", datetime!(2026-08-21 12:00:00 UTC));
+        assert_no_money(&result);
+        match result {
+            ProviderResult::ProviderError { id, message, .. } => {
+                assert_eq!(id, ProviderId::Antigravity);
+                assert_eq!(message, "Antigravity returned unreadable usage output.");
+            }
+            other => panic!("expected ProviderError, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn antigravity_logged_out_payload_carries_no_windows() {
+        // The banner itself is classified by the adapter, which knows whether
+        // login is available; the parser only has to refuse to invent windows
+        // out of the empty group list that comes with it.
+        let fixture = include_str!("../../tests/fixtures/antigravity/unauthorized.json");
+        let result = antigravity_from_usage_json(fixture, datetime!(2026-08-21 12:00:00 UTC));
+        assert_no_money(&result);
+        match result {
+            ProviderResult::Ready { windows, .. } => assert!(windows.is_empty(), "{windows:?}"),
+            other => panic!("expected ready, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn antigravity_ignores_a_repeated_bucket_id() {
+        // Idempotence against repeated records: whatever makes a bucket id
+        // appear twice, the first occurrence wins, so a duplicated group can
+        // never double the window list.
+        let payload = r#"{"status":"SUCCESS","command":{"name":"usage","data":{"groups":[
+            {"name":"Gemini Models","buckets":[
+              {"id":"gemini-weekly","window":"weekly","remaining_fraction":0.86,
+               "reset_time":"2026-08-25T20:40:28Z"}]},
+            {"name":"Gemini Models","buckets":[
+              {"id":"gemini-weekly","window":"weekly","remaining_fraction":0.10,
+               "reset_time":"2026-08-25T20:40:28Z"}]}]}}}"#;
+        match antigravity_from_usage_json(payload, datetime!(2026-08-21 12:00:00 UTC)) {
+            ProviderResult::Ready { windows, .. } => {
+                assert_eq!(windows.len(), 1, "{windows:?}");
+                assert!((windows[0].remaining_percent() - 86.0).abs() < 0.01);
+            }
+            other => panic!("expected ready, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn antigravity_orders_weekly_before_the_five_hour_window() {
+        // The CLI is free to reorder its buckets; the rendered order is not.
+        let payload = r#"{"status":"SUCCESS","command":{"name":"usage","data":{"groups":[
+            {"name":"Gemini Models","buckets":[
+              {"id":"gemini-5h","window":"5h","remaining_fraction":1},
+              {"id":"gemini-weekly","window":"weekly","remaining_fraction":1}]}]}}}"#;
+        match antigravity_from_usage_json(payload, datetime!(2026-08-21 12:00:00 UTC)) {
+            ProviderResult::Ready { windows, .. } => {
+                assert_eq!(windows.len(), 2);
+                assert_eq!(windows[0].id(), "gemini-weekly");
+                assert_eq!(windows[1].id(), "gemini-5h");
+                // A bucket without `reset_time` is still a window.
+                assert_eq!(windows[0].resets_at(), None);
+            }
+            other => panic!("expected ready, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn antigravity_clamps_out_of_range_fractions() {
+        let payload = r#"{"status":"SUCCESS","command":{"name":"usage","data":{"groups":[
+            {"name":"Gemini Models","buckets":[
+              {"id":"gemini-weekly","window":"weekly","remaining_fraction":1.4},
+              {"id":"gemini-5h","window":"5h","remaining_fraction":-0.5}]}]}}}"#;
+        match antigravity_from_usage_json(payload, datetime!(2026-08-21 12:00:00 UTC)) {
+            ProviderResult::Ready { windows, .. } => {
+                assert_eq!(windows.len(), 2);
+                assert!((windows[0].remaining_percent() - 100.0).abs() < 0.01);
+                assert!((windows[0].used_percent() - 0.0).abs() < 0.01);
+                assert!((windows[1].remaining_percent() - 0.0).abs() < 0.01);
+                assert!((windows[1].used_percent() - 100.0).abs() < 0.01);
+            }
+            other => panic!("expected ready, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn antigravity_never_echoes_provider_prose() {
+        // `description` and `response` carry human text (and, on a logged-out
+        // run, an account hint); none of it may reach a domain result.
+        let fixture = include_str!("../../tests/fixtures/antigravity/usage.json");
+        let result = antigravity_from_usage_json(fixture, datetime!(2026-08-21 12:00:00 UTC));
+        let debug = format!("{result:?}");
+        assert!(!debug.contains("Models within this group"), "{debug}");
+        assert!(!debug.contains("fully refresh"), "{debug}");
     }
 }

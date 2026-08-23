@@ -12,7 +12,7 @@ use crate::providers::adapter::{CollectionContext, HttpClient};
 use crate::providers::catalog::ExecutionEnvironment;
 use crate::providers::http::ReqwestHttpClient;
 use crate::providers::process::{ProcessRunner, TokioProcessRunner};
-use crate::providers::{adapter_for, AMP, CLAUDE, CODEX, GROK};
+use crate::providers::{adapter_for, AMP, ANTIGRAVITY, CLAUDE, CODEX, GROK};
 use crate::settings::schema::Settings as SettingsDocument;
 use crate::settings::SettingsStore;
 use crate::status::collect::provider_status_from_result;
@@ -289,6 +289,7 @@ fn descriptor_ttl(id: ProviderId) -> std::time::Duration {
         ProviderId::Codex => CODEX.cache_ttl,
         ProviderId::Amp => AMP.cache_ttl,
         ProviderId::Grok => GROK.cache_ttl,
+        ProviderId::Antigravity => ANTIGRAVITY.cache_ttl,
     }
 }
 
@@ -299,6 +300,7 @@ fn fallback_provider_error(id: ProviderId, message: &str) -> ProviderStatus {
         ProviderId::Codex => "Codex",
         ProviderId::Amp => "Amp",
         ProviderId::Grok => "Grok",
+        ProviderId::Antigravity => "Antigravity",
     };
     #[allow(clippy::expect_used)]
     {
@@ -477,6 +479,42 @@ mod tests {
         assert_eq!(envelope.providers().len(), 1);
         assert_eq!(envelope.providers()[0].id(), ProviderId::Amp);
         assert_eq!(envelope.request().provider, Some(ProviderId::Amp));
+    }
+
+    #[tokio::test]
+    async fn collect_survives_a_settings_file_predating_a_catalog_addition() {
+        // A settings.json written before Antigravity joined the catalog must
+        // not break `status`: the store completes it from the catalog in
+        // memory, the newcomer stays disabled by default, and the file is left
+        // exactly as it was (SET-007).
+        let dir = tempfile::tempdir().unwrap();
+        let coord = coord_at(dir.path(), datetime!(2026-07-26 18:42:00 UTC));
+        let four = br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":true},{"id":"grok","enabled":true}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true}}"#;
+        std::fs::write(coord.settings_store.path(), four).unwrap();
+        let before = std::fs::read(coord.settings_store.path()).unwrap();
+
+        let envelope = coord
+            .collect(CollectRequest {
+                format: StatusFormat::Json,
+                provider: None,
+                cache: CacheMode::Bypass,
+                notifications: NotificationMode::Skip,
+            })
+            .await
+            .unwrap();
+
+        let ids: Vec<_> = envelope.providers().iter().map(|p| p.id()).collect();
+        assert_eq!(
+            ids,
+            vec![
+                ProviderId::Claude,
+                ProviderId::Codex,
+                ProviderId::Amp,
+                ProviderId::Grok,
+            ]
+        );
+        assert!(!ids.contains(&ProviderId::Antigravity));
+        assert_eq!(std::fs::read(coord.settings_store.path()).unwrap(), before);
     }
 
     #[tokio::test]

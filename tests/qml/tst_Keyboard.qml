@@ -25,10 +25,10 @@ TestCase {
   }
 
   function test_provider_jk_and_arrows_delta() {
-    var ids = ["claude", "codex", "amp", "grok"]
+    var ids = ["claude", "codex", "amp", "grok", "antigravity"]
     compare(Core.routeProviderDelta(ids, "claude", 1), "codex")
-    compare(Core.routeProviderDelta(ids, "grok", 1), "claude")
-    compare(Core.routeProviderDelta(ids, "claude", -1), "grok")
+    compare(Core.routeProviderDelta(ids, "antigravity", 1), "claude")
+    compare(Core.routeProviderDelta(ids, "claude", -1), "antigravity")
     compare(Core.routeProviderDelta(ids, "codex", -1), "claude")
   }
 

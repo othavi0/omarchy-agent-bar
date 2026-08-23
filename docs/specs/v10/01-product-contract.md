@@ -8,7 +8,7 @@ approved.
 ## Purpose
 
 Agent Bar shows normalized quota and reset information for Claude, Codex, Amp,
-and Grok in Omarchy Quattro. It provides one compact bar chip per enabled
+Grok, and Antigravity in Omarchy Quattro. It provides one compact bar chip per enabled
 provider and one consolidated Quickshell popup for details, settings,
 connection actions, update, and uninstall.
 
@@ -58,8 +58,8 @@ connection actions, update, and uninstall.
 Fresh installations use:
 
 ```text
-Provider order: Claude, Codex, Amp, Grok
-Enabled providers: all
+Provider order: Claude, Codex, Amp, Grok, Antigravity
+Enabled providers: all except Antigravity (disabled by default)
 Display metric: remaining
 Refresh interval: 60 seconds
 Notifications: enabled

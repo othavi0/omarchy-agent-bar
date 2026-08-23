@@ -34,6 +34,17 @@ TestCase {
     compare(v.ok, true)
   }
 
+  function test_default_settings_leaves_antigravity_disabled() {
+    var d = Service.defaultSettings()
+    var found = null
+    for (var i = 0; i < d.providers.length; i++) {
+      if (d.providers[i].id === "antigravity")
+        found = d.providers[i]
+    }
+    verify(found !== null)
+    compare(found.enabled, false)
+  }
+
   function test_provider_toggle_and_order() {
     var d = Service.defaultSettings()
     d = Core.setProviderEnabled(d, "codex", false)
@@ -41,7 +52,7 @@ TestCase {
     compare(d.providers[1].enabled, false)
 
     d = Core.moveProvider(d, "grok", -1) // amp, grok swap near end
-    // default: claude, codex, amp, grok → move grok up → claude, codex, grok, amp
+    // default: claude, codex, amp, grok, antigravity → move grok up → claude, codex, grok, amp, antigravity
     compare(d.providers[2].id, "grok")
     compare(d.providers[3].id, "amp")
 
@@ -100,6 +111,20 @@ TestCase {
     compare(state.draft.providers[0].enabled, true)
     // Snapshot untouched
     compare(state.snapshot.providers[0].enabled, true)
+  }
+
+  function test_restore_defaults_does_not_enable_antigravity() {
+    var state = Core.settingsOpen(null, Service.defaultSettings(), 1)
+    state = Core.settingsMarkDirty(state)
+    state.draft = Core.setProviderEnabled(state.draft, "antigravity", true)
+    state = Core.settingsRestoreDefaults(state)
+    var found = null
+    for (var i = 0; i < state.draft.providers.length; i++) {
+      if (state.draft.providers[i].id === "antigravity")
+        found = state.draft.providers[i]
+    }
+    verify(found !== null)
+    compare(found.enabled, false)
   }
 
   function test_cancel_restores_snapshot() {

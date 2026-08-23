@@ -55,12 +55,58 @@ fn servicecore_enums_match_schema() {
     );
 
     let providers = extract_keys(&js, "CLOSED_PROVIDERS");
-    let expected_providers: BTreeSet<String> = ["claude", "codex", "amp", "grok"]
+    let expected_providers: BTreeSet<String> = ["claude", "codex", "amp", "grok", "antigravity"]
         .into_iter()
         .map(str::to_owned)
         .collect();
     assert_eq!(
         providers, expected_providers,
         "CLOSED_PROVIDERS drifted from ProviderId"
+    );
+}
+
+/// `providers` rows of `defaultSettings()` in CoreService.js, in file order.
+fn default_settings_providers(js: &str) -> Vec<(String, bool)> {
+    let start = js
+        .find("function defaultSettings()")
+        .expect("defaultSettings() not found in CoreService.js");
+    let rest = &js[start..];
+    let open = rest
+        .find("providers: [")
+        .expect("defaultSettings() has no providers array")
+        + "providers: [".len();
+    let close = open
+        + rest[open..]
+            .find(']')
+            .expect("unterminated providers array");
+    rest[open..close]
+        .split('{')
+        .skip(1)
+        .map(|entry| {
+            let id = entry
+                .split('"')
+                .nth(1)
+                .unwrap_or_else(|| panic!("provider row without a quoted id: {entry}"));
+            (id.to_owned(), entry.contains("enabled: true"))
+        })
+        .collect()
+}
+
+/// The QML fallback document is a hand-copy of `Settings::defaults()`. A
+/// disagreement here ships a bar whose default enablement differs from what
+/// the helper writes on first run, which is invisible until a user without a
+/// settings.json opens the popup.
+#[test]
+fn servicecore_default_settings_match_rust_defaults() {
+    let js = std::fs::read_to_string("CoreService.js").expect("read CoreService.js");
+    let js_providers = default_settings_providers(&js);
+    let rust_providers: Vec<(String, bool)> = agent_bar::settings::schema::Settings::defaults()
+        .providers
+        .into_iter()
+        .map(|p| (p.id.0.as_str().to_owned(), p.enabled))
+        .collect();
+    assert_eq!(
+        js_providers, rust_providers,
+        "defaultSettings() providers drifted from Settings::defaults()"
     );
 }

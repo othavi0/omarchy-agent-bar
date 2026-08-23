@@ -47,7 +47,8 @@ exists.
     { "id": "claude", "enabled": true },
     { "id": "codex", "enabled": true },
     { "id": "amp", "enabled": true },
-    { "id": "grok", "enabled": true }
+    { "id": "grok", "enabled": true },
+    { "id": "antigravity", "enabled": false }
   ],
   "display": {
     "metric": "remaining"
@@ -81,7 +82,7 @@ Corrupt cache is quarantined and rebuilt. Temporary provider failure retains
 last good data as stale.
 
 Per-provider cache TTLs are fixed in the catalog: Claude 300 seconds;
-Codex, Amp, and Grok 90 seconds each.
+Codex, Amp, Grok, and Antigravity 90 seconds each.
 
 ## Provider data sources
 
@@ -89,6 +90,10 @@ Codex, Amp, and Grok 90 seconds each.
 - Codex may use app-server with a bounded local fallback.
 - Amp uses its official usage command.
 - Grok may use local auth for an authenticated billing HTTPS request.
+- Antigravity uses its official `agy --print /usage --output-format json`
+  command, reads the `gemini-weekly` and `gemini-5h` buckets by id, and reads
+  no credential files. It requires `agy` 1.1.11 or newer; older builds send
+  `/usage` to the model as a prompt instead of printing usage data.
 
 Collection discovery is separate from interactive login-CLI discovery.
 
