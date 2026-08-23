@@ -9,11 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- feat: Antigravity usage and quota support via `agy --print /usage`, reporting
-  `gemini-weekly` and `gemini-5h` percentage windows. Disabled by default —
+- feat: Antigravity usage and quota support via
+  `agy --print /usage --output-format json`, reading the `gemini-weekly` and
+  `gemini-5h` buckets by id into percentage windows. Disabled by default —
   opt in via Settings on both fresh and existing installs. This is a new,
   credential-free integration, not a revival of the `~/.gemini`
-  credential/plan reading this project removed previously.
+  credential/plan reading this project removed previously. Requires `agy`
+  1.1.11 or newer; older builds send `/usage` to the model as a prompt
+  instead of printing usage data. Existing installs keep working: missing
+  providers read as their catalog default until the next settings apply.
+- fix: type `IpcHandler` parameters in `Service.qml`
+  (`health(expectedVersion: string)`, `refresh(providerId: string)`).
 
 ### Changed
 

@@ -169,7 +169,8 @@ provider_error
 - `JSON-009`: `schemaVersion` is integer `2`.
 - `JSON-009A`: `helperVersion` is the helper's strict semantic version and
   equals the plugin manifest version in a healthy bundle.
-- `JSON-010`: Provider IDs are `claude`, `codex`, `amp`, or `grok`.
+- `JSON-010`: Provider IDs are `claude`, `codex`, `amp`, `grok`, or
+  `antigravity`.
 - `JSON-011`: `source` is `live`, `cache`, or `null`.
 - `JSON-012`: Percentages are finite numbers in `0..=100`.
 - `JSON-013`: Used plus remaining equals `100` within `0.01`.

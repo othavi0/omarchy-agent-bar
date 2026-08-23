@@ -52,13 +52,17 @@ Only the shared Quickshell service uses `notifications evaluate`.
 Login delegates to the official provider CLI. Agent Bar never receives
 credentials and preserves the meaningful provider exit status.
 
+Antigravity has no login command; its catalog entry carries an empty login
+argv, so `"$PLUGIN" login antigravity` never launches a CLI and fails with
+`Antigravity has no login command; sign in inside the provider CLI instead`.
+
 ## Settings
 
 ```bash
 "$PLUGIN" config show
 "$PLUGIN" config apply stdin
 "$PLUGIN" config apply file /path/to/settings.json
-"$PLUGIN" config apply json '{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":true},{"id":"grok","enabled":true}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true,"reminderMinutes":120}}'
+"$PLUGIN" config apply json '{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":true},{"id":"grok","enabled":true},{"id":"antigravity","enabled":false}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true,"reminderMinutes":120}}'
 ```
 
 `show` is read-only. `apply` requires one complete valid settings document and

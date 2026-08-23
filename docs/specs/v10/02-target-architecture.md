@@ -201,7 +201,7 @@ The v10 provider catalog is:
 | `codex` | Codex | `codex` | `PATH`, then `$HOME/.local/bin/codex` | `["codex", "login"]` | `https://github.com/openai/codex` |
 | `amp` | Amp | `amp` | `PATH`, then `$HOME/.local/bin/amp`, `$HOME/.amp/bin/amp`, `$HOME/.cache/.bun/bin/amp`, `$HOME/.bun/bin/amp` | `["amp", "login"]` | `https://ampcode.com/manual` |
 | `grok` | Grok | `grok` | `PATH`, then `$GROK_HOME/bin/grok`, `$HOME/.grok/bin/grok`, `$HOME/.local/bin/grok` | `["grok", "login"]` | `https://x.ai/cli` |
-| `antigravity` | Antigravity | `antigravity` | `PATH`, then `$HOME/.local/bin/agy`, `$HOME/.gemini/antigravity-cli/bin/agy` | none (login unavailable) | `https://antigravity.google` |
+| `antigravity` | Antigravity | `antigravity` | `PATH`, then `$HOME/.local/bin/agy` | none (login unavailable) | `https://antigravity.google` |
 
 Locked collection policy:
 
@@ -211,12 +211,12 @@ Locked collection policy:
 | `codex` | resolved `codex app-server` JSON-RPC `rateLimits/read`, then newest valid rate-limit event below `$HOME/.codex/sessions` | `session`, `weekly`, then `other:<duration-minutes>:<ordinal>` | 90 s | 10 s | one app-server timeout retry before filesystem fallback |
 | `amp` | resolved `amp usage` with `NO_COLOR=1`, `TERM=dumb` | `daily`, or no windows when the account exposes no percentage | 90 s | 10 s | one timeout/process-I/O retry |
 | `grok` | `$GROK_HOME/auth.json`, then authenticated GET `https://cli-chat-proxy.grok.com/v1/billing?format=credits` (literal; headers Authorization Bearer + x-grok-client-mode) | `weekly` | 90 s | 10 s | one network/timeout retry |
-| `antigravity` | resolved `agy --print /usage` with `NO_COLOR=1`, `TERM=dumb` | `gemini-weekly`, `gemini-5h` | 60 s | 10 s | one timeout/process-I/O retry |
+| `antigravity` | resolved `agy --version` (requires 1.1.11 or newer, because older builds send `/usage` to the model as a prompt) then `agy --print /usage --output-format json` with `NO_COLOR=1`, `TERM=dumb`; windows come from the `gemini-weekly` and `gemini-5h` bucket ids, the `Claude and GPT models` group is ignored | `gemini-weekly`, `gemini-5h` | 90 s | 10 s | none |
 
 Antigravity was removed once (see `CHANGELOG.md`) when it read credentials and
 plan data out of a `~/.gemini` layout that no longer matches current installs.
 This reintroduction is a different integration: it runs `agy`'s own `/usage`
-text output through the same collection/normalization path as Amp, reads no
+JSON output through the same collection/normalization path as Amp, reads no
 credential files, and reports no account or plan — a connected provider with
 no plan is a valid, fully rendered state.
 
@@ -240,7 +240,8 @@ nonzero usage-command results are never retried. Adapter source fallback is
 not counted as a retry.
 
 Provider labels are fixed English copy: Claude `Session`/`Weekly`, Codex
-`Session`/`Weekly`, Amp `Daily`, and Grok `Weekly`. Dynamic model labels are
+`Session`/`Weekly`, Amp `Daily`, Grok `Weekly`, and Antigravity
+`Session (5h)`/`Weekly (7d)`. Dynamic model labels are
 sanitized plain text. A dynamic Claude model ID is lowercased, limited to
 ASCII letters/digits/hyphens, and prefixed with `weekly-model:`; collisions
 receive the deterministic source-order suffix `:2`, `:3`, and so on. Monetary

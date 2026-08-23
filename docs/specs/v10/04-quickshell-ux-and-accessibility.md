@@ -178,8 +178,13 @@ Requirements:
   Grok) are stored as white-on-transparency masks: the runtime always
   renders them through `MultiEffect` colorization, which multiplies mask
   luminance by the theme foreground, so the stored white never reaches the
-  screen raw. Claude and Amp keep their official brand colors and are never
-  tinted.
+  screen raw. Claude, Amp, and Antigravity keep their official brand colors
+  and are never tinted. The Antigravity icon is the official Google
+  Antigravity mark (adopted 2026-08-22, sha256
+  `5d7bd3d86c72d5086e36beb40c259e45c58c952983abbe3059c42414593ae2e1`), a
+  polychrome 48x48 truecolor+alpha PNG, pinned the same way as the Codex
+  mark so a re-export at the wrong size or encoding fails the icon-asset
+  test.
 - `UX-050`: Generic controls use Quattro controls and its active font stack.
 - `UX-051`: Refresh uses `󰑐`.
 - `UX-052`: Settings uses `󰒓`.

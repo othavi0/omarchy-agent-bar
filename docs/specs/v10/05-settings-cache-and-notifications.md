@@ -9,7 +9,8 @@
     { "id": "claude", "enabled": true },
     { "id": "codex", "enabled": true },
     { "id": "amp", "enabled": true },
-    { "id": "grok", "enabled": true }
+    { "id": "grok", "enabled": true },
+    { "id": "antigravity", "enabled": false }
   ],
   "display": {
     "metric": "remaining"
@@ -23,12 +24,15 @@
 ```
 
 - `SET-001`: `settings.json` is the only product settings source.
-- `SET-002`: Every supported provider appears exactly once.
+- `SET-002`: Every supported provider, including `antigravity`, appears
+  exactly once regardless of its `enabled` value.
 - `SET-003`: Array order is provider display order.
 - `SET-004`: `display.metric` is `used` or `remaining`.
 - `SET-005`: `refreshIntervalSeconds` is an integer in `30..=3600`.
-- `SET-006`: Unknown keys, duplicate providers, unknown providers, missing
-  providers, and invalid values are rejected.
+- `SET-006`: Unknown keys, duplicate providers, unknown providers, and invalid
+  values are rejected. `apply` also rejects a document missing a provider from
+  the catalog. A read (`config show`, `status`) tolerates a missing provider
+  instead; see `SET-024`.
 - `SET-007`: Reads never rewrite, migrate, normalize, or delete keys.
 - `SET-008`: Missing settings return defaults without creating a file.
 - `SET-009`: Explicit apply, setup, or migration are the only writers.
@@ -68,6 +72,19 @@ closed
   failed or invalid startup read keeps in-memory defaults, and a load or save
   completed through the popup is newer than the startup read and wins. The
   startup read never touches the popup snapshot state above.
+- `SET-024`: A read (`config show`, `status`) against a `settings.json`
+  document missing a provider added after that document was written treats
+  the missing provider as present with its catalog default `enabled` value,
+  entirely in memory; it never writes. `apply` on the same document is still
+  strict and rejects it under `SET-006`. Only migration (`setup`, run against
+  a file whose `schemaVersion` is already current but whose `providers` array
+  predates a newly added provider, and which already contains every provider
+  that existed when the document was written) injects the missing provider at
+  the end of the array with its catalog default `enabled` value and writes
+  the rewritten document back atomically; see `MIG-009A`. A document missing
+  one of its original providers (not just a provider added later) does not
+  qualify for this in-place injection and instead follows the v9/defaults
+  migration path.
 
 ## Cache files
 
