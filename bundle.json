@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "pluginId": "othavi0.agent-bar",
-  "version": "10.3.11",
+  "version": "10.3.12",
   "target": "x86_64-unknown-linux-gnu",
   "omarchyContract": 1,
   "minimumQuickshellVersion": "0.3.0",
-  "sourceCommit": "d77c0bebe3ae50a3546b31c4c470eb16e1b0ef44",
+  "sourceCommit": "f2b7438d17f835bcfc5af5253e73ff40ed10ef6a",
   "files": [
     {
       "path": "BarWidget.qml",
@@ -27,20 +27,20 @@
     },
     {
       "path": "CoreService.js",
-      "sha256": "a47adf48ad0eafd908ebd5899b3b03a6d8e78c1578735428a0a7af73f914c040",
-      "size": 9451,
+      "sha256": "a77c274ff923447bdad64d65fdaa85d294ea62dc84d0cfe4a2b03e4679ad3d7b",
+      "size": 9519,
       "mode": "0644"
     },
     {
       "path": "CoreSettings.js",
-      "sha256": "185e1df8c27af40b0feb271d696f6db3c122ec30504cb506aaa499c5fee354c3",
-      "size": 9288,
+      "sha256": "5708c9d4558559c7cbfc477ebc72f11a5334f842dec8d7173712b2672673f73e",
+      "size": 9336,
       "mode": "0644"
     },
     {
       "path": "CoreView.js",
-      "sha256": "8b52a5e214d7a1a6113efd4c80e4df8d8fc264c757d2811f7937115f1fe31bb6",
-      "size": 24420,
+      "sha256": "49bb818a194fca8764fb2df6e59c715b9c4f3b846ae0255ca4070286199908bb",
+      "size": 24532,
       "mode": "0644"
     },
     {
@@ -75,14 +75,14 @@
     },
     {
       "path": "README.md",
-      "sha256": "d243ec4c3a09d65f90296c95bfe344720c7959f8c2eb6dc26166428e3f392bf6",
-      "size": 3664,
+      "sha256": "66c6545d6f8f24dd61096af548832367984085f4ef42475b03cd5a96c4c5c613",
+      "size": 3309,
       "mode": "0644"
     },
     {
       "path": "Service.qml",
-      "sha256": "254add6438a8fbf514c28501a095979fa8f131479adc88fd3439859fbabf31b1",
-      "size": 29213,
+      "sha256": "1a38d679b02ee8333162c631a946f0c566a89efb31a9de58154dc38042b1ab22",
+      "size": 29229,
       "mode": "0644"
     },
     {
@@ -93,8 +93,8 @@
     },
     {
       "path": "bin/agent-bar",
-      "sha256": "96d9dac87ed053cd72ddc42a292a464055ec3a04c5006034c287dba7130ab248",
-      "size": 4078048,
+      "sha256": "083e5f42a2829ee41bddda5a9fbcaa17bab307fcaece54892f470e7d4b836775",
+      "size": 4104224,
       "mode": "0755"
     },
     {
@@ -177,8 +177,8 @@
     },
     {
       "path": "manifest.json",
-      "sha256": "76dea331fd76c13c8514ab9e1c913eacc0221a37f6d157dde63b0edcfbc80d7d",
-      "size": 620,
+      "sha256": "a12df86a52ff36731b6df3aaf39ea9db023e58800a3c2605657f73a779b5a7b5",
+      "size": 633,
       "mode": "0644"
     },
     {

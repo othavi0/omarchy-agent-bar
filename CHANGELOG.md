@@ -26,6 +26,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - fix: key notification state by window, not reset
 - feat: repeat alerts on a configurable reminder
 
+## [10.3.12] - 2026-08-23
+
+### Changed
+
+- docs: align v10 specs and guides with Antigravity
+- refactor: read Antigravity usage from JSON buckets
+- fix: keep settings reads strict except catalog growth
+- fix: disable Antigravity by default in QML too
+- fix: type IpcHandler params for othavi0.agent-bar
+- fix: address review feedback for Antigravity
+- docs: enxuga prosa do README
+- feat: display active subscription plan tier for Antigravity
+- feat: filter out Claude/GPT models from Antigravity provider
+- feat: add Antigravity usage and quota support
+
 ## [10.3.11] - 2026-08-21
 
 ### Changed
