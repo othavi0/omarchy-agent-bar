@@ -607,7 +607,25 @@ mod tests {
         let ready = ready_claude(now);
         doc.providers.insert(
             "claude".into(),
-            entry_from_status(ready, now, now, std::time::Duration::from_secs(300)),
+            entry_from_status(ready.clone(), now, now, std::time::Duration::from_secs(300)),
+        );
+        assert!(doc.is_fresh(ProviderId::Claude, now));
+        assert!(!doc.is_fresh(ProviderId::Claude, now + time::Duration::seconds(301)));
+
+        // A Stale row (retained prior windows after a temporary failure) must
+        // stay fresh too, exercising the ProviderState::Stale arm.
+        let live = ProviderStatus::network_error(
+            ProviderId::Claude,
+            "Claude",
+            ProviderError::new(ErrorCode::NetworkError, "down", true),
+            ProviderAction::retry("Retry"),
+        )
+        .unwrap();
+        let stale = apply_stale_retention(live, Some(&ready)).unwrap();
+        assert_eq!(stale.state(), ProviderState::Stale);
+        doc.providers.insert(
+            "claude".into(),
+            entry_from_status(stale, now, now, std::time::Duration::from_secs(300)),
         );
         assert!(doc.is_fresh(ProviderId::Claude, now));
         assert!(!doc.is_fresh(ProviderId::Claude, now + time::Duration::seconds(301)));
