@@ -1,16 +1,18 @@
 # Agent Bar
 
-Agent Bar puts your AI quota in the Omarchy bar. One chip per provider
-(Claude, Codex, Amp, Grok, Antigravity), a popup with every usage window,
-and a countdown to the next reset.
+Agent Bar puts your AI quota in the Omarchy bar. One chip per enabled
+provider, a popup with every usage window, and a countdown to the next
+reset. A fresh install shows Claude and Codex; Amp, Grok, and Antigravity
+are one toggle away in Settings.
 
 ![Agent Bar preview](preview.png)
 
 ## What you see
 
 Each enabled provider gets a chip with its icon and a percentage, used or
-remaining, whichever you prefer. Click it and the popup opens with the
-plan tag (`MAX 20X`, for example), a lead window showing both the
+remaining, whichever you prefer. Turning one on before its CLI is installed
+is fine: the chip dims and links to the install page. Click it and the
+popup opens with the plan tag (`MAX 20X`, for example), a lead window showing both the
 countdown and the wall-clock reset, and every other window as a row with
 its own usage track.
 

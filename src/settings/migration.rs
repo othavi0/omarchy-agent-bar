@@ -332,6 +332,11 @@ fn extract_inline_refresh_seconds(raw: &[u8]) -> Result<Option<u32>, MigrationEr
 ///
 /// v9 shipped exactly these four; Antigravity and anything added later cannot
 /// appear in a v9 file, so no v9 document carries a choice for them.
+///
+/// Identical today to `schema::ORIGINAL_V10_PROVIDERS` and deliberately kept
+/// separate: that one is the gate for repairing a v10 document, this one is a
+/// fact about what v9 shipped. Neither grows when the catalog does, but they
+/// answer different questions and would diverge for different reasons.
 const V9_PROVIDERS: &[ProviderId] = &[
     ProviderId::Claude,
     ProviderId::Codex,
@@ -339,18 +344,33 @@ const V9_PROVIDERS: &[ProviderId] = &[
     ProviderId::Grok,
 ];
 
+/// What a migrated document says about which providers the user wanted.
+enum V9Choice {
+    /// `waybar.providers` named them. That list IS the choice.
+    Listed(HashSet<ProviderId>),
+    /// A v9 document whose `waybar` block omits `providers`: v9 rendered every
+    /// provider it knew, so the user was seeing all four and never opted out.
+    AllV9Providers,
+    /// No `waybar` block at all — not a v9 document, so there is no choice to
+    /// carry over and the fresh-install defaults apply.
+    NoV9Block,
+}
+
 /// Whether a migrated row starts enabled.
 ///
-/// MIG-009 / PROD-024: when the v9 document listed its providers, that list IS
-/// the user's explicit choice and outranks the v10 default — a provider that
-/// ships opt-in today must still come across enabled when the v9 file asked
-/// for it. Two cases fall back to `default_enabled`: an ID v9 never had, and a
-/// document that listed nothing, which recorded no choice to honour.
-fn v9_enabled(id: ProviderId, listed_providers: bool, enabled_set: &HashSet<ProviderId>) -> bool {
-    if listed_providers && V9_PROVIDERS.contains(&id) {
-        enabled_set.contains(&id)
-    } else {
-        default_enabled(id)
+/// MIG-009 / PROD-024: migration preserves the user's choice instead of
+/// applying fresh defaults, so a provider that ships opt-in today still comes
+/// across enabled when the v9 install had it on. Only an ID v9 never had, or a
+/// document that was never v9 to begin with, falls back to `default_enabled`.
+fn v9_enabled(id: ProviderId, choice: &V9Choice) -> bool {
+    if !V9_PROVIDERS.contains(&id) {
+        // Added after v9: no v9 document carries a choice for it.
+        return default_enabled(id);
+    }
+    match choice {
+        V9Choice::Listed(chosen) => chosen.contains(&id),
+        V9Choice::AllV9Providers => true,
+        V9Choice::NoV9Block => default_enabled(id),
     }
 }
 
@@ -425,15 +445,6 @@ fn migrate_v9_settings(raw: &[u8]) -> Result<(Settings, Vec<String>, bool), Migr
         .and_then(|v| v.as_bool())
         .unwrap_or(true);
 
-    // A present `waybar.providers` IS the user's choice; an absent one records
-    // no choice at all, and only the full catalog list below stands in for it
-    // so ordering and validation still see every ID. `v9_enabled` reads the
-    // distinction: absent means the v10 default decides.
-    let listed_providers = waybar
-        .and_then(|w| w.get("providers"))
-        .and_then(|v| v.as_array())
-        .is_some();
-
     let enabled_list: Vec<String> = waybar
         .and_then(|w| w.get("providers"))
         .and_then(|v| v.as_array())
@@ -475,6 +486,17 @@ fn migrate_v9_settings(raw: &[u8]) -> Result<(Settings, Vec<String>, bool), Migr
         .filter_map(|s| ProviderId::parse_word(s))
         .collect();
 
+    // `enabled_list` stands in the full catalog when the key is absent so that
+    // ordering and validation still see every ID. Enablement needs the finer
+    // distinction, which only the raw document carries.
+    let choice = match waybar {
+        None => V9Choice::NoV9Block,
+        Some(w) => match w.get("providers").and_then(|v| v.as_array()) {
+            Some(_) => V9Choice::Listed(enabled_set.clone()),
+            None => V9Choice::AllV9Providers,
+        },
+    };
+
     // Build order: first closed IDs from providerOrder, then remaining ALL.
     let mut providers = Vec::new();
     let mut seen: HashSet<ProviderId> = HashSet::new();
@@ -483,7 +505,7 @@ fn migrate_v9_settings(raw: &[u8]) -> Result<(Settings, Vec<String>, bool), Migr
             if seen.insert(id) {
                 providers.push(ProviderSetting {
                     id: ProviderIdJson(id),
-                    enabled: v9_enabled(id, listed_providers, &enabled_set),
+                    enabled: v9_enabled(id, &choice),
                 });
             }
         }
@@ -492,14 +514,14 @@ fn migrate_v9_settings(raw: &[u8]) -> Result<(Settings, Vec<String>, bool), Migr
         if seen.insert(id) {
             providers.push(ProviderSetting {
                 id: ProviderIdJson(id),
-                enabled: v9_enabled(id, listed_providers, &enabled_set),
+                enabled: v9_enabled(id, &choice),
             });
         }
     }
 
-    // Nothing survived the mapping: the v9 document named no provider this
-    // catalog still knows. Fall back to the fresh-install defaults rather than
-    // handing the user an empty bar.
+    // Nothing survived the mapping: the document named zero providers, or only
+    // names this catalog no longer knows. Fall back to the fresh-install
+    // defaults rather than handing the user an empty bar.
     if providers.iter().all(|p| !p.enabled) {
         for p in &mut providers {
             p.enabled = default_enabled(p.id.0);
@@ -745,6 +767,52 @@ mod tests {
     }
 
     #[test]
+    fn a_v9_block_without_a_provider_list_keeps_every_v9_provider() {
+        // v9 rendered all four providers unless the user opted out through
+        // `waybar.providers`. A document that never wrote the key was showing
+        // all four, so migration must not read the absent key as consent to
+        // the v10 opt-in defaults (MIG-009, PROD-024) — the plan is written to
+        // disk, which would make the loss permanent.
+        for raw in [
+            br#"{"version":3,"waybar":{"displayMode":"remaining","interval":60}}"#.as_slice(),
+            br#"{"version":3,"waybar":{"providerOrder":["grok","claude"],"interval":60}}"#
+                .as_slice(),
+        ] {
+            let plan = MigrationPlan::from_v9(Some(raw), None).unwrap();
+            for id in V9_PROVIDERS {
+                let row = plan
+                    .settings
+                    .providers
+                    .iter()
+                    .find(|p| p.id.0 == *id)
+                    .unwrap_or_else(|| panic!("{id} present"));
+                assert!(row.enabled, "{id} was visible in v9 and must stay enabled");
+            }
+            let antigravity = plan
+                .settings
+                .providers
+                .iter()
+                .find(|p| p.id.0 == ProviderId::Antigravity)
+                .unwrap();
+            assert!(
+                !antigravity.enabled,
+                "v9 never had antigravity, so it takes the v10 default"
+            );
+        }
+    }
+
+    #[test]
+    fn an_empty_v9_provider_list_falls_back_to_the_defaults() {
+        // Naming zero providers leaves nothing to preserve. Rather than an
+        // empty bar, the user gets what a fresh install would give them.
+        let raw = br#"{"version":3,"waybar":{"providers":[],"interval":60}}"#;
+        let plan = MigrationPlan::from_v9(Some(raw), None).unwrap();
+        for row in &plan.settings.providers {
+            assert_eq!(row.enabled, default_enabled(row.id.0), "{}", row.id.0);
+        }
+    }
+
+    #[test]
     fn rejects_invalid_interval() {
         let raw = read_fixture("settings-invalid-interval.json");
         let err = MigrationPlan::from_v9(Some(&raw), None).unwrap_err();
@@ -824,9 +892,12 @@ mod tests {
     #[test]
     fn injected_rows_follow_default_enabled() {
         // The injected row must be whatever `default_enabled` says, not a
-        // hard-coded false: the catalog is the single source for that. The
-        // four rows the document already carries are the user's and survive
-        // untouched, even where the fresh-install default now differs.
+        // hard-coded false: the catalog is the single source for that. Today
+        // both spellings agree, since antigravity is the only injectable row
+        // and its default is false; the assertion starts biting when a
+        // provider that ships enabled joins the catalog. The four rows the
+        // document already carries are the user's and survive untouched, even
+        // where the fresh-install default now differs.
         let four = br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":true},{"id":"grok","enabled":true}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true}}"#;
         let plan = MigrationPlan::from_v9(Some(four), None).unwrap();
         for id in V9_PROVIDERS {

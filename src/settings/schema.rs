@@ -409,12 +409,15 @@ mod tests {
     #[test]
     fn filled_rows_come_from_default_enabled_not_a_hard_coded_false() {
         // A document with the four original providers but without the later
-        // addition: the filled row must match what `Settings::defaults` would
-        // have written for it, so a future provider that ships enabled is not
-        // silently turned off by a read. The rows the user already has are
-        // theirs — a read never rewrites them to the default (SET-007), which
-        // is why amp and grok stay on here while a fresh install ships them
-        // off.
+        // addition. Two things are being pinned. The rows the user already has
+        // are theirs: a read never rewrites them to the default (SET-007),
+        // which is why amp and grok stay on here while a fresh install ships
+        // them off. And the filled row reads `default_enabled` rather than a
+        // hard-coded false, so a future provider that ships enabled is not
+        // silently turned off by a read. Only the second half is weakly
+        // covered today: antigravity is the sole injectable row and its
+        // default is already false, so the two spellings agree by accident.
+        // Adding a provider that ships enabled is what makes this bite.
         let four = br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":true},{"id":"grok","enabled":true}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true}}"#;
         let (filled, injected) =
             Settings::parse_with_policy(four, MissingProviders::FillFromCatalog).unwrap();
