@@ -916,6 +916,85 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn claude_500_with_auth_wording_is_not_unauthenticated() {
+        let http = ScriptedHttpClient::single(Ok(HttpResponse {
+            status: 500,
+            final_url: CLAUDE_USAGE_URL.into(),
+            body: br#"{"error":"authorization server unavailable"}"#.to_vec(),
+        }));
+        let process = ScriptedProcess::one(fake_process_output(0, "", ""));
+        let mut fs = MapFileSystem::default();
+        fs.files.insert(
+            std::path::PathBuf::from("/home/u/.claude/.credentials.json"),
+            br#"{"claudeAiOauth":{"accessToken":"SECRET_TOKEN_VALUE","subscriptionType":"pro"}}"#
+                .to_vec(),
+        );
+        let env = ExecutionEnvironment {
+            home: std::path::PathBuf::from("/home/u"),
+            path_dirs: vec![],
+            grok_home: None,
+        };
+        let clock = FixedClock(datetime!(2026-07-26 18:00:00 UTC));
+        let ctx = CollectionContext {
+            env: &env,
+            clock: &clock,
+            fs: &fs,
+            process: &process,
+            http: &http,
+            plugin_root: None,
+        };
+        let discovery = discovery_with_exe(Path::new("/usr/bin/claude"));
+        let result = CLAUDE_ADAPTER.collect(&ctx, &discovery).await;
+        assert!(!format!("{result:?}").contains("SECRET_TOKEN_VALUE"));
+        assert!(
+            !matches!(result, ProviderResult::Unauthenticated { .. }),
+            "status 500 is operational, got {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn grok_500_with_auth_wording_is_not_unauthenticated() {
+        let http = ScriptedHttpClient::single(Ok(HttpResponse {
+            status: 500,
+            final_url: GROK_BILLING_URL.into(),
+            body: br#"{"error":"authorization server unavailable"}"#.to_vec(),
+        }));
+        let process = empty_process();
+        let mut fs = MapFileSystem::default();
+        let env = grok_test_env_and_auth(&mut fs);
+        let clock = FixedClock(datetime!(2026-07-26 18:00:00 UTC));
+        let ctx = CollectionContext {
+            env: &env,
+            clock: &clock,
+            fs: &fs,
+            process: &process,
+            http: &http,
+            plugin_root: None,
+        };
+        let discovery = Discovery {
+            collection: CollectionAvailability::Missing,
+            login: LoginAvailability::Available {
+                executable: std::path::PathBuf::from("/usr/bin/grok"),
+            },
+        };
+        let result = GROK_ADAPTER.collect(&ctx, &discovery).await;
+        assert!(
+            !matches!(result, ProviderResult::Unauthenticated { .. }),
+            "status 500 is operational, got {result:?}"
+        );
+    }
+
+    #[test]
+    fn antigravity_auth_wording_without_marker_is_not_unauthenticated() {
+        let out = fake_process_output(1, "", "authorization server unavailable");
+        let result = classify_antigravity_failure(&out, true);
+        assert!(
+            matches!(result, ProviderResult::ProviderError { .. }),
+            "got {result:?}"
+        );
+    }
+
+    #[tokio::test]
     async fn amp_missing_collection_source() {
         let process = ScriptedProcess::one(ProcessOutput {
             exit_code: Some(0),
