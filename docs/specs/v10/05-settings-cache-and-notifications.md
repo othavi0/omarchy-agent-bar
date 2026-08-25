@@ -8,8 +8,8 @@
   "providers": [
     { "id": "claude", "enabled": true },
     { "id": "codex", "enabled": true },
-    { "id": "amp", "enabled": true },
-    { "id": "grok", "enabled": true },
+    { "id": "amp", "enabled": false },
+    { "id": "grok", "enabled": false },
     { "id": "antigravity", "enabled": false }
   ],
   "display": {
@@ -95,6 +95,13 @@ closed
   document) moves the dialog to a terminal `load_failed` phase: controls stay
   locked, no snapshot is fabricated, and the view renders fixed copy naming
   the recovery step (restart the shell). It never stays in `loading`.
+- `SET-027`: A first run enables Claude and Codex only. Amp, Grok, and
+  Antigravity are opt-in from Settings, so a provider whose CLI is absent
+  never renders as a chip nobody asked for. The default table is an
+  exhaustive match over the catalog: adding a provider fails to compile
+  until its default is chosen. Existing documents are untouched, because a
+  read never rewrites a row it already has (`SET-007`), and a migrated v9
+  choice outranks this default (`MIG-009`, `PROD-024`).
 
 ## Cache files
 

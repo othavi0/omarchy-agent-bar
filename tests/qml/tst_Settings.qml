@@ -34,15 +34,26 @@ TestCase {
     compare(v.ok, true)
   }
 
-  function test_default_settings_leaves_antigravity_disabled() {
-    var d = Service.defaultSettings()
-    var found = null
-    for (var i = 0; i < d.providers.length; i++) {
-      if (d.providers[i].id === "antigravity")
-        found = d.providers[i]
+  function test_default_settings_enable_only_claude_and_codex() {
+    // SET-027: a first run shows only the two providers nearly every user has
+    // a CLI for. This table must stay identical to `default_enabled` on the
+    // Rust side, which tests/servicecore_contract.rs enforces.
+    var expected = {
+      claude: true,
+      codex: true,
+      amp: false,
+      grok: false,
+      antigravity: false
     }
-    verify(found !== null)
-    compare(found.enabled, false)
+    var d = Service.defaultSettings()
+    var seen = 0
+    for (var i = 0; i < d.providers.length; i++) {
+      var row = d.providers[i]
+      verify(expected[row.id] !== undefined)
+      compare(row.enabled, expected[row.id], row.id)
+      seen += 1
+    }
+    compare(seen, 5)
   }
 
   function test_provider_toggle_and_order() {

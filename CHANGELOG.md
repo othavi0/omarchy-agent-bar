@@ -23,6 +23,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- feat: a first run now enables Claude and Codex only. Amp, Grok, and
+  Antigravity are opt-in from Settings, so a provider whose CLI is absent no
+  longer renders as a chip nobody asked for. This is not limited to brand-new
+  machines: nothing writes `settings.json` at install or boot, so any install
+  where Settings was never saved picks up the new default on the next shell
+  restart. An existing `settings.json` is untouched, and a migrated v9
+  provider choice still outranks the default.
 - fix: key notification state by window, not reset
 - feat: repeat alerts on a configurable reminder
 
