@@ -337,6 +337,7 @@ impl std::error::Error for StatusCoordError {}
 mod tests {
     use super::*;
     use crate::cache::entry_from_status;
+    use crate::cache::schema::CacheDocument;
     use crate::providers::adapter::{BoxFuture, HttpError, HttpResponse};
     use crate::providers::process::{ProcessError, ProcessOutput};
     use crate::settings::schema::Settings as SettingsDocument;
@@ -556,6 +557,59 @@ mod tests {
             Some(DataSource::Cache),
             "cache-use hit must label source as cache"
         );
+    }
+
+    #[tokio::test]
+    async fn cached_provider_error_inside_ttl_is_recollected() {
+        let dir = tempfile::tempdir().unwrap();
+        let now = datetime!(2026-08-25 11:50:31 UTC);
+        let coord = coord_at(dir.path(), now);
+        // A failure row that would still be inside Claude's 300 s success TTL.
+        let failed = fallback_provider_error(ProviderId::Claude, "Claude returned no limits.");
+        let entry = entry_from_status(failed, now, now, std::time::Duration::from_secs(300));
+        coord
+            .cache_store
+            .merge_provider(ProviderId::Claude, entry, now)
+            .unwrap();
+
+        let envelope = coord
+            .collect(CollectRequest {
+                format: StatusFormat::Json,
+                provider: Some(ProviderId::Claude),
+                cache: CacheMode::Use,
+                notifications: NotificationMode::Skip,
+            })
+            .await
+            .unwrap();
+        let row = &envelope.providers()[0];
+        assert_ne!(
+            row.source(),
+            Some(DataSource::Cache),
+            "non-ready rows must be re-collected under cache use"
+        );
+        // coord_at has no credentials and no executables: the live result is a
+        // typed failure again, proving the collection ran instead of the cache.
+        assert_ne!(row.state(), ProviderState::Ready);
+    }
+
+    #[test]
+    fn cache_document_non_ready_row_is_never_fresh() {
+        let now = datetime!(2026-08-25 11:50:31 UTC);
+        let mut doc = CacheDocument::empty();
+        let failed =
+            fallback_provider_error(ProviderId::Codex, "Codex rate limits were not available.");
+        doc.providers.insert(
+            "codex".into(),
+            entry_from_status(failed, now, now, std::time::Duration::from_secs(90)),
+        );
+        assert!(!doc.is_fresh(ProviderId::Codex, now));
+        let ready = ready_claude(now);
+        doc.providers.insert(
+            "claude".into(),
+            entry_from_status(ready, now, now, std::time::Duration::from_secs(300)),
+        );
+        assert!(doc.is_fresh(ProviderId::Claude, now));
+        assert!(!doc.is_fresh(ProviderId::Claude, now + time::Duration::seconds(301)));
     }
 
     #[tokio::test]
