@@ -84,11 +84,13 @@ Findings that the decisions below rest on:
 
 - The bar chip renders `—` for `unauthenticated` exactly as it does today for
   every non-ready state. No login glyph, no text.
-- The popup provider view shows the existing popup copy (title `Not signed in
-  to <Provider>`, body `Signing in opens the official <Provider> CLI.`, from
-  `CoreView.js`), and the single action from the envelope: `Sign in` when
-  login discovery succeeded, otherwise `Install guide` (Antigravity has no
-  login command and always takes this branch).
+- The popup provider view shows title `Not signed in to <Provider>`
+  (`CoreView.js`), body the envelope's typed error message (`"<Provider> is
+  not authenticated."`; the `Signing in opens the official <Provider> CLI.`
+  copy is the fallback only when the envelope carries no error), and the
+  single action from the envelope: `Sign in` when login discovery succeeded,
+  otherwise `Install guide` (Antigravity has no login command and always
+  takes this branch).
 - "Never logged in" and "session expired" share the same copy. The
   distinction is not observable reliably across providers and the remedy is
   identical.
