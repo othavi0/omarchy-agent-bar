@@ -582,14 +582,15 @@ mod tests {
             .await
             .unwrap();
         let row = &envelope.providers()[0];
-        assert_ne!(
-            row.source(),
-            Some(DataSource::Cache),
-            "non-ready rows must be re-collected under cache use"
+        // The primed cache row is ProviderError; coord_at has no Claude
+        // credentials file, so a live collection yields Unauthenticated
+        // instead. Only a real re-collection can produce this state — a
+        // served cache hit would keep ProviderError.
+        assert_eq!(
+            row.state(),
+            ProviderState::Unauthenticated,
+            "cache use must re-collect a non-ready row, not serve it"
         );
-        // coord_at has no credentials and no executables: the live result is a
-        // typed failure again, proving the collection ran instead of the cache.
-        assert_ne!(row.state(), ProviderState::Ready);
     }
 
     #[test]
