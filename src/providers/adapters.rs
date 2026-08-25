@@ -299,8 +299,23 @@ impl ProviderAdapter for CodexAdapter {
                     tokio::time::sleep(std::time::Duration::from_millis(250)).await;
                     outcome = fetch_rate_limits_via_appserver(exe, version, timeout).await;
                 }
-                if let AppServerOutcome::Ok(bytes) = outcome {
-                    return codex_from_rate_limits_json(&bytes, context.clock.now_utc());
+                match outcome {
+                    AppServerOutcome::Ok(bytes) => {
+                        return codex_from_rate_limits_json(&bytes, context.clock.now_utc());
+                    }
+                    // JSON-004 / JSON-007: a signed-out account never falls
+                    // through to obsolete session-log usage.
+                    AppServerOutcome::Unauthenticated => {
+                        return unauthenticated(
+                            ProviderId::Codex,
+                            CODEX.display_name,
+                            "Codex is not authenticated.",
+                            login_available(discovery),
+                            CODEX.installation_url,
+                            false,
+                        );
+                    }
+                    AppServerOutcome::TimedOut | AppServerOutcome::Failed => {}
                 }
             }
 
@@ -1334,6 +1349,82 @@ mod tests {
                 assert_eq!(last_success_at, datetime!(2026-07-28 10:00:00 UTC));
             }
             other => panic!("{other:?}"),
+        }
+    }
+
+    /// Writes an executable fake `codex` that speaks just enough app-server
+    /// protocol to answer initialize, account/read, and refuse rateLimits.
+    fn write_fake_codex_unauthenticated(dir: &Path) -> std::path::PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let exe = dir.join("codex");
+        let script = r#"#!/usr/bin/env bash
+# Fake Codex app-server: signed-out account.
+[[ "$1" == "app-server" ]] || exit 2
+while IFS= read -r line; do
+  case "$line" in
+    *'"initialize"'*) printf '%s\n' '{"id":0,"result":{}}' ;;
+    *'account/rateLimits/read'*) printf '%s\n' '{"id":2,"error":{"code":-32600,"message":"codex account authentication required to read rate limits"}}' ;;
+    *'account/read'*) printf '%s\n' '{"id":1,"result":{"account":{}}}' ;;
+  esac
+done
+"#;
+        std::fs::write(&exe, script).expect("write fake codex");
+        std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+        exe
+    }
+
+    #[tokio::test]
+    async fn codex_unauthenticated_appserver_ignores_session_log() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let home = dir.path().join("home");
+        let sessions = home.join(".codex/sessions/2026/07/28");
+        std::fs::create_dir_all(&sessions).expect("mkdir");
+        // Old usage on disk must NOT be presented for a signed-out account (JSON-007).
+        std::fs::write(
+            sessions.join("rollout.jsonl"),
+            concat!(
+                r#"{"timestamp":"2026-07-28T10:00:00Z","type":"event","payload":{"type":"token_count","rate_limits":{"primary":{"used_percent":12.5,"window_minutes":10080}}}}"#,
+                "\n"
+            ),
+        )
+        .expect("write jsonl");
+        let exe = write_fake_codex_unauthenticated(dir.path());
+
+        let env = ExecutionEnvironment {
+            home,
+            path_dirs: vec![],
+            grok_home: None,
+        };
+        let clock = FixedClock(datetime!(2026-08-25 12:00:00 UTC));
+        let fs = MapFileSystem::default();
+        let process = empty_process();
+        let http = ScriptedHttpClient::single(Err(crate::providers::adapter::HttpError::Network(
+            "unused".into(),
+        )));
+        let ctx = CollectionContext {
+            env: &env,
+            clock: &clock,
+            fs: &fs,
+            process: &process,
+            http: &http,
+            plugin_root: None,
+        };
+        let discovery = discovery_with_exe(&exe);
+        let result = CODEX_ADAPTER.collect(&ctx, &discovery).await;
+        match result {
+            ProviderResult::Unauthenticated {
+                id,
+                message,
+                login_available,
+                retryable,
+                ..
+            } => {
+                assert_eq!(id, ProviderId::Codex);
+                assert_eq!(message, "Codex is not authenticated.");
+                assert!(login_available, "discovery_with_exe resolves the login exe");
+                assert!(!retryable);
+            }
+            other => panic!("expected Unauthenticated, got {other:?}"),
         }
     }
 
