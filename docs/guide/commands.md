@@ -62,7 +62,7 @@ argv, so `"$PLUGIN" login antigravity` never launches a CLI and fails with
 "$PLUGIN" config show
 "$PLUGIN" config apply stdin
 "$PLUGIN" config apply file /path/to/settings.json
-"$PLUGIN" config apply json '{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":true},{"id":"grok","enabled":true},{"id":"antigravity","enabled":false}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true,"reminderMinutes":120}}'
+"$PLUGIN" config apply json '{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":false},{"id":"grok","enabled":false},{"id":"antigravity","enabled":false}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true,"reminderMinutes":120}}'
 ```
 
 `show` is read-only. `apply` requires one complete valid settings document and

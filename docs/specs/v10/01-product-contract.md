@@ -59,7 +59,7 @@ Fresh installations use:
 
 ```text
 Provider order: Claude, Codex, Amp, Grok, Antigravity
-Enabled providers: all except Antigravity (disabled by default)
+Enabled providers: Claude and Codex (the rest are opt-in)
 Display metric: remaining
 Refresh interval: 60 seconds
 Notifications: enabled
