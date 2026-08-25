@@ -33,6 +33,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - fix: key notification state by window, not reset
 - feat: repeat alerts on a configurable reminder
 
+## [10.3.14] - 2026-08-25
+
+### Changed
+
+- fix: keep every v9 provider a migration finds on
+- feat: enable only Claude and Codex on first run
+
 ## [10.3.13] - 2026-08-23
 
 ### Changed
