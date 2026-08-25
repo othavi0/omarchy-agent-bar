@@ -1,0 +1,103 @@
+name: Verify release
+
+# Runs ON the `release:` commit itself (the one that carries bin/agent-bar),
+# which the auto-release workflow cannot do for its own push. It rebuilds
+# the helper from the tagged source with scripts/agent-bar-build-helper,
+# requires the digest to equal the committed binary and its bundle.json
+# entry, and checks the SLSA provenance attestation the release run
+# recorded. A green run here is the exact-commit proof marketplace
+# reviewers ask for.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Release tag or commit to verify (defaults to the run ref)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  attestations: read
+  id-token: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout exact release commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          fetch-depth: 2
+
+      - name: Install pinned toolchain
+        run: rustup toolchain install && rustup show active-toolchain
+
+      - name: Release commit shape
+        run: |
+          set -euo pipefail
+          test -x bin/agent-bar
+          test -f bundle.json
+          git log -1 --format=%s | grep -E '^release: v[0-9]+\.[0-9]+\.[0-9]+$'
+          SOURCE_COMMIT="$(python3 -c 'import json;print(json.load(open("bundle.json"))["sourceCommit"])')"
+          PARENT="$(git rev-parse HEAD^)"
+          test "$SOURCE_COMMIT" = "$PARENT" \
+            || { echo "bundle.json sourceCommit $SOURCE_COMMIT != parent $PARENT" >&2; exit 1; }
+          VERSION="$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"(.*)".*/\1/')"
+          scripts/check-version "v${VERSION}" .
+
+      - name: Rebuild helper reproducibly
+        run: scripts/agent-bar-build-helper
+
+      - name: Committed binary equals rebuilt binary
+        run: |
+          set -euo pipefail
+          REBUILT="$(sha256sum target/x86_64-unknown-linux-gnu/release/agent-bar | cut -d' ' -f1)"
+          COMMITTED="$(sha256sum bin/agent-bar | cut -d' ' -f1)"
+          echo "rebuilt   $REBUILT"
+          echo "committed $COMMITTED"
+          test "$REBUILT" = "$COMMITTED" || { echo "bin/agent-bar is not reproducible from this commit" >&2; exit 1; }
+
+      - name: Every bundle.json entry matches the committed tree
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, os, stat, sys
+          receipt = json.load(open("bundle.json"))
+          bad = []
+          for f in receipt["files"]:
+              p = f["path"]
+              st = os.lstat(p)
+              if not stat.S_ISREG(st.st_mode):
+                  bad.append(f"{p}: not a regular file"); continue
+              digest = hashlib.sha256(open(p, "rb").read()).hexdigest()
+              mode = f"{stat.S_IMODE(st.st_mode):04o}"
+              if digest != f["sha256"]: bad.append(f"{p}: sha256 {digest} != receipt {f['sha256']}")
+              if st.st_size != f["size"]: bad.append(f"{p}: size {st.st_size} != receipt {f['size']}")
+              if mode != f["mode"]: bad.append(f"{p}: mode {mode} != receipt {f['mode']}")
+          if bad: sys.exit("\n".join(bad))
+          print(f"{len(receipt['files'])} receipt entries match the tree")
+          PY
+
+      - name: Provenance attestation matches the recorded build run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          BUILD_RUN="$(python3 -c 'import json;print(json.load(open("bundle.json")).get("buildRun",""))')"
+          test -n "$BUILD_RUN" || { echo "bundle.json has no buildRun" >&2; exit 1; }
+          echo "buildRun  $BUILD_RUN"
+          gh attestation verify bin/agent-bar \
+            --repo "${GITHUB_REPOSITORY}" \
+            --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/auto-release.yml" \
+            --format json > attestation.json
+          RUN_ID="${BUILD_RUN##*/}"
+          SOURCE_COMMIT="$(python3 -c 'import json;print(json.load(open("bundle.json"))["sourceCommit"])')"
+          grep -q "/actions/runs/${RUN_ID}\b" attestation.json \
+            || { echo "attestation was not produced by buildRun ${BUILD_RUN}" >&2; exit 1; }
+          grep -q "\"sourceRepositoryDigest\": *\"${SOURCE_COMMIT}\"" attestation.json \
+            || { echo "attestation source digest is not sourceCommit ${SOURCE_COMMIT}" >&2; exit 1; }
+          echo "attestation signed by run ${RUN_ID} from ${SOURCE_COMMIT}"

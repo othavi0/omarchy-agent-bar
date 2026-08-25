@@ -23,7 +23,8 @@ production.
 The plugin bundle contains manifest, `bundle.json`, QML, approved icons, the
 terminal helper, private Rust helper, `README.md`, `LICENSE`, and
 `preview.png`. `bundle.json` records ID, version, target, Omarchy contract,
-minimum Quickshell version, source commit, and hash/size/mode for every
+minimum Quickshell version, source commit, the CI run that built and
+attested the private helper (`buildRun`), and hash/size/mode for every
 other file.
 
 The installed plugin directory is a git checkout of this repository

@@ -16,6 +16,7 @@ fn help_exits_zero_and_names_only_stamp() {
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(stdout.contains("stamp"));
     assert!(stdout.contains("source-commit"));
+    assert!(stdout.contains("build-run"));
     assert!(!stdout.contains("assemble"));
     assert!(!stdout.contains("output"));
     assert!(!stdout.contains("release bundle"));
@@ -74,4 +75,21 @@ fn unknown_command_exits_two() {
         .output()
         .expect("spawn");
     assert_eq!(out.status.code(), Some(2));
+}
+
+#[test]
+fn stamp_rejects_malformed_build_run_before_touching_the_tree() {
+    let out = Command::new(bin())
+        .args([
+            "stamp",
+            "source-commit",
+            "0123456789abcdef0123456789abcdef01234567",
+            "build-run",
+            "https://example.com/not-a-run",
+        ])
+        .output()
+        .expect("spawn");
+    assert!(!out.status.success());
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("buildRun"), "stderr={err}");
 }

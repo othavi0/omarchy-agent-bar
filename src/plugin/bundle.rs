@@ -93,6 +93,11 @@ pub struct BundleReceipt {
     pub omarchy_contract: u32,
     pub minimum_quickshell_version: String,
     pub source_commit: String,
+    /// GitHub Actions run that built `bin/agent-bar` and attested it
+    /// (`https://github.com/othavi0/omarchy-agent-bar/actions/runs/<id>`).
+    /// Absent for local stamps that never went through CI.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub build_run: Option<String>,
     pub files: Vec<BundleFileEntry>,
 }
 
@@ -142,6 +147,9 @@ impl BundleReceipt {
             )));
         }
         validate_source_commit(&self.source_commit)?;
+        if let Some(run) = &self.build_run {
+            validate_build_run(run)?;
+        }
         validate_semver_strict(&self.version)?;
 
         let mut seen = BTreeSet::new();
@@ -180,6 +188,7 @@ pub struct BundleBuilder {
     pub version: String,
     pub target: String,
     pub source_commit: String,
+    pub build_run: Option<String>,
     pub omarchy_contract: u32,
     pub minimum_quickshell_version: String,
 }
@@ -197,9 +206,19 @@ impl BundleBuilder {
             version,
             target: OFFICIAL_TARGET.to_string(),
             source_commit,
+            build_run: None,
             omarchy_contract: OMARCHY_CONTRACT,
             minimum_quickshell_version: MINIMUM_QUICKSHELL_VERSION.to_string(),
         })
+    }
+
+    /// Record the CI run that built and attested the helper. Validated
+    /// eagerly so a bad URL fails before any file is touched.
+    pub fn with_build_run(mut self, build_run: impl Into<String>) -> Result<Self, BundleError> {
+        let build_run = build_run.into();
+        validate_build_run(&build_run)?;
+        self.build_run = Some(build_run);
+        Ok(self)
     }
 
     /// Stamp release artifacts directly into the repo root and write
@@ -309,6 +328,7 @@ impl BundleValidator {
             omarchy_contract: builder.omarchy_contract,
             minimum_quickshell_version: builder.minimum_quickshell_version.clone(),
             source_commit: builder.source_commit.clone(),
+            build_run: builder.build_run.clone(),
             files,
         };
         receipt.validate_shape()?;
@@ -447,6 +467,22 @@ pub fn validate_source_commit(s: &str) -> Result<(), BundleError> {
     if !s.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f')) {
         return Err(BundleError::msg(
             "sourceCommit must be 40 lowercase hex characters",
+        ));
+    }
+    Ok(())
+}
+
+/// Prefix every `buildRun` must carry: only this repository's own Actions
+/// runs count as provenance for the shipped helper.
+pub const BUILD_RUN_PREFIX: &str = "https://github.com/othavi0/omarchy-agent-bar/actions/runs/";
+
+pub fn validate_build_run(s: &str) -> Result<(), BundleError> {
+    let id = s
+        .strip_prefix(BUILD_RUN_PREFIX)
+        .ok_or_else(|| BundleError::msg(format!("buildRun must start with {BUILD_RUN_PREFIX}")))?;
+    if id.is_empty() || !id.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(BundleError::msg(
+            "buildRun must end with the numeric Actions run id only",
         ));
     }
     Ok(())
@@ -824,6 +860,7 @@ mod tests {
             omarchy_contract: 1,
             minimum_quickshell_version: MINIMUM_QUICKSHELL_VERSION.to_string(),
             source_commit: "0123456789abcdef0123456789abcdef01234567".to_string(),
+            build_run: None,
             files: vec![BundleFileEntry {
                 path: "BarWidget.qml".to_string(),
                 sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -844,6 +881,39 @@ mod tests {
         assert!(json.contains("\"pluginId\": \"othavi0.agent-bar\""));
         assert!(json.contains("\"omarchyContract\": 1"));
         assert!(json.contains("\"minimumQuickshellVersion\": \"0.3.0\""));
+    }
+
+    #[test]
+    fn receipt_build_run_is_optional_and_round_trips() {
+        let mut r = sample_receipt();
+        assert!(r.validate_shape().is_ok());
+        let json = r.to_pretty_json().expect("json");
+        assert!(!json.contains("buildRun"));
+        r.build_run = Some(
+            "https://github.com/othavi0/omarchy-agent-bar/actions/runs/32612772134".to_string(),
+        );
+        assert!(r.validate_shape().is_ok());
+        let json = r.to_pretty_json().expect("json");
+        assert!(json.contains("\"buildRun\": \"https://github.com/othavi0/omarchy-agent-bar/actions/runs/32612772134\""));
+        let parsed = BundleReceipt::parse_json(json.as_bytes()).expect("parse");
+        assert_eq!(parsed, r);
+    }
+
+    #[test]
+    fn receipt_rejects_foreign_or_malformed_build_run() {
+        for bad in [
+            "",
+            "http://github.com/othavi0/omarchy-agent-bar/actions/runs/1",
+            "https://example.com/othavi0/omarchy-agent-bar/actions/runs/1",
+            "https://github.com/someone-else/omarchy-agent-bar/actions/runs/1",
+            "https://github.com/othavi0/omarchy-agent-bar/actions/runs/",
+            "https://github.com/othavi0/omarchy-agent-bar/actions/runs/12abc",
+            "https://github.com/othavi0/omarchy-agent-bar/actions/runs/1/attempts/2",
+        ] {
+            let mut r = sample_receipt();
+            r.build_run = Some(bad.to_string());
+            assert!(r.validate_shape().is_err(), "accepted {bad:?}");
+        }
     }
 
     #[test]
@@ -1140,6 +1210,37 @@ mod tests {
             .iter()
             .any(|f| f.path == "docs/media/demo.png"));
         BundleValidator::validate_tree(&root).unwrap();
+    }
+
+    #[test]
+    fn stamp_with_build_run_writes_it_to_the_receipt_file() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("othavi0.agent-bar");
+        let version = "10.0.0";
+        write_stamp_source_root(&root, version);
+        let helper = dir.path().join("agent-bar");
+        fs::write(
+            &helper,
+            format!("#!/bin/sh\nif [ \"$1\" = version ]; then echo {version}; fi\n"),
+        )
+        .unwrap();
+        fs::set_permissions(&helper, fs::Permissions::from_mode(0o755)).unwrap();
+
+        let run = "https://github.com/othavi0/omarchy-agent-bar/actions/runs/42";
+        let builder = BundleBuilder::new(version, ZERO_COMMIT)
+            .unwrap()
+            .with_build_run(run)
+            .unwrap();
+        let receipt = builder.stamp(&root, &helper).unwrap();
+        assert_eq!(receipt.build_run.as_deref(), Some(run));
+        let on_disk = fs::read(root.join("bundle.json")).unwrap();
+        assert!(String::from_utf8_lossy(&on_disk).contains(&format!("\"buildRun\": \"{run}\"")));
+        assert_eq!(BundleValidator::validate_tree(&root).unwrap(), receipt);
+
+        assert!(BundleBuilder::new(version, ZERO_COMMIT)
+            .unwrap()
+            .with_build_run("https://example.com/run/1")
+            .is_err());
     }
 
     #[test]
