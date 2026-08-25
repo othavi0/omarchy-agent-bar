@@ -46,8 +46,8 @@ exists.
   "providers": [
     { "id": "claude", "enabled": true },
     { "id": "codex", "enabled": true },
-    { "id": "amp", "enabled": true },
-    { "id": "grok", "enabled": true },
+    { "id": "amp", "enabled": false },
+    { "id": "grok", "enabled": false },
     { "id": "antigravity", "enabled": false }
   ],
   "display": {

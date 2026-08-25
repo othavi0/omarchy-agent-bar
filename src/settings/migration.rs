@@ -328,6 +328,32 @@ fn extract_inline_refresh_seconds(raw: &[u8]) -> Result<Option<u32>, MigrationEr
     Ok(found)
 }
 
+/// The provider IDs a v9 document could name in `waybar.providers`.
+///
+/// v9 shipped exactly these four; Antigravity and anything added later cannot
+/// appear in a v9 file, so no v9 document carries a choice for them.
+const V9_PROVIDERS: &[ProviderId] = &[
+    ProviderId::Claude,
+    ProviderId::Codex,
+    ProviderId::Amp,
+    ProviderId::Grok,
+];
+
+/// Whether a migrated row starts enabled.
+///
+/// MIG-009 / PROD-024: when the v9 document listed its providers, that list IS
+/// the user's explicit choice and outranks the v10 default — a provider that
+/// ships opt-in today must still come across enabled when the v9 file asked
+/// for it. Two cases fall back to `default_enabled`: an ID v9 never had, and a
+/// document that listed nothing, which recorded no choice to honour.
+fn v9_enabled(id: ProviderId, listed_providers: bool, enabled_set: &HashSet<ProviderId>) -> bool {
+    if listed_providers && V9_PROVIDERS.contains(&id) {
+        enabled_set.contains(&id)
+    } else {
+        default_enabled(id)
+    }
+}
+
 fn migrate_v9_settings(raw: &[u8]) -> Result<(Settings, Vec<String>, bool), MigrationError> {
     let value: Value = serde_json::from_slice(raw)
         .map_err(|e| MigrationError::msg(format!("invalid v9 settings JSON: {e}")))?;
@@ -399,6 +425,15 @@ fn migrate_v9_settings(raw: &[u8]) -> Result<(Settings, Vec<String>, bool), Migr
         .and_then(|v| v.as_bool())
         .unwrap_or(true);
 
+    // A present `waybar.providers` IS the user's choice; an absent one records
+    // no choice at all, and only the full catalog list below stands in for it
+    // so ordering and validation still see every ID. `v9_enabled` reads the
+    // distinction: absent means the v10 default decides.
+    let listed_providers = waybar
+        .and_then(|w| w.get("providers"))
+        .and_then(|v| v.as_array())
+        .is_some();
+
     let enabled_list: Vec<String> = waybar
         .and_then(|w| w.get("providers"))
         .and_then(|v| v.as_array())
@@ -448,7 +483,7 @@ fn migrate_v9_settings(raw: &[u8]) -> Result<(Settings, Vec<String>, bool), Migr
             if seen.insert(id) {
                 providers.push(ProviderSetting {
                     id: ProviderIdJson(id),
-                    enabled: default_enabled(id) && enabled_set.contains(&id),
+                    enabled: v9_enabled(id, listed_providers, &enabled_set),
                 });
             }
         }
@@ -457,12 +492,14 @@ fn migrate_v9_settings(raw: &[u8]) -> Result<(Settings, Vec<String>, bool), Migr
         if seen.insert(id) {
             providers.push(ProviderSetting {
                 id: ProviderIdJson(id),
-                enabled: default_enabled(id) && enabled_set.contains(&id),
+                enabled: v9_enabled(id, listed_providers, &enabled_set),
             });
         }
     }
 
-    // If enabled_list was empty after filtering, enable all (safe default).
+    // Nothing survived the mapping: the v9 document named no provider this
+    // catalog still knows. Fall back to the fresh-install defaults rather than
+    // handing the user an empty bar.
     if providers.iter().all(|p| !p.enabled) {
         for p in &mut providers {
             p.enabled = default_enabled(p.id.0);
@@ -683,6 +720,31 @@ mod tests {
     }
 
     #[test]
+    fn v9_provider_choice_outranks_the_v10_default() {
+        // MIG-009 / PROD-024: the v9 `waybar.providers` list IS the user's
+        // explicit choice. A provider that ships opt-in in v10 must still come
+        // across enabled when the v9 document asked for it.
+        let raw = read_fixture("settings-valid.json");
+        let plan = MigrationPlan::from_v9(Some(&raw), None).unwrap();
+        for id in [ProviderId::Codex, ProviderId::Amp, ProviderId::Grok] {
+            let row = plan
+                .settings
+                .providers
+                .iter()
+                .find(|p| p.id.0 == id)
+                .unwrap_or_else(|| panic!("{id} present"));
+            assert!(row.enabled, "{id} was chosen in v9 and must stay enabled");
+        }
+        let claude = plan
+            .settings
+            .providers
+            .iter()
+            .find(|p| p.id.0 == ProviderId::Claude)
+            .unwrap();
+        assert!(!claude.enabled, "claude was not chosen in v9");
+    }
+
+    #[test]
     fn rejects_invalid_interval() {
         let raw = read_fixture("settings-invalid-interval.json");
         let err = MigrationPlan::from_v9(Some(&raw), None).unwrap_err();
@@ -762,12 +824,27 @@ mod tests {
     #[test]
     fn injected_rows_follow_default_enabled() {
         // The injected row must be whatever `default_enabled` says, not a
-        // hard-coded false: the catalog is the single source for that.
+        // hard-coded false: the catalog is the single source for that. The
+        // four rows the document already carries are the user's and survive
+        // untouched, even where the fresh-install default now differs.
         let four = br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":true},{"id":"grok","enabled":true}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true}}"#;
         let plan = MigrationPlan::from_v9(Some(four), None).unwrap();
-        for row in &plan.settings.providers {
-            assert_eq!(row.enabled, default_enabled(row.id.0), "{}", row.id.0);
+        for id in V9_PROVIDERS {
+            let row = plan
+                .settings
+                .providers
+                .iter()
+                .find(|p| p.id.0 == *id)
+                .unwrap_or_else(|| panic!("{id} present"));
+            assert!(row.enabled, "{id} was written enabled and must stay so");
         }
+        let injected = plan
+            .settings
+            .providers
+            .iter()
+            .find(|p| p.id.0 == ProviderId::Antigravity)
+            .expect("antigravity injected");
+        assert_eq!(injected.enabled, default_enabled(ProviderId::Antigravity));
     }
 
     #[test]

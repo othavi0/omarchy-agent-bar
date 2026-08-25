@@ -121,11 +121,20 @@ impl std::error::Error for SettingsError {}
 ///
 /// Single source for "which providers start enabled": `Settings::defaults`
 /// and every v9 → v10 migration path read it instead of re-testing IDs.
-/// Antigravity ships opt-in (added 2026-08-22): the CLI is not installed for
-/// most users, so enabling it by default would show a permanent CLI-missing
-/// chip.
+///
+/// A first run enables only Claude and Codex (SET-027). Every other provider
+/// ships opt-in: its CLI is not installed for most users, so enabling it by
+/// default would show a permanent CLI-missing chip nobody asked for. Users
+/// turn the rest on from Settings.
+///
+/// The exhaustive `match` is deliberate. An exclusion list would let a new
+/// catalog entry inherit a default nobody decided; this way adding a
+/// `ProviderId` fails to compile until someone picks its arm.
 pub fn default_enabled(id: ProviderId) -> bool {
-    !matches!(id, ProviderId::Antigravity)
+    match id {
+        ProviderId::Claude | ProviderId::Codex => true,
+        ProviderId::Amp | ProviderId::Grok | ProviderId::Antigravity => false,
+    }
 }
 
 /// What a parse does when the document omits a catalog provider.
@@ -402,15 +411,32 @@ mod tests {
         // A document with the four original providers but without the later
         // addition: the filled row must match what `Settings::defaults` would
         // have written for it, so a future provider that ships enabled is not
-        // silently turned off by a read.
+        // silently turned off by a read. The rows the user already has are
+        // theirs — a read never rewrites them to the default (SET-007), which
+        // is why amp and grok stay on here while a fresh install ships them
+        // off.
         let four = br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":true},{"id":"grok","enabled":true}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true}}"#;
         let (filled, injected) =
             Settings::parse_with_policy(four, MissingProviders::FillFromCatalog).unwrap();
         assert!(injected);
-        assert_eq!(filled, Settings::defaults());
-        for row in &filled.providers {
-            assert_eq!(row.enabled, default_enabled(row.id.0), "{}", row.id.0);
+        for id in [
+            ProviderId::Claude,
+            ProviderId::Codex,
+            ProviderId::Amp,
+            ProviderId::Grok,
+        ] {
+            let row = filled.providers.iter().find(|p| p.id.0 == id).unwrap();
+            assert!(row.enabled, "{id} was written enabled and must stay so");
         }
+        let injected_row = filled
+            .providers
+            .iter()
+            .find(|p| p.id.0 == ProviderId::Antigravity)
+            .expect("antigravity injected");
+        assert_eq!(
+            injected_row.enabled,
+            default_enabled(ProviderId::Antigravity)
+        );
     }
 
     #[test]
@@ -442,6 +468,18 @@ mod tests {
         }
         assert!(!default_enabled(ProviderId::Antigravity));
         assert!(default_enabled(ProviderId::Claude));
+    }
+
+    #[test]
+    fn only_claude_and_codex_start_enabled() {
+        // SET-027: a first run shows the two providers nearly every user has a
+        // CLI for. Amp, Grok, and Antigravity are opt-in from Settings, so a
+        // missing CLI never renders as a permanent chip nobody asked for.
+        assert!(default_enabled(ProviderId::Claude));
+        assert!(default_enabled(ProviderId::Codex));
+        assert!(!default_enabled(ProviderId::Amp));
+        assert!(!default_enabled(ProviderId::Grok));
+        assert!(!default_enabled(ProviderId::Antigravity));
     }
 
     #[test]
