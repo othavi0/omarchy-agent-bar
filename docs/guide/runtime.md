@@ -82,7 +82,9 @@ Corrupt cache is quarantined and rebuilt. Temporary provider failure retains
 last good data as stale.
 
 Per-provider cache TTLs are fixed in the catalog: Claude 300 seconds;
-Codex, Amp, Grok, and Antigravity 90 seconds each.
+Codex, Amp, Grok, and Antigravity 90 seconds each. Only `ready` and `stale`
+rows are served from cache; any failure row is re-collected on the next
+poll, so a transient failure is visible for at most one refresh interval.
 
 ## Provider data sources
 
