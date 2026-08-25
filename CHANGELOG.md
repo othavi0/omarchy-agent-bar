@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   providers read as their catalog default until the next settings apply.
 - fix: type `IpcHandler` parameters in `Service.qml`
   (`health(expectedVersion: string)`, `refresh(providerId: string)`).
+- feat: reproducible helper build (`scripts/agent-bar-build-helper`, pinned
+  `rust-toolchain.toml`), SLSA provenance attestation for `bin/agent-bar`,
+  `buildRun` in `bundle.json`, and a `Verify release` workflow that rebuilds
+  and checks the binary on the exact release commit.
 
 ### Changed
 

@@ -1,7 +1,7 @@
 //! Internal release-stamp builder (not installed in the plugin bundle).
 //!
 //! Grammar (exact):
-//!   agent-bar-bundle stamp source-commit <40-hex>
+//!   agent-bar-bundle stamp source-commit <40-hex> [build-run <actions-run-url>]
 //!
 //! CI stamps the repo root in place, and the release workflow commits and
 //! pushes this repository's own `master` -- there is no separate
@@ -44,30 +44,40 @@ fn main() -> ExitCode {
 }
 
 fn usage() -> String {
-    "agent-bar-bundle stamp source-commit <40-lowercase-hex>\n".to_string()
+    "agent-bar-bundle stamp source-commit <40-lowercase-hex> \
+     [build-run https://github.com/othavi0/omarchy-agent-bar/actions/runs/<id>]\n"
+        .to_string()
 }
 
 fn run_stamp(args: &mut [String]) -> Result<PathBuf, String> {
-    let map = parse_kv(args, &["source-commit"])?;
+    let map = parse_kv(args, &["source-commit"], &["build-run"])?;
     let source_commit = map
         .get("source-commit")
         .ok_or("missing source-commit")?
         .clone();
 
+    let version = env!("CARGO_PKG_VERSION").to_string();
+    let mut builder = BundleBuilder::new(version, source_commit).map_err(|e| e.to_string())?;
+    if let Some(run) = map.get("build-run") {
+        builder = builder
+            .with_build_run(run.clone())
+            .map_err(|e| e.to_string())?;
+    }
+
     let repo_root = repo_root()?;
     let helper = find_helper_bin(&repo_root)?;
-    let version = env!("CARGO_PKG_VERSION").to_string();
-    let builder = BundleBuilder::new(version, source_commit).map_err(|e| e.to_string())?;
     builder
         .stamp(&repo_root, &helper)
         .map_err(|e| e.to_string())?;
     Ok(repo_root)
 }
 
-/// Parse alternating keyword value pairs. Keywords must match exactly once.
+/// Parse alternating keyword value pairs. Required keywords must appear
+/// exactly once; optional ones at most once.
 fn parse_kv(
     args: &[String],
     required: &[&str],
+    optional: &[&str],
 ) -> Result<std::collections::HashMap<String, String>, String> {
     if !args.len().is_multiple_of(2) {
         return Err("arguments must be keyword/value pairs".into());
@@ -76,7 +86,7 @@ fn parse_kv(
     let mut i = 0;
     while i < args.len() {
         let key = args[i].as_str();
-        if !required.contains(&key) {
+        if !required.contains(&key) && !optional.contains(&key) {
             return Err(format!("unknown or misplaced keyword '{key}'"));
         }
         if map.contains_key(key) {

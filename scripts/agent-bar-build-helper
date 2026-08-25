@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Reproducible build of the private helper `bin/agent-bar`.
+#
+# The release workflow and the verify-release workflow both call this
+# script, so the bytes committed as `bin/agent-bar` can be regenerated from
+# the tagged source and compared digest-for-digest. Determinism comes from:
+#   - the Rust toolchain pinned in rust-toolchain.toml,
+#   - `--locked` against Cargo.lock,
+#   - `--remap-path-prefix` for the workspace and CARGO_HOME,
+#   - no incremental compilation.
+# The C toolchain (gcc, binutils, glibc crt objects) is NOT pinned here:
+# the same digest requires the same runner image (see
+# docs/dev/releasing.md#provenance). Its versions are printed so a
+# mismatch can be diagnosed.
+#
+# Usage: scripts/agent-bar-build-helper
+# Output: target/x86_64-unknown-linux-gnu/release/agent-bar (+ sha256 on stdout)
+set -euo pipefail
+
+TARGET="x86_64-unknown-linux-gnu"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CARGO_HOME_DIR="${CARGO_HOME:-$HOME/.cargo}"
+CARGO_HOME_DIR="$(cd "$CARGO_HOME_DIR" && pwd)"
+
+# Cargo reads exactly one of these; anything inherited would silently
+# replace the remap flags below.
+unset CARGO_ENCODED_RUSTFLAGS CARGO_BUILD_RUSTFLAGS RUSTC_WRAPPER RUSTC_WORKSPACE_WRAPPER
+export CARGO_INCREMENTAL=0
+export RUSTFLAGS="--remap-path-prefix=${ROOT}=/src --remap-path-prefix=${CARGO_HOME_DIR}=/cargo"
+
+cd "$ROOT"
+echo "rustc: $(rustc --version)" >&2
+echo "cc:    $(cc --version | head -1)" >&2
+echo "ld:    $(ld --version | head -1)" >&2
+cargo build --release --locked --target "$TARGET" --bin agent-bar
+
+OUT="target/${TARGET}/release/agent-bar"
+test -x "$OUT"
+sha256sum "$OUT"

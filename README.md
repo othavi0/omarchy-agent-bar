@@ -93,7 +93,10 @@ This repository is the plugin tree and its source in one place. See
 [Architecture](docs/dev/architecture.md), [Releasing](docs/dev/releasing.md)
 and [Contributing](CONTRIBUTING.md) for build, test and release.
 
-CI commits `bin/agent-bar` and `bundle.json`. Don't edit them by hand.
+CI commits `bin/agent-bar` and `bundle.json`. Don't edit them by hand. The
+helper is built reproducibly on CI and carries a SLSA provenance
+attestation; see [Provenance](docs/dev/releasing.md#provenance) to verify
+a release commit.
 
 ## More
 

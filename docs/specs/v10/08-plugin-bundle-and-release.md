@@ -128,6 +128,7 @@ The exact receipt shape is:
   "omarchyContract": 1,
   "minimumQuickshellVersion": "0.3.0",
   "sourceCommit": "0123456789abcdef0123456789abcdef01234567",
+  "buildRun": "https://github.com/othavi0/omarchy-agent-bar/actions/runs/1",
   "files": [
     {
       "path": "BarWidget.qml",
@@ -138,6 +139,14 @@ The exact receipt shape is:
   ]
 }
 ```
+
+`buildRun` is optional and names the GitHub Actions run of this repository
+that built and attested the helper
+(`https://github.com/othavi0/omarchy-agent-bar/actions/runs/<numeric id>`);
+CI always stamps it, a local stamp omits it. The release contract in
+[docs/dev/releasing.md](../../dev/releasing.md#provenance) requires every
+published `bin/agent-bar` to be reproducible from its release commit and
+covered by a SLSA provenance attestation.
 
 `files` contains every regular bundle file except `bundle.json`, sorted by raw
 UTF-8 path bytes. Paths use `/`, are relative to the plugin root, and contain
