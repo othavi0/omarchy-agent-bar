@@ -44,6 +44,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - fix: key notification state by window, not reset
 - feat: repeat alerts on a configurable reminder
 
+## [10.3.16] - 2026-08-25
+
+### Changed
+
+- docs: changelog for login state visibility
+- docs: correct cache and glossary claims
+- docs: correct unauthenticated body and markers
+- docs: unauthenticated markers and cache rule
+- test(cache): pin stale rows stay fresh
+- test(cache): pin re-collection of error rows
+- fix(cache): never serve non-ready rows
+- test: pin auth wording is not unauthenticated
+- feat(codex): report unauthenticated state
+- feat(codex): classify app-server auth error
+- docs: login state visibility plan
+- docs: login state visibility design
+- docs: define unauthenticated and initial collection
+
 ## [10.3.15] - 2026-08-25
 
 ### Changed
