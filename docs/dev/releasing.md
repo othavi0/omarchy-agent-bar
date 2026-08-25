@@ -32,14 +32,20 @@ installation.
 2. Rust gates run against the bumped tree: `cargo fmt --check`,
    `cargo test`, `cargo clippy --all-targets -- -D warnings`. A red gate
    stops the run before anything is committed.
-3. The helper builds for `x86_64-unknown-linux-gnu`.
-4. `agent-bar-bundle stamp source-commit <hex>` stamps the release
+3. `scripts/agent-bar-build-helper` builds the helper for
+   `x86_64-unknown-linux-gnu` reproducibly: pinned Rust toolchain
+   (`rust-toolchain.toml`), `--locked`, `--remap-path-prefix`, no
+   incremental compilation, on the pinned `ubuntu-24.04` runner image.
+4. `agent-bar-bundle stamp source-commit <hex> build-run <url>` stamps the release
    artifacts directly into the repository root: it copies the built
    helper to `bin/agent-bar` (mode `0755`), refreshes `preview.png`,
    normalizes the shipped tree's file modes, and writes `bundle.json`
-   from the current, already-versioned root tree. `scripts/check-version`
+   from the current, already-versioned root tree, including `buildRun`,
+   the URL of the Actions run doing the stamping. `scripts/check-version`
    then confirms `Cargo.toml`, `manifest.json`, `bundle.json`, and the
    stamped helper's own `version` output all agree.
+   `actions/attest-build-provenance` then records a SLSA provenance
+   attestation for `bin/agent-bar` in the repository's attestation store.
 5. A root inventory step checks required files, executable modes, and the
    target architecture directly against the working tree (no separate
    assembled output directory to check).
@@ -50,6 +56,9 @@ installation.
    pushed straight to `master`. The GitHub Release is created from that
    same tag with generated notes and no attached files; the commit itself
    is the release.
+7. The run dispatches `.github/workflows/verify-release.yml` on the new
+   tag (a `GITHUB_TOKEN` push never triggers workflows by itself). See
+   [Provenance](#provenance).
 
 Guards:
 
@@ -62,6 +71,53 @@ The QML/Quattro gates (`omarchy plugin validate`, Qt6 `qmllint`, ShellCheck
 of the bundled terminal helper) do not run on the Ubuntu release runner,
 which has no Omarchy runtime. They run at the pre-merge checkpoints on
 Omarchy hosts; the release consumes that accepted evidence.
+
+## Provenance
+
+The shipped `bin/agent-bar` is a 4 MB ELF that no source scan can inspect,
+so every release carries two independent proofs that it was built from the
+reviewed Rust source:
+
+1. **Exact-commit check run.** `Verify release` runs on the `release:`
+   commit itself. It checks out that commit, rebuilds the helper with
+   `scripts/agent-bar-build-helper`, and fails unless the rebuilt digest
+   equals both the committed `bin/agent-bar` and its `bundle.json` entry,
+   `bundle.json`'s `sourceCommit` is the release commit's parent, and the
+   attestation below was signed by the run named in `buildRun`.
+2. **SLSA provenance attestation.** The release run attests the helper's
+   digest with `actions/attest-build-provenance`. Anyone with `gh`
+   authenticated (the attestation is fetched from GitHub) can verify it
+   against a checkout of the release commit:
+
+   ```bash
+   gh attestation verify bin/agent-bar \
+     --repo othavi0/omarchy-agent-bar \
+     --signer-workflow othavi0/omarchy-agent-bar/.github/workflows/auto-release.yml
+   ```
+
+   The attestation names the source commit (`sourceRepositoryDigest`, which
+   `Verify release` compares with `bundle.json`'s `sourceCommit`) and the
+   workflow run (`buildRun` in `bundle.json` points at the same run).
+
+`Verify release` runs after publication. A red run does not retract the
+tag or the GitHub Release; it is the signal to cut a fixed release and to
+tell the marketplace not to verify the red one.
+
+Reproducing the digest outside the runner: the Rust side is pinned, but
+the `-gnu` target links with the host `gcc`, `binutils`, and glibc crt
+objects, whose versions end up in the ELF (`.comment` section and crt
+code). The same digest therefore requires the same runner image as the
+release (`ubuntu-24.04` at the time of the release); a build on another
+distribution, or on a later roll of the image, yields a different digest
+for the same source. To reproduce a specific release, rerun
+`Verify release` via `workflow_dispatch` with the tag as `ref` soon after
+the release, or match the `cc`/`ld` versions the script prints against
+the release run's log. For the source-to-binary claim itself, rely on the
+attestation, which does not depend on rebuilding.
+
+The toolchain pin in `rust-toolchain.toml` is part of the contract:
+bumping it changes the digest of every subsequent release (and cuts one,
+since the file is a release-triggering path).
 
 ## Update-path verification
 

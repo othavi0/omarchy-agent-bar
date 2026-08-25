@@ -1,0 +1,8 @@
+# Pinned so `scripts/agent-bar-build-helper` yields the same bytes on the
+# release runner, the verify-release runner, and a developer machine. Bump
+# deliberately; every bump changes the shipped helper's digest.
+[toolchain]
+channel = "1.98.0"
+profile = "minimal"
+components = ["rustfmt", "clippy"]
+targets = ["x86_64-unknown-linux-gnu"]

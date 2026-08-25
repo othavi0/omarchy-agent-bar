@@ -14,6 +14,7 @@ on:
       - 'scripts/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
+      - 'rust-toolchain.toml'
       - '*.qml'
       - 'Core*.js'
       - 'components/**'
@@ -23,6 +24,9 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
+  actions: write
 
 concurrency:
   group: auto-release
@@ -30,7 +34,9 @@ concurrency:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    # Pinned image: scripts/agent-bar-build-helper must reproduce the same
+    # bytes on the verify-release runner.
+    runs-on: ubuntu-24.04
     if: >-
       github.event_name == 'workflow_dispatch' ||
       !startsWith(github.event.head_commit.message, 'release:')
@@ -40,11 +46,8 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install Rust (gnu host target)
-        run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
-          rustup target list --installed
+      - name: Install pinned toolchain (rust-toolchain.toml)
+        run: rustup toolchain install && rustup show active-toolchain
 
       - name: Fetch dependencies
         run: cargo fetch
@@ -63,17 +66,24 @@ jobs:
           cargo test
           cargo clippy --all-targets -- -D warnings
 
-      - name: Build release helper (x86_64-unknown-linux-gnu)
-        run: cargo build --release --target x86_64-unknown-linux-gnu
+      - name: Build release helper reproducibly
+        run: scripts/agent-bar-build-helper
 
       - name: Stamp plugin artifacts into the repo root
         run: |
           set -euo pipefail
           SOURCE_COMMIT="$(git rev-parse HEAD)"
+          BUILD_RUN="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           mkdir -p target/release
           cp -f target/x86_64-unknown-linux-gnu/release/agent-bar target/release/agent-bar
-          cargo run --bin agent-bar-bundle -- stamp source-commit "$SOURCE_COMMIT"
+          cargo run --bin agent-bar-bundle -- stamp \
+            source-commit "$SOURCE_COMMIT" build-run "$BUILD_RUN"
           scripts/check-version "v${{ steps.cut.outputs.version }}" .
+
+      - name: Attest helper provenance (SLSA)
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: bin/agent-bar
 
       - name: Root inventory / modes / architecture
         run: |
@@ -103,3 +113,13 @@ jobs:
           gh release create "v${VERSION}" \
             --title "Agent Bar ${VERSION}" \
             --notes-file "docs/releases/${VERSION}.md"
+
+      # Pushes made with GITHUB_TOKEN never trigger other workflows, so the
+      # exact-commit verification is dispatched explicitly on the new tag.
+      # It runs after publication: a red Verify release does not roll the
+      # release back, it flags it (docs/dev/releasing.md#provenance).
+      - name: Dispatch verify-release on the tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.cut.outputs.version }}
+        run: gh workflow run verify-release.yml --ref "v${VERSION}"
