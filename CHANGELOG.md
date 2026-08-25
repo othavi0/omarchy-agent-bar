@@ -24,6 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `rust-toolchain.toml`), SLSA provenance attestation for `bin/agent-bar`,
   `buildRun` in `bundle.json`, and a `Verify release` workflow that rebuilds
   and checks the binary on the exact release commit.
+- feat: Codex reports `unauthenticated` with the `Sign in` action when the
+  app-server refuses `account/rateLimits/read` for a signed-out account,
+  instead of a generic `provider_error` with Retry; obsolete session-log
+  usage is never shown for a signed-out account.
+- fix: only `ready` and `stale` cache rows are served under `cache use`;
+  a failure row without last good data is re-collected on the next poll, so
+  a fresh install no longer shows `—` for the provider's full success TTL.
 
 ### Changed
 

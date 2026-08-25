@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use crate::cli::ProviderId;
-use crate::status::schema::ProviderStatus;
+use crate::status::schema::{ProviderState, ProviderStatus};
 
 pub const CACHE_SCHEMA_VERSION: u32 = 2;
 
@@ -65,8 +65,20 @@ impl CacheDocument {
         self.providers.get(id.as_str())
     }
 
+    /// A row is fresh only while inside its TTL AND holding usable data.
+    /// Failure rows (cli_missing, unauthenticated, rate_limited,
+    /// network_error, provider_error) are written for stale retention and
+    /// singleflight bookkeeping but are never served from cache, so the next
+    /// `cache use` collection retries live (CACHE-004/006 amendment,
+    /// docs/superpowers/specs/2026-08-25-login-state-visibility-design.md D4).
     pub fn is_fresh(&self, id: ProviderId, now: OffsetDateTime) -> bool {
-        self.get(id).is_some_and(|entry| now < entry.expires_at)
+        self.get(id).is_some_and(|entry| {
+            now < entry.expires_at
+                && matches!(
+                    entry.status.state(),
+                    ProviderState::Ready | ProviderState::Stale
+                )
+        })
     }
 }
 

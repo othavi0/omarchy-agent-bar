@@ -337,6 +337,7 @@ impl std::error::Error for StatusCoordError {}
 mod tests {
     use super::*;
     use crate::cache::entry_from_status;
+    use crate::cache::schema::CacheDocument;
     use crate::providers::adapter::{BoxFuture, HttpError, HttpResponse};
     use crate::providers::process::{ProcessError, ProcessOutput};
     use crate::settings::schema::Settings as SettingsDocument;
@@ -556,6 +557,78 @@ mod tests {
             Some(DataSource::Cache),
             "cache-use hit must label source as cache"
         );
+    }
+
+    #[tokio::test]
+    async fn cached_provider_error_inside_ttl_is_recollected() {
+        let dir = tempfile::tempdir().unwrap();
+        let now = datetime!(2026-08-25 11:50:31 UTC);
+        let coord = coord_at(dir.path(), now);
+        // A failure row that would still be inside Claude's 300 s success TTL.
+        let failed = fallback_provider_error(ProviderId::Claude, "Claude returned no limits.");
+        let entry = entry_from_status(failed, now, now, std::time::Duration::from_secs(300));
+        coord
+            .cache_store
+            .merge_provider(ProviderId::Claude, entry, now)
+            .unwrap();
+
+        let envelope = coord
+            .collect(CollectRequest {
+                format: StatusFormat::Json,
+                provider: Some(ProviderId::Claude),
+                cache: CacheMode::Use,
+                notifications: NotificationMode::Skip,
+            })
+            .await
+            .unwrap();
+        let row = &envelope.providers()[0];
+        // The primed cache row is ProviderError; coord_at has no Claude
+        // credentials file, so a live collection yields Unauthenticated
+        // instead. Only a real re-collection can produce this state — a
+        // served cache hit would keep ProviderError.
+        assert_eq!(
+            row.state(),
+            ProviderState::Unauthenticated,
+            "cache use must re-collect a non-ready row, not serve it"
+        );
+    }
+
+    #[test]
+    fn cache_document_non_ready_row_is_never_fresh() {
+        let now = datetime!(2026-08-25 11:50:31 UTC);
+        let mut doc = CacheDocument::empty();
+        let failed =
+            fallback_provider_error(ProviderId::Codex, "Codex rate limits were not available.");
+        doc.providers.insert(
+            "codex".into(),
+            entry_from_status(failed, now, now, std::time::Duration::from_secs(90)),
+        );
+        assert!(!doc.is_fresh(ProviderId::Codex, now));
+        let ready = ready_claude(now);
+        doc.providers.insert(
+            "claude".into(),
+            entry_from_status(ready.clone(), now, now, std::time::Duration::from_secs(300)),
+        );
+        assert!(doc.is_fresh(ProviderId::Claude, now));
+        assert!(!doc.is_fresh(ProviderId::Claude, now + time::Duration::seconds(301)));
+
+        // A Stale row (retained prior windows after a temporary failure) must
+        // stay fresh too, exercising the ProviderState::Stale arm.
+        let live = ProviderStatus::network_error(
+            ProviderId::Claude,
+            "Claude",
+            ProviderError::new(ErrorCode::NetworkError, "down", true),
+            ProviderAction::retry("Retry"),
+        )
+        .unwrap();
+        let stale = apply_stale_retention(live, Some(&ready)).unwrap();
+        assert_eq!(stale.state(), ProviderState::Stale);
+        doc.providers.insert(
+            "claude".into(),
+            entry_from_status(stale, now, now, std::time::Duration::from_secs(300)),
+        );
+        assert!(doc.is_fresh(ProviderId::Claude, now));
+        assert!(!doc.is_fresh(ProviderId::Claude, now + time::Duration::seconds(301)));
     }
 
     #[tokio::test]

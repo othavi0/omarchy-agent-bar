@@ -14,6 +14,13 @@ use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader
 
 use crate::app_identity::APP_NAME;
 
+/// Literal marker read from upstream
+/// `codex-rs/app-server/src/request_processors/account_processor.rs`
+/// ("codex account authentication required to read rate limits"). JSON-RPC
+/// code -32600 is shared with unrelated invalid-request errors, so only the
+/// message discriminates. Re-check on Codex upgrades (docs/dev/new-provider.md).
+pub(crate) const CODEX_AUTH_REQUIRED_MARKER: &str = "authentication required";
+
 /// Result of one app-server attempt. Distinguishes timeout so the adapter can
 /// apply the catalog's single transient retry only on hard timeout.
 #[derive(Debug)]
@@ -21,6 +28,18 @@ pub enum AppServerOutcome {
     Ok(Vec<u8>),
     TimedOut,
     Failed,
+    /// `account/rateLimits/read` refused because no Codex account is signed in.
+    Unauthenticated,
+}
+
+/// True when the JSON-RPC `error` value carries the upstream auth marker.
+/// Only the message is inspected; nothing from it is logged or retained.
+fn error_is_auth_required(error: &serde_json::Value) -> bool {
+    error
+        .get("message")
+        .and_then(|m| m.as_str())
+        .map(|m| m.to_ascii_lowercase().contains(CODEX_AUTH_REQUIRED_MARKER))
+        .unwrap_or(false)
 }
 
 // ---- App-server wire types (camelCase) ----
@@ -260,7 +279,9 @@ where
 {
     match run_appserver_protocol_outcome(reader, writer, version, timeout).await {
         AppServerOutcome::Ok(bytes) => Some(bytes),
-        AppServerOutcome::TimedOut | AppServerOutcome::Failed => None,
+        AppServerOutcome::TimedOut
+        | AppServerOutcome::Failed
+        | AppServerOutcome::Unauthenticated => None,
     }
 }
 
@@ -399,8 +420,12 @@ where
                         }
                     }
                     Some(2) => {
-                        if msg.error.is_some() {
-                            // Immediate failure (e.g. auth); do not wait for hard timeout.
+                        if let Some(error) = msg.error.as_ref() {
+                            // Immediate failure; do not wait for hard timeout.
+                            if error_is_auth_required(error) {
+                                log::debug!("Codex app-server: account not authenticated");
+                                return AppServerOutcome::Unauthenticated;
+                            }
                             log::debug!(
                                 "Codex app-server account/rateLimits/read returned error"
                             );
@@ -720,6 +745,115 @@ mod tests {
             "must not wait hard timeout, elapsed={elapsed:?}"
         );
         let _ = server_task.await;
+    }
+
+    #[tokio::test]
+    async fn appserver_protocol_auth_required_error_is_unauthenticated() {
+        let (client, server) = duplex(64 * 1024);
+        let (client_read, client_write) = tokio::io::split(client);
+
+        tokio::spawn(async move {
+            let (read_half, mut write_half) = tokio::io::split(server);
+            let mut lines = BufReader::new(read_half).lines();
+            let _ = lines.next_line().await; // initialize
+            write_half
+                .write_all(br#"{"id":0,"result":{}}"#)
+                .await
+                .expect("init");
+            write_half.write_all(b"\n").await.expect("nl");
+            loop {
+                let line = match lines.next_line().await {
+                    Ok(Some(l)) => l,
+                    _ => break,
+                };
+                if line.contains("account/read") {
+                    write_half
+                        .write_all(br#"{"id":1,"result":{"account":{}}}"#)
+                        .await
+                        .expect("account");
+                    write_half.write_all(b"\n").await.expect("nl");
+                } else if line.contains("account/rateLimits/read") {
+                    // Upstream: codex-rs/app-server/src/request_processors/account_processor.rs
+                    write_half
+                        .write_all(br#"{"id":2,"error":{"code":-32600,"message":"codex account authentication required to read rate limits"}}"#)
+                        .await
+                        .expect("err");
+                    write_half.write_all(b"\n").await.expect("nl");
+                    break;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        });
+
+        let out = run_appserver_protocol_outcome(
+            client_read,
+            client_write,
+            "10.0.0",
+            Duration::from_secs(5),
+        )
+        .await;
+        assert!(
+            matches!(out, AppServerOutcome::Unauthenticated),
+            "expected Unauthenticated, got {out:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn appserver_protocol_other_id2_error_stays_failed() {
+        let (client, server) = duplex(64 * 1024);
+        let (client_read, client_write) = tokio::io::split(client);
+
+        tokio::spawn(async move {
+            let (read_half, mut write_half) = tokio::io::split(server);
+            let mut lines = BufReader::new(read_half).lines();
+            let _ = lines.next_line().await;
+            write_half
+                .write_all(br#"{"id":0,"result":{}}"#)
+                .await
+                .expect("init");
+            write_half.write_all(b"\n").await.expect("nl");
+            loop {
+                let line = match lines.next_line().await {
+                    Ok(Some(l)) => l,
+                    _ => break,
+                };
+                if line.contains("account/read") {
+                    write_half
+                        .write_all(br#"{"id":1,"result":{"account":{}}}"#)
+                        .await
+                        .expect("account");
+                    write_half.write_all(b"\n").await.expect("nl");
+                } else if line.contains("account/rateLimits/read") {
+                    // Same -32600 code, unrelated message: must NOT classify as auth.
+                    write_half
+                        .write_all(br#"{"id":2,"error":{"code":-32600,"message":"invalid request: unknown thread"}}"#)
+                        .await
+                        .expect("err");
+                    write_half.write_all(b"\n").await.expect("nl");
+                    break;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        });
+
+        let out = run_appserver_protocol_outcome(
+            client_read,
+            client_write,
+            "10.0.0",
+            Duration::from_secs(5),
+        )
+        .await;
+        assert!(matches!(out, AppServerOutcome::Failed), "got {out:?}");
+    }
+
+    #[test]
+    fn auth_marker_is_case_insensitive_and_message_only() {
+        let hit = serde_json::json!({"code": -32600, "message": "Codex account AUTHENTICATION REQUIRED to read rate limits"});
+        assert!(error_is_auth_required(&hit));
+        let code_only = serde_json::json!({"code": -32600});
+        assert!(!error_is_auth_required(&code_only));
+        let data_only = serde_json::json!({"code": -32600, "message": "boom", "data": "authentication required"});
+        assert!(!error_is_auth_required(&data_only));
     }
 
     #[tokio::test]

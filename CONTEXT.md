@@ -60,6 +60,16 @@ command.
 A percentage quota with stable ID, English label, used/remaining values, and
 optional UTC reset timestamp.
 
+**Unauthenticated**
+A provider whose credentials are absent, expired, or rejected. It is a typed
+state distinct from collection unavailability and from an operational provider
+error; its only action is login delegation (or the install guide when login is
+unavailable).
+
+**Initial collection**
+The first provider collection after the shared service starts. It follows the
+normal `cache use` rule like any other poll.
+
 **Last good data**
 The most recent valid normalized provider snapshot.
 

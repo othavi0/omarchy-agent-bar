@@ -127,7 +127,29 @@ provider_error
 ```
 
 Temporary failure with last good data becomes `stale` at the coordinator.
-Messages are safe English copy. Control flow never uses regex over the message.
+Failure rows are cached only for stale retention; they are never served fresh,
+so the next automatic collection retries live.
+
+Messages are safe English copy. Control flow never uses regex over a
+human message. The one allowed exception is an explicit, allowlisted
+substring inside the Rust adapter, when the provider exposes no typed signal:
+each marker is a literal (a named constant for new markers) and has a unit test
+for a look-alike that must NOT match. New markers must also carry a comment
+naming the upstream source file they were read from; Codex is the reference,
+Amp and Antigravity predate this rule. Examples: Amp's `not signed` / `sign
+in` / `unauthorized` / `please log in`, Antigravity's `not signed in`,
+Codex's `CODEX_AUTH_REQUIRED_MARKER` (`authentication required`, from
+`codex-rs/app-server/src/request_processors/account_processor.rs`). Re-verify
+the upstream text when bumping a provider CLI. Any `account/rateLimits/read`
+error whose message happens to embed `authentication required` for a
+non-account reason (a proxy `407 Proxy Authentication Required` surfaced in
+the message is the plausible case) would classify as unauthenticated; the
+marker was chosen because upstream exposes no typed signal, and live QA with
+a signed-out Codex is the check.
+
+Prove unauthenticated explicitly: a signed-out account must never fall through
+to obsolete on-disk usage (`JSON-007`); add a test that pairs the signed-out
+signal with a stale local fixture and asserts `unauthenticated`.
 
 ## Required fixtures
 
