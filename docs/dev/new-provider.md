@@ -133,7 +133,7 @@ so the next automatic collection retries live.
 Messages are safe English copy. Control flow never uses regex over a
 human message. The one allowed exception is an explicit, allowlisted
 substring inside the Rust adapter, when the provider exposes no typed signal:
-each marker is a literal (a named constant for new markers), has a unit test
+each marker is a literal (a named constant for new markers) and has a unit test
 for a look-alike that must NOT match. New markers must also carry a comment
 naming the upstream source file they were read from; Codex is the reference,
 Amp and Antigravity predate this rule. Examples: Amp's `not signed` / `sign

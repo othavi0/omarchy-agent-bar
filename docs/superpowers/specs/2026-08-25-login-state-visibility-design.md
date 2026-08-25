@@ -68,8 +68,10 @@ Findings that the decisions below rest on:
 - Matching an explicit, allowlisted substring inside a Rust adapter is the
   same mechanism `classify_amp_failure` already uses. It remains forbidden in
   QML and forbidden as a general control-flow pattern (`CONTEXT.md`, "terms
-  to avoid"); each substring is a literal constant with a unit test and a
-  comment naming the upstream source file it was read from.
+  to avoid"); each substring is a literal constant with a unit test for a
+  look-alike that must NOT match. New markers must also carry a comment naming
+  the upstream source file they were read from; Codex is the reference, Amp and
+  Antigravity predate this rule.
 - The message is not a versioned upstream contract. A Codex release that
   changes it degrades to today's behavior (`provider_error` + `Retry`), never
   to a wrong "connected" state. `docs/dev/new-provider.md` records the
@@ -120,8 +122,8 @@ Findings that the decisions below rest on:
   60 s) is the only automatic retry cadence, so a transient failure after
   install or boot is visible for at most one interval instead of the
   provider's success TTL.
-- A failure on the very first collection (no last good data) follows the same
-  rule as a failure with stale retention available.
+- With last good data, the row becomes `stale` and is served for the TTL —
+  unchanged behaviour. The new rule affects only rows without last good data.
 
 ### Ruled out
 
@@ -142,8 +144,10 @@ Findings that the decisions below rest on:
 - Coordinator: a cached `provider_error` row inside its catalog TTL is
   re-collected under `cache use`; a cached `ready` row inside TTL is served.
 - QML: `unauthenticated` snapshot renders `—` in the chip, the title above,
-  and exactly one action in the popup; `dispatchAction` routes `login` to
-  `loginProvider`.
+  and exactly one action in the popup. The `dispatchAction` → `loginProvider`
+  routing (`Service.qml`) is exercised in the live QA gate, since
+  `tests/qml/tst_Service.qml` drives a harness rather than `Service.qml`
+  itself.
 - Live QA gate: fresh install with one provider logged out, then log in from
   the popup, then confirm the chip updates on the exit-0 refresh.
 

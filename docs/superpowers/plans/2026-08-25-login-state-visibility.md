@@ -680,7 +680,7 @@ EOF
 Checklist for the user, not the agent:
 1. With Codex signed out, open the popup: Codex shows `Not signed in to Codex` and `Sign in`; the chip shows `—`.
 2. Click `Sign in`, complete `codex login` in the terminal, close it: within a few seconds the chip shows a percentage without pressing Retry.
-3. Disconnect the network, wait one poll: Claude shows `Cannot reach Claude`; reconnect: it recovers on the next poll (≤ 60 s), not after 5 minutes.
+3. Clear `$XDG_CACHE_HOME/agent-bar/status-v2.json` (or use a fresh install), disconnect the network, restart the shell, and wait one poll: Claude shows `Cannot reach Claude`; reconnect: it recovers on the next poll (≤ 60 s). With last good data present, a blip shows the retained reading as `stale` and recovers within the provider's TTL — that is expected.
 
 Record the result in `docs/history/qa/` per the release runbook.
 
