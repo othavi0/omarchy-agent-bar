@@ -23,6 +23,10 @@ That design is this specification's change-control record for
 other file in this directory, and every other requirement, still describes
 the current, unamended contract.
 
+The login-state visibility design, approved 2026-08-25, refines `JSON-004`,
+`UX-030`, `CACHE-004`, `CACHE-006`, and `ARCH-021`:
+[docs/superpowers/specs/2026-08-25-login-state-visibility-design.md](../../superpowers/specs/2026-08-25-login-state-visibility-design.md).
+
 ## Product statement
 
 Agent Bar v10 is an Omarchy Quattro Quickshell plugin. Its only graphical
