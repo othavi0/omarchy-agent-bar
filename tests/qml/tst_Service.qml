@@ -441,6 +441,47 @@ TestCase {
     compare(cleared.status, 3)
   }
 
+  function test_lane_timeout_clear_is_immutable() {
+    var original = { status: true, settingsRead: true }
+    var cleared = Core.clearLaneTimeout(original, "status")
+    verify(original.status)
+    verify(!cleared.status)
+    verify(cleared.settingsRead)
+  }
+
+  function test_real_apply_clears_older_settled_generation() {
+    var s = Qt.createQmlObject([
+      "import QtQuick",
+      "import '../../CoreService.js' as Core",
+      "Item {",
+      "  property var settled: ({ status: 3, settingsRead: 8 })",
+      "  function applyStatus() { settled = Core.clearSettledLane(settled, 'status') }",
+      "}"
+    ].join("\n"), testCase)
+    verify(s !== null)
+    s.applyStatus()
+    verify(!Core.isLaneSettled(s.settled, "status", 3))
+    verify(Core.isLaneSettled(s.settled, "settingsRead", 8))
+    s.destroy()
+  }
+
+  function test_service_pins_started_generation_in_kick() {
+    var xhr = new XMLHttpRequest()
+    xhr.open("GET", serviceUrl, false)
+    xhr.send()
+    var src = String(xhr.responseText)
+    verify(src.indexOf("onStarted: root.versionProbeStartedGeneration") < 0)
+    verify(src.indexOf("onStarted: root.statusStartedGeneration") < 0)
+    verify(src.indexOf("onStarted: root.settingsReadStartedGeneration") < 0)
+    verify(src.indexOf("onStarted: root.settingsBootstrapStartedGeneration") < 0)
+    verify(src.indexOf("root.settingsWriteStartedGeneration = root.activeSettingsWriteGeneration\n      // Write") < 0)
+    verify(src.indexOf("onStarted: root.maintenanceCheckStartedGeneration") < 0)
+    verify(src.indexOf("root.maintenanceHandoffStartedGeneration = root.activeMaintenanceHandoffGeneration\n      // BUNDLE") < 0)
+    var pin = src.indexOf("statusStartedGeneration = gen")
+    var start = src.indexOf("statusProcess.running = true", pin)
+    verify(pin >= 0 && start > pin)
+  }
+
   // Live Quattro: duplicate Component.onCompleted → "Property value set multiple times"
   // and the service never loads (bar chips disappear).
   function test_service_qml_has_single_component_on_completed() {

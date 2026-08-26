@@ -1,5 +1,6 @@
 import QtQuick
 import QtTest
+import "../../CoreService.js" as Core
 
 TestCase {
   id: testCase
@@ -155,6 +156,40 @@ TestCase {
     compare(Object.keys(s.timedOutLanes).length, 0)
   }
 
+  function test_native_write_exit_keeps_new_save_intact() {
+    var s = createService()
+    s.applySettingsBootstrapResult(s.activeSettingsBootstrapGeneration, "", 1)
+    s.openSettings("monitor-a")
+    s.applySettingsReadResult(
+      s.activeSettingsReadGeneration,
+      JSON.stringify(validSettings()),
+      0
+    )
+    s.setDisplayMetric("used")
+    verify(s.saveSettings())
+    var generationA = s.activeSettingsWriteGeneration
+    tryVerify(function () { return s.settingsState.phase === "dirty" }, 500)
+
+    s.setDisplayMetric("remaining")
+    verify(s.saveSettings())
+    var generationB = s.activeSettingsWriteGeneration
+    verify(generationB !== generationA)
+    s.settingsWriteStartedGeneration = generationA
+    var completedBefore = s.completedCallbackCount
+
+    s.settingsWriteExited(0)
+
+    compare(s.activeSettingsWriteGeneration, generationB)
+    compare(s.settingsWriteBusy, true)
+    compare(s.settingsState.phase, "saving")
+    compare(s.settingsDraft.display.metric, "remaining")
+    compare(s.settingsState.snapshot.display.metric, "remaining")
+    verify(s.pendingSettingsPayload.indexOf('"metric":"remaining"') >= 0)
+    compare(s.pendingSettingsPayloadGeneration, generationB)
+    compare(s.completedCallbackCount, completedBefore)
+    verify(!s.timedOutLanes.settingsWrite)
+  }
+
   function test_update_check_timeout_enters_error() {
     var s = createService()
     s.checkForUpdates()
@@ -180,6 +215,7 @@ TestCase {
 
   function test_late_timed_out_status_cannot_replace_new_request() {
     var s = createService()
+    s.applySettingsBootstrapResult(s.activeSettingsBootstrapGeneration, "", 1)
     s.beginCollection()
     var generationA = s.activeStatusGeneration
     tryCompare(s, "statusBusy", false, 500)
@@ -193,6 +229,27 @@ TestCase {
     compare(s.statusBusy, true)
     compare(s.snapshot, null)
     compare(Object.keys(s.timedOutLanes).length, 0)
+  }
+
+  function test_native_status_exit_keeps_new_request_intact() {
+    var s = createService()
+    s.beginCollection()
+    var generationA = s.activeStatusGeneration
+    tryCompare(s, "statusBusy", false, 500)
+    s.kickStatus()
+    var generationB = s.activeStatusGeneration
+    verify(generationB !== generationA)
+    s.statusStartedGeneration = generationA
+    var completedBefore = s.completedCallbackCount
+
+    s.statusExited(0)
+
+    compare(s.activeStatusGeneration, generationB)
+    compare(s.statusBusy, true)
+    compare(s.refreshing, true)
+    compare(s.snapshot, null)
+    compare(s.completedCallbackCount, completedBefore)
+    verify(!s.timedOutLanes.status)
   }
 
   function test_late_timed_out_bootstrap_cannot_replace_new_request() {
@@ -211,7 +268,7 @@ TestCase {
     compare(Object.keys(s.timedOutLanes).length, 0)
   }
 
-  function test_stale_non_timeout_exit_is_ignored_completely() {
+  function test_settled_exit_is_ignored_completely() {
     var s = createService()
     s.beginCollection()
     var generationA = s.activeStatusGeneration
@@ -220,6 +277,7 @@ TestCase {
     var generationB = s.activeStatusGeneration
     var completedBefore = s.completedCallbackCount
     s.recordLaneTimeout("settingsRead")
+    s.recordLaneTimeout("status", generationA)
 
     s.statusExited(0, generationA, validEnvelope(), "")
 
@@ -228,6 +286,30 @@ TestCase {
     compare(s.snapshot, null)
     compare(s.completedCallbackCount, completedBefore)
     verify(s.timedOutLanes.settingsRead)
+    verify(!s.timedOutLanes.status)
+  }
+
+  function test_reap_clears_only_its_own_timed_out_lane() {
+    var s = createService()
+    s.recordLaneTimeout("status", 4)
+    s.recordLaneTimeout("settingsRead", 9)
+    s.recordLaneTimeout("maintenanceCheck", 12)
+    compare(s.runtimeHealth, "stalled")
+    var completedBefore = s.completedCallbackCount
+
+    s.statusExited(0, 4, validEnvelope(), "")
+
+    verify(!s.timedOutLanes.status)
+    verify(s.timedOutLanes.settingsRead)
+    compare(s.runtimeHealth, "stalled")
+    compare(s.completedCallbackCount, completedBefore)
+    verify(!Core.isLaneSettled(s.settledLanes, "status", 4))
+    verify(Core.isLaneSettled(s.settledLanes, "settingsRead", 9))
+    verify(Core.isLaneSettled(s.settledLanes, "maintenanceCheck", 12))
+
+    s.applySettingsReadResult(s.activeSettingsReadGeneration, "", 1)
+    compare(Object.keys(s.timedOutLanes).length, 0)
+    verify(!Core.isLaneSettled(s.settledLanes, "settingsRead", 9))
   }
 
   function test_runtime_health_accumulates_and_real_callback_resets() {

@@ -57,6 +57,15 @@ function recordLaneTimeout(timedOutLanes, lane) {
   return next
 }
 
+function clearLaneTimeout(timedOutLanes, lane) {
+  var next = {}
+  for (var key in (timedOutLanes || {})) {
+    if (key !== String(lane))
+      next[key] = !!timedOutLanes[key]
+  }
+  return next
+}
+
 function settleLane(settledLanes, lane, generation) {
   var next = {}
   for (var key in (settledLanes || {}))
@@ -74,7 +83,7 @@ function isLaneSettled(settledLanes, lane, generation) {
 }
 
 function clearSettledLane(settledLanes, lane, generation) {
-  if (!isLaneSettled(settledLanes, lane, generation))
+  if (generation !== undefined && !isLaneSettled(settledLanes, lane, generation))
     return settledLanes || {}
   var next = {}
   for (var key in settledLanes) {
