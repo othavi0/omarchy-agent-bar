@@ -51,7 +51,7 @@ TestCase {
     readonly property string manifestVersion: "10.0.0"
 
     function health(v) {
-      return Core.health(versionReady, versionFailed, helperVersion, manifestVersion, v)
+      return Core.health(versionReady, versionFailed, helperVersion, manifestVersion, v, "ok")
     }
     function applyVersion(stdout) {
       var v = Core.parseVersionStdout(stdout, "", 0)
@@ -391,7 +391,7 @@ TestCase {
     compare(Core.canStartLane(true), false)
   }
 
-  function test_service_qml_declares_six_process_lanes() {
+  function test_service_qml_declares_seven_process_lanes() {
     var xhr = new XMLHttpRequest()
     xhr.open("GET", serviceUrl, false)
     xhr.send()
@@ -399,11 +399,35 @@ TestCase {
     verify(src.indexOf("id: versionProbe") >= 0)
     verify(src.indexOf("id: statusProcess") >= 0)
     verify(src.indexOf("id: settingsReadProcess") >= 0)
+    verify(src.indexOf("id: settingsBootstrapProcess") >= 0)
     verify(src.indexOf("id: settingsWriteProcess") >= 0)
     verify(src.indexOf("id: maintenanceCheckProcess") >= 0)
     verify(src.indexOf("id: maintenanceHandoffProcess") >= 0)
     verify(src.indexOf("id: pollTimer") >= 0)
     verify(src.indexOf('target: "othavi0.agent-bar"') >= 0)
+  }
+
+  function test_service_qml_declares_lane_timeouts_and_destruction() {
+    var xhr = new XMLHttpRequest()
+    xhr.open("GET", serviceUrl, false)
+    xhr.send()
+    var src = String(xhr.responseText)
+    verify(src.indexOf("id: settingsReadTimeout") >= 0)
+    verify(src.indexOf("id: settingsBootstrapTimeout") >= 0)
+    verify(src.indexOf("id: settingsWriteTimeout") >= 0)
+    verify(src.indexOf("id: maintenanceCheckTimeout") >= 0)
+    verify(src.indexOf("id: maintenanceHandoffTimeout") >= 0)
+    verify(src.indexOf("Component.onDestruction") >= 0)
+  }
+
+  function test_runtime_health() {
+    compare(Core.runtimeHealth({}), "ok")
+    compare(Core.runtimeHealth({ settingsRead: true }), "ok")
+    compare(Core.runtimeHealth({ settingsRead: true, status: true }), "stalled")
+    var original = { status: true }
+    var next = Core.recordLaneTimeout(original, "settingsRead")
+    compare(Core.runtimeHealth(next), "stalled")
+    verify(original.settingsRead === undefined)
   }
 
   // Live Quattro: duplicate Component.onCompleted → "Property value set multiple times"

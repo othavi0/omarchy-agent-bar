@@ -29,13 +29,32 @@ var PROVIDER_STATES = {
 // Version / health / IPC refresh
 // ---------------------------------------------------------------------------
 
-function health(versionReady, versionFailed, helperVersion, manifestVersion, expectedVersion) {
+function health(versionReady, versionFailed, helperVersion, manifestVersion, expectedVersion, runtimeHealthValue) {
+  if (runtimeHealthValue === "stalled")
+    return "stalled"
   var expected = String(expectedVersion || "")
   if (!versionReady || versionFailed)
     return "unknown"
   if (String(helperVersion) === expected && String(manifestVersion) === expected)
     return "ok"
   return "unknown"
+}
+
+function runtimeHealth(timedOutLanes) {
+  var count = 0
+  for (var lane in (timedOutLanes || {})) {
+    if (timedOutLanes[lane])
+      count++
+  }
+  return count >= 2 ? "stalled" : "ok"
+}
+
+function recordLaneTimeout(timedOutLanes, lane) {
+  var next = {}
+  for (var key in (timedOutLanes || {}))
+    next[key] = !!timedOutLanes[key]
+  next[String(lane)] = true
+  return next
 }
 
 function isClosedProvider(providerId) {

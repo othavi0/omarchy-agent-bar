@@ -27,6 +27,9 @@ Item {
   property bool testMode: false
   property int versionProbeTimeoutMs: 2000
   property int statusTimeoutMs: 60000
+  property int settingsTimeoutMs: 15000
+  property int maintenanceCheckTimeoutMs: 30000
+  property int maintenanceHandoffTimeoutMs: 120000
   property int pollIntervalMs: Core.pollIntervalMs(appliedSettings)
   property int collectionDelayMs: 0
 
@@ -50,6 +53,9 @@ Item {
   // Pending maintenance intention after confirm (update apply / uninstall).
   property var pendingMaintenanceIntention: null
   property string pendingMaintenancePayload: ""
+  property var timedOutLanes: ({})
+  property int completedCallbackCount: 0
+  readonly property string runtimeHealth: Core.runtimeHealth(timedOutLanes)
 
   // Version probe
   property string helperVersion: ""
@@ -107,7 +113,25 @@ Item {
   }
 
   function health(expectedVersion) {
-    return Core.health(versionReady, versionFailed, helperVersion, manifestVersion, expectedVersion)
+    return Core.health(
+      versionReady,
+      versionFailed,
+      helperVersion,
+      manifestVersion,
+      expectedVersion,
+      runtimeHealth
+    )
+  }
+
+  function recordLaneTimeout(lane) {
+    timedOutLanes = Core.recordLaneTimeout(timedOutLanes, lane)
+  }
+
+  function recordCompletedCallback(fromTimeout) {
+    if (fromTimeout)
+      return
+    completedCallbackCount++
+    timedOutLanes = ({})
   }
 
   // IPC refresh(providerId) — queue one cache-bypass provider refresh.
@@ -328,6 +352,7 @@ Item {
     syncMaintenanceVersion()
     maintenanceUi = Maintenance.maintenanceUiChecking(maintenanceUi)
     maintenanceCheckBusy = true
+    maintenanceCheckTimeout.restart()
     if (testMode)
       return
     var helper = resolvedHelperPath()
@@ -340,8 +365,10 @@ Item {
     maintenanceCheckProcess.running = true
   }
 
-  function applyUpdateCheckResult(stdout, exitCode) {
+  function applyUpdateCheckResult(stdout, exitCode, fromTimeout) {
+    maintenanceCheckTimeout.stop()
     maintenanceCheckBusy = false
+    recordCompletedCallback(!!fromTimeout)
     maintenanceUi = Maintenance.maintenanceUiFromCheck(
       maintenanceUi,
       stdout,
@@ -439,7 +466,8 @@ Item {
   // Version probe lane
   // -------------------------------------------------------------------------
 
-  function applyVersionProbeResult(stdout, stderr, exitCode) {
+  function applyVersionProbeResult(stdout, stderr, exitCode, fromTimeout) {
+    recordCompletedCallback(!!fromTimeout)
     var version = Core.parseVersionStdout(stdout, stderr, exitCode)
     if (version)
       finishVersionProbeSuccess(version)
@@ -541,6 +569,7 @@ Item {
     statusBusy = true
     refreshing = true
     statusStartCount++
+    statusTimeout.restart()
     // StdioCollector.text is read-only; waitForEnd replaces content per run.
     if (testMode) {
       // Tests call applyStatusResult(gen, stdout, stderr, code)
@@ -548,15 +577,15 @@ Item {
     }
     statusProcess.command = argv
     statusProcess.running = true
-    statusTimeout.restart()
   }
 
-  function applyStatusResult(generation, stdout, stderr, exitCode) {
+  function applyStatusResult(generation, stdout, stderr, exitCode, fromTimeout) {
     if (!Core.shouldApplyGeneration(activeStatusGeneration, generation))
       return
     statusTimeout.stop()
     statusBusy = false
     refreshing = false
+    recordCompletedCallback(!!fromTimeout)
 
     if (exitCode !== 0) {
       // Keep last snapshot (CACHE-021 / malformed retention).
@@ -596,14 +625,17 @@ Item {
     if (!helper.length)
       return
     settingsBootstrapBusy = true
+    settingsBootstrapTimeout.restart()
     if (testMode)
       return
     settingsBootstrapProcess.command = Settings.settingsArgvShow(helper)
     settingsBootstrapProcess.running = true
   }
 
-  function applySettingsBootstrapResult(stdout, exitCode) {
+  function applySettingsBootstrapResult(stdout, exitCode, fromTimeout) {
+    settingsBootstrapTimeout.stop()
     settingsBootstrapBusy = false
+    recordCompletedCallback(!!fromTimeout)
     appliedSettings = Settings.settingsBootstrapResult(appliedSettings, stdout, exitCode)
   }
 
@@ -615,16 +647,19 @@ Item {
     if (!helper.length)
       return
     settingsReadBusy = true
+    settingsReadTimeout.restart()
     if (testMode)
       return
     settingsReadProcess.command = Settings.settingsArgvShow(helper)
     settingsReadProcess.running = true
   }
 
-  function applySettingsReadResult(generation, stdout, exitCode) {
+  function applySettingsReadResult(generation, stdout, exitCode, fromTimeout) {
     if (!Core.shouldApplyGeneration(activeSettingsReadGeneration, generation))
       return
+    settingsReadTimeout.stop()
     settingsReadBusy = false
+    recordCompletedCallback(!!fromTimeout)
     if (!settingsState || settingsState.phase === "closed")
       return
     // SET-026: any failure is a visible terminal state, never an endless
@@ -660,6 +695,7 @@ Item {
     if (!helper.length)
       return
     settingsWriteBusy = true
+    settingsWriteTimeout.restart()
     if (testMode)
       return
     // Re-arm stdin: each save closes it after writing (EOF delivery below).
@@ -668,10 +704,12 @@ Item {
     settingsWriteProcess.running = true
   }
 
-  function applySettingsWriteResult(generation, ok, canonical) {
+  function applySettingsWriteResult(generation, ok, canonical, fromTimeout) {
     if (!Core.shouldApplyGeneration(activeSettingsWriteGeneration, generation))
       return
+    settingsWriteTimeout.stop()
     settingsWriteBusy = false
+    recordCompletedCallback(!!fromTimeout)
     pendingSettingsPayload = ""
     settingsState = Settings.settingsFinishSave(settingsState, generation, ok, canonical)
     settingsDraft = settingsState ? settingsState.draft : null
@@ -697,6 +735,7 @@ Item {
     if (!Core.canStartLane(maintenanceHandoffBusy))
       return
     maintenanceHandoffBusy = true
+    maintenanceHandoffTimeout.restart()
     var helper = resolvedHelperPath()
     var intention = pendingMaintenanceIntention
     var argv = null
@@ -723,8 +762,10 @@ Item {
     maintenanceHandoffProcess.running = true
   }
 
-  function applyMaintenanceHandoffDone(exitCode) {
+  function applyMaintenanceHandoffDone(exitCode, fromTimeout) {
+    maintenanceHandoffTimeout.stop()
     maintenanceHandoffBusy = false
+    recordCompletedCallback(!!fromTimeout)
     var intention = pendingMaintenanceIntention
     pendingMaintenanceIntention = null
     pendingMaintenancePayload = ""
@@ -882,7 +923,78 @@ Item {
         return
       if (statusProcess.running)
         statusProcess.running = false
-      root.applyStatusResult(root.activeStatusGeneration, "", "timeout", 1)
+      root.recordLaneTimeout("status")
+      root.applyStatusResult(root.activeStatusGeneration, "", "timeout", 1, true)
+    }
+  }
+
+  Timer {
+    id: settingsReadTimeout
+    interval: root.settingsTimeoutMs
+    repeat: false
+    onTriggered: {
+      if (!root.settingsReadBusy)
+        return
+      if (settingsReadProcess.running)
+        settingsReadProcess.running = false
+      root.recordLaneTimeout("settingsRead")
+      root.applySettingsReadResult(root.activeSettingsReadGeneration, "", 1, true)
+    }
+  }
+
+  Timer {
+    id: settingsBootstrapTimeout
+    interval: root.settingsTimeoutMs
+    repeat: false
+    onTriggered: {
+      if (!root.settingsBootstrapBusy)
+        return
+      if (settingsBootstrapProcess.running)
+        settingsBootstrapProcess.running = false
+      root.recordLaneTimeout("settingsBootstrap")
+      root.applySettingsBootstrapResult("", 1, true)
+    }
+  }
+
+  Timer {
+    id: settingsWriteTimeout
+    interval: root.settingsTimeoutMs
+    repeat: false
+    onTriggered: {
+      if (!root.settingsWriteBusy)
+        return
+      if (settingsWriteProcess.running)
+        settingsWriteProcess.running = false
+      root.recordLaneTimeout("settingsWrite")
+      root.applySettingsWriteResult(root.activeSettingsWriteGeneration, false, null, true)
+    }
+  }
+
+  Timer {
+    id: maintenanceCheckTimeout
+    interval: root.maintenanceCheckTimeoutMs
+    repeat: false
+    onTriggered: {
+      if (!root.maintenanceCheckBusy)
+        return
+      if (maintenanceCheckProcess.running)
+        maintenanceCheckProcess.running = false
+      root.recordLaneTimeout("maintenanceCheck")
+      root.applyUpdateCheckResult("", 1, true)
+    }
+  }
+
+  Timer {
+    id: maintenanceHandoffTimeout
+    interval: root.maintenanceHandoffTimeoutMs
+    repeat: false
+    onTriggered: {
+      if (!root.maintenanceHandoffBusy)
+        return
+      if (maintenanceHandoffProcess.running)
+        maintenanceHandoffProcess.running = false
+      root.recordLaneTimeout("maintenanceHandoff")
+      root.applyMaintenanceHandoffDone(1, true)
     }
   }
 
@@ -921,5 +1033,31 @@ Item {
   Component.onCompleted: {
     root.syncMaintenanceVersion()
     root.tryStartProduction()
+  }
+
+  Component.onDestruction: {
+    versionTimeout.stop()
+    statusTimeout.stop()
+    settingsReadTimeout.stop()
+    settingsBootstrapTimeout.stop()
+    settingsWriteTimeout.stop()
+    maintenanceCheckTimeout.stop()
+    maintenanceHandoffTimeout.stop()
+    collectionDelay.stop()
+    pollTimer.stop()
+    if (versionProbe.running)
+      versionProbe.running = false
+    if (statusProcess.running)
+      statusProcess.running = false
+    if (settingsReadProcess.running)
+      settingsReadProcess.running = false
+    if (settingsBootstrapProcess.running)
+      settingsBootstrapProcess.running = false
+    if (settingsWriteProcess.running)
+      settingsWriteProcess.running = false
+    if (maintenanceCheckProcess.running)
+      maintenanceCheckProcess.running = false
+    if (maintenanceHandoffProcess.running)
+      maintenanceHandoffProcess.running = false
   }
 }
