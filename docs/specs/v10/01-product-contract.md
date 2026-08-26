@@ -51,7 +51,10 @@ connection actions, update, and uninstall.
   or global `agent-bar` executable.
 - `PROD-019`: No custom theme editor or v10 internationalization layer.
 - `PROD-019A`: No monetary values are displayed or serialized, including
-  provider-reported spend, dollar balance, and credits.
+  provider-reported spend, dollar balance, and credits. A percentage derived
+  from a provider's own limit ratio (Amp `$remaining/$total`, Grok
+  `used/monthlyLimit`) is a usage percentage, not a monetary value: the
+  amounts are discarded at normalization and never leave the adapter.
 
 ## Supported providers and defaults
 
@@ -139,4 +142,6 @@ Notifications: enabled
 - `PROD-030`: The plugin must never display an empty or silently malformed
   status result.
 - `PROD-031`: A connected provider with no percentage window shows `—` in its
-  chip and `This account is billed another way.` in its popup.
+  chip and `This plan does not publish a usage percentage.` in its popup.
+  This is a valid reading, not a failure: subscriptions such as X Premium
+  authenticate the Grok CLI without exposing a quota.

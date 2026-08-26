@@ -189,7 +189,9 @@ provider_error
 - `JSON-022A`: A connected provider may return an empty `windows` array when
   its account exposes no percentage quota.
 - `JSON-022B`: The schema has no spend, balance, credits, currency, cost,
-  arbitrary extras, or generic monetary facts.
+  arbitrary extras, or generic monetary facts. A window whose percentage was
+  derived from a limit ratio carries only `usedPercent`/`remainingPercent`
+  (PROD-019A).
 - `JSON-022C`: `rateLimitResetsAvailable`, when present, is a non-negative
   integer count of provider-granted rate-limit resets. It is a quota-reset
   count, not a monetary fact: it never carries balance, price, or currency,

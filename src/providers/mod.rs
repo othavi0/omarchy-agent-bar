@@ -17,7 +17,7 @@ pub use adapter::{
 pub use adapters::{
     AmpAdapter, AntigravityAdapter, ClaudeAdapter, CodexAdapter, GrokAdapter, AMP_ADAPTER,
     ANTIGRAVITY_ADAPTER, CLAUDE_ADAPTER, CLAUDE_USAGE_URL, CODEX_ADAPTER, GROK_ADAPTER,
-    GROK_BILLING_URL,
+    GROK_BILLING_URL, GROK_MONTHLY_BILLING_URL,
 };
 pub use catalog::{
     descriptor, discover, login_process_argv, CatalogError, CollectionAvailability, Discovery,
