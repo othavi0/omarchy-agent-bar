@@ -55,6 +55,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `This plan does not publish a usage percentage.` (PROD-031 / UX-032A
   amended).
 
+## [10.3.17] - 2026-08-26
+
+### Changed
+
+- fix: read Grok monthly limit and no-quota plans
+- docs: record v10.3.16 live QA for login state
+
 ## [10.3.16] - 2026-08-25
 
 ### Changed
