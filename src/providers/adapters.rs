@@ -99,6 +99,9 @@ fn classify_amp_failure(out: &ProcessOutput, login_available: bool) -> ProviderR
 
 /// Authenticated billing endpoint (literal; equality-tested).
 pub const GROK_BILLING_URL: &str = "https://cli-chat-proxy.grok.com/v1/billing?format=credits";
+/// Monthly-limit billing shape, consulted only when the credits shape carries
+/// no percentage (literal; equality-tested).
+pub const GROK_MONTHLY_BILLING_URL: &str = "https://cli-chat-proxy.grok.com/v1/billing";
 
 pub struct GrokAdapter;
 
@@ -184,59 +187,133 @@ impl ProviderAdapter for GrokAdapter {
             )
             .await
             {
-                Ok(resp) if resp.status == 401 || resp.status == 403 => unauthenticated(
-                    ProviderId::Grok,
-                    GROK.display_name,
-                    "Grok authentication was rejected.",
-                    login,
-                    GROK.installation_url,
-                    false,
-                ),
                 Ok(resp) if (200..300).contains(&resp.status) => {
                     let _ = resp.final_url;
-                    grok_from_billing_json(&resp.body, account, now, login)
-                }
-                Ok(resp) if resp.status >= 500 => ProviderResult::ProviderError {
-                    id: ProviderId::Grok,
-                    name: GROK.display_name.to_owned(),
-                    message: "Grok billing request failed.".into(),
-                    retryable: true,
-                },
-                Ok(_) => ProviderResult::ProviderError {
-                    id: ProviderId::Grok,
-                    name: GROK.display_name.to_owned(),
-                    message: "Grok billing request failed.".into(),
-                    retryable: false,
-                },
-                Err(super::adapter::HttpError::Network(_)) => ProviderResult::NetworkError {
-                    id: ProviderId::Grok,
-                    name: GROK.display_name.to_owned(),
-                    message: "Network error while contacting Grok.".into(),
-                },
-                Err(super::adapter::HttpError::RedirectRefused(_)) => {
-                    ProviderResult::ProviderError {
-                        id: ProviderId::Grok,
-                        name: GROK.display_name.to_owned(),
-                        message: "Grok billing redirect refused.".into(),
-                        retryable: false,
+                    let credits = grok_from_billing_json(&resp.body, account.clone(), now, login);
+                    match &credits {
+                        ProviderResult::Ready { windows, .. } if windows.is_empty() => {
+                            grok_monthly_fallback(
+                                context, &headers, max_body, account, now, login, credits,
+                            )
+                            .await
+                        }
+                        _ => credits,
                     }
                 }
-                Err(super::adapter::HttpError::BodyTooLarge) => ProviderResult::ProviderError {
-                    id: ProviderId::Grok,
-                    name: GROK.display_name.to_owned(),
-                    message: "Grok billing response exceeded size limit.".into(),
-                    retryable: false,
-                },
-                Err(super::adapter::HttpError::InvalidResponse(_)) => {
-                    ProviderResult::ProviderError {
-                        id: ProviderId::Grok,
-                        name: GROK.display_name.to_owned(),
-                        message: "Invalid Grok billing response.".into(),
-                        retryable: false,
-                    }
-                }
+                other => grok_http_failure(other, login),
             }
         })
+    }
+}
+
+/// Second billing shape for accounts whose credits payload publishes no
+/// percentage (monthly-limit teams). Network errors and 5xx are the same
+/// typed operational results as the primary request, so the coordinator's
+/// stale retention keeps the last good reading instead of an empty `Ready`
+/// overwriting it. A 4xx, or a 2xx body without a window, keeps the credits
+/// reading, including its `plan`/`account`.
+async fn grok_monthly_fallback(
+    context: &CollectionContext<'_>,
+    headers: &[(&str, &str)],
+    max_body: usize,
+    account: Option<String>,
+    now: time::OffsetDateTime,
+    login: bool,
+    credits: ProviderResult,
+) -> ProviderResult {
+    let response = super::retry::http_get_with_retry(
+        context.http,
+        &GROK,
+        GROK_MONTHLY_BILLING_URL,
+        headers,
+        max_body,
+    )
+    .await;
+    // The credits request just proved the token, so a 4xx here (including
+    // 401/403 or a missing route) is not a fault of this account: keep the
+    // credits reading. Network errors and 5xx are typed failures so stale
+    // retention can protect a cached monthly window.
+    let resp = match response {
+        Ok(resp) if (200..300).contains(&resp.status) => resp,
+        Ok(resp) if resp.status < 500 => return credits,
+        other => return grok_http_failure(other, login),
+    };
+    let monthly = grok_from_billing_json(&resp.body, account, now, login);
+    match (monthly, credits) {
+        (
+            ProviderResult::Ready {
+                windows,
+                plan: monthly_plan,
+                ..
+            },
+            ProviderResult::Ready {
+                id,
+                name,
+                source,
+                plan,
+                account,
+                last_success_at,
+                rate_limit_resets_available,
+                ..
+            },
+        ) => ProviderResult::Ready {
+            id,
+            name,
+            source,
+            plan: plan.or(monthly_plan),
+            account,
+            windows,
+            last_success_at,
+            rate_limit_resets_available,
+        },
+        (_, credits) => credits,
+    }
+}
+
+/// Map a non-2xx or failed billing request to its typed result. Shared by
+/// the credits and monthly requests.
+fn grok_http_failure(
+    response: Result<super::adapter::HttpResponse, super::adapter::HttpError>,
+    login: bool,
+) -> ProviderResult {
+    match response {
+        Ok(resp) if resp.status == 401 || resp.status == 403 => unauthenticated(
+            ProviderId::Grok,
+            GROK.display_name,
+            "Grok authentication was rejected.",
+            login,
+            GROK.installation_url,
+            false,
+        ),
+        Ok(resp) => ProviderResult::ProviderError {
+            id: ProviderId::Grok,
+            name: GROK.display_name.to_owned(),
+            message: "Grok billing request failed.".into(),
+            retryable: resp.status >= 500,
+        },
+        Err(super::adapter::HttpError::Network(_)) => ProviderResult::NetworkError {
+            id: ProviderId::Grok,
+            name: GROK.display_name.to_owned(),
+            message: "Network error while contacting Grok.".into(),
+        },
+        Err(super::adapter::HttpError::RedirectRefused(_)) => ProviderResult::ProviderError {
+            id: ProviderId::Grok,
+            name: GROK.display_name.to_owned(),
+            message: "Grok billing redirect refused.".into(),
+            retryable: false,
+        },
+        Err(super::adapter::HttpError::BodyTooLarge) => ProviderResult::ProviderError {
+            id: ProviderId::Grok,
+            name: GROK.display_name.to_owned(),
+            message: "Grok billing response exceeded size limit.".into(),
+            retryable: false,
+        },
+        Err(super::adapter::HttpError::InvalidResponse(_)) => ProviderResult::ProviderError {
+            id: ProviderId::Grok,
+            name: GROK.display_name.to_owned(),
+            message: "Invalid Grok billing response.".into(),
+            retryable: false,
+        },
     }
 }
 
@@ -782,7 +859,7 @@ impl crate::support::FileSystem for MapFileSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::providers::adapter::{CollectionContext, HttpResponse};
+    use crate::providers::adapter::{CollectionContext, HttpError, HttpResponse};
     use crate::providers::catalog::{
         CollectionAvailability, ExecutionEnvironment, LoginAvailability,
     };
@@ -949,6 +1026,244 @@ mod tests {
         assert!(
             !matches!(result, ProviderResult::Unauthenticated { .. }),
             "status 500 is operational, got {result:?}"
+        );
+    }
+
+    async fn grok_ctx_collect(http: &ScriptedHttpClient) -> ProviderResult {
+        let process = empty_process();
+        let mut fs = MapFileSystem::default();
+        let env = grok_test_env_and_auth(&mut fs);
+        let clock = FixedClock(datetime!(2026-08-26 12:00:00 UTC));
+        let ctx = CollectionContext {
+            env: &env,
+            clock: &clock,
+            fs: &fs,
+            process: &process,
+            http,
+            plugin_root: None,
+        };
+        let discovery = Discovery {
+            collection: CollectionAvailability::Missing,
+            login: LoginAvailability::Available {
+                executable: std::path::PathBuf::from("/usr/bin/grok"),
+            },
+        };
+        GROK_ADAPTER.collect(&ctx, &discovery).await
+    }
+
+    fn scripted_pair(
+        first: HttpResponse,
+        second: Result<HttpResponse, HttpError>,
+    ) -> ScriptedHttpClient {
+        // Responses pop from the end: push the second call first.
+        let client = ScriptedHttpClient::single(second);
+        client
+            .responses
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(Ok(first));
+        client
+    }
+
+    #[tokio::test]
+    async fn grok_credits_without_quota_falls_back_to_monthly_limit() {
+        let credits =
+            include_bytes!("../../tests/fixtures/providers/grok/billing-credits-no-quota.json");
+        let monthly =
+            include_bytes!("../../tests/fixtures/providers/grok/billing-monthly-limit.json");
+        let http = scripted_pair(
+            HttpResponse {
+                status: 200,
+                final_url: GROK_BILLING_URL.into(),
+                body: credits.to_vec(),
+            },
+            Ok(HttpResponse {
+                status: 200,
+                final_url: GROK_MONTHLY_BILLING_URL.into(),
+                body: monthly.to_vec(),
+            }),
+        );
+        let result = grok_ctx_collect(&http).await;
+        assert_no_money(&result);
+        assert_eq!(
+            http.last_url.lock().unwrap().as_deref(),
+            Some(GROK_MONTHLY_BILLING_URL)
+        );
+        match result {
+            ProviderResult::Ready { windows, .. } => {
+                assert_eq!(windows.len(), 1, "got {windows:?}");
+                assert_eq!(windows[0].id(), "monthly");
+                assert!((windows[0].used_percent() - 25.0).abs() < 0.01);
+            }
+            other => panic!("expected ready, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn grok_monthly_fallback_network_failure_is_typed() {
+        // A failed second request must not become an empty `Ready` that
+        // evicts a cached monthly window; it is a retryable operational result.
+        let credits =
+            include_bytes!("../../tests/fixtures/providers/grok/billing-credits-no-quota.json");
+        let http = scripted_pair(
+            HttpResponse {
+                status: 200,
+                final_url: GROK_BILLING_URL.into(),
+                body: credits.to_vec(),
+            },
+            Err(HttpError::Network("offline".into())),
+        );
+        let result = grok_ctx_collect(&http).await;
+        assert!(
+            matches!(result, ProviderResult::NetworkError { .. }),
+            "{result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn grok_monthly_fallback_5xx_is_retryable_provider_error() {
+        let credits =
+            include_bytes!("../../tests/fixtures/providers/grok/billing-credits-no-quota.json");
+        let http = scripted_pair(
+            HttpResponse {
+                status: 200,
+                final_url: GROK_BILLING_URL.into(),
+                body: credits.to_vec(),
+            },
+            Ok(HttpResponse {
+                status: 503,
+                final_url: GROK_MONTHLY_BILLING_URL.into(),
+                body: b"{}".to_vec(),
+            }),
+        );
+        let result = grok_ctx_collect(&http).await;
+        assert!(
+            matches!(
+                result,
+                ProviderResult::ProviderError {
+                    retryable: true,
+                    ..
+                }
+            ),
+            "{result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn grok_monthly_fallback_4xx_keeps_credits_reading() {
+        let credits =
+            include_bytes!("../../tests/fixtures/providers/grok/billing-credits-no-quota.json");
+        for status in [401u16, 403, 404, 429] {
+            let http = scripted_pair(
+                HttpResponse {
+                    status: 200,
+                    final_url: GROK_BILLING_URL.into(),
+                    body: credits.to_vec(),
+                },
+                Ok(HttpResponse {
+                    status,
+                    final_url: GROK_MONTHLY_BILLING_URL.into(),
+                    body: b"{}".to_vec(),
+                }),
+            );
+            let result = grok_ctx_collect(&http).await;
+            match result {
+                ProviderResult::Ready {
+                    windows, account, ..
+                } => {
+                    assert!(windows.is_empty(), "status {status}: {windows:?}");
+                    assert!(account.is_some(), "status {status}");
+                }
+                other => panic!("status {status}: expected ready, got {other:?}"),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn grok_monthly_fallback_keeps_plan_and_account_from_credits() {
+        let credits = br#"{"config": {"subscriptionTiers": "SuperGrok",
+            "currentPeriod": {"type": "USAGE_PERIOD_TYPE_WEEKLY"}}}"#;
+        let monthly =
+            include_bytes!("../../tests/fixtures/providers/grok/billing-monthly-limit.json");
+        let http = scripted_pair(
+            HttpResponse {
+                status: 200,
+                final_url: GROK_BILLING_URL.into(),
+                body: credits.to_vec(),
+            },
+            Ok(HttpResponse {
+                status: 200,
+                final_url: GROK_MONTHLY_BILLING_URL.into(),
+                body: monthly.to_vec(),
+            }),
+        );
+        let result = grok_ctx_collect(&http).await;
+        match result {
+            ProviderResult::Ready {
+                windows,
+                plan,
+                account,
+                ..
+            } => {
+                assert_eq!(windows.len(), 1);
+                assert_eq!(windows[0].id(), "monthly");
+                assert_eq!(plan.as_ref().map(|p| p.label.as_str()), Some("SuperGrok"));
+                assert!(
+                    account.is_some(),
+                    "account label from auth.json must survive"
+                );
+            }
+            other => panic!("expected ready, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn grok_no_quota_on_either_shape_keeps_credits_account() {
+        let credits =
+            include_bytes!("../../tests/fixtures/providers/grok/billing-credits-no-quota.json");
+        let monthly =
+            include_bytes!("../../tests/fixtures/providers/grok/billing-monthly-zero.json");
+        let http = scripted_pair(
+            HttpResponse {
+                status: 200,
+                final_url: GROK_BILLING_URL.into(),
+                body: credits.to_vec(),
+            },
+            Ok(HttpResponse {
+                status: 200,
+                final_url: GROK_MONTHLY_BILLING_URL.into(),
+                body: monthly.to_vec(),
+            }),
+        );
+        let result = grok_ctx_collect(&http).await;
+        match result {
+            ProviderResult::Ready {
+                windows,
+                account,
+                source,
+                ..
+            } => {
+                assert!(windows.is_empty());
+                assert!(account.is_some());
+                assert_eq!(source, crate::status::schema::DataSource::Live);
+            }
+            other => panic!("expected ready, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn grok_credits_with_quota_makes_a_single_request() {
+        let body = include_bytes!("../../tests/fixtures/providers/grok/billing-weekly.json");
+        let http = ScriptedHttpClient::single(Ok(HttpResponse {
+            status: 200,
+            final_url: GROK_BILLING_URL.into(),
+            body: body.to_vec(),
+        }));
+        let result = grok_ctx_collect(&http).await;
+        assert!(matches!(result, ProviderResult::Ready { .. }), "{result:?}");
+        assert_eq!(
+            http.last_url.lock().unwrap().as_deref(),
+            Some(GROK_BILLING_URL)
         );
     }
 

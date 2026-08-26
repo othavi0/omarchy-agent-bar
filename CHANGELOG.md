@@ -44,6 +44,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - fix: key notification state by window, not reset
 - feat: repeat alerts on a configurable reminder
 
+### Fixed
+
+- fix: Grok accounts whose credits payload has no `creditUsagePercent`
+  (X Premium, monthly-limit teams) no longer read as "billed another way".
+  The helper now also reads `GET /v1/billing` and turns
+  `used / monthlyLimit` into a `monthly` percentage window (amounts
+  discarded, PROD-019A clarified); plans that publish neither shape stay a
+  valid ready reading with the popup copy
+  `This plan does not publish a usage percentage.` (PROD-031 / UX-032A
+  amended).
+
 ## [10.3.16] - 2026-08-25
 
 ### Changed

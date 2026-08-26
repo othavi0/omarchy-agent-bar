@@ -397,7 +397,7 @@ function containsMoneyCopy(text) {
 }
 
 function emptyWindowsMessage() {
-  return "This account is billed another way."
+  return "This plan does not publish a usage percentage."
 }
 
 function stateTitle(provider) {

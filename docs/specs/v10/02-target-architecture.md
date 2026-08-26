@@ -210,7 +210,7 @@ Locked collection policy:
 | `claude` | `$HOME/.claude/.credentials.json`, then authenticated `GET https://api.anthropic.com/api/oauth/usage` | `session`, `weekly`, then provider-scoped `weekly-model:<sanitized-id>` | 300 s | 10 s | one network/timeout retry |
 | `codex` | resolved `codex app-server` JSON-RPC `rateLimits/read`, then newest valid rate-limit event below `$HOME/.codex/sessions` | `session`, `weekly`, then `other:<duration-minutes>:<ordinal>` | 90 s | 10 s | one app-server timeout retry before filesystem fallback |
 | `amp` | resolved `amp usage` with `NO_COLOR=1`, `TERM=dumb` | `daily`, or no windows when the account exposes no percentage | 90 s | 10 s | one timeout/process-I/O retry |
-| `grok` | `$GROK_HOME/auth.json`, then authenticated GET `https://cli-chat-proxy.grok.com/v1/billing?format=credits` (literal; headers Authorization Bearer + x-grok-client-mode) | `weekly` | 90 s | 10 s | one network/timeout retry |
+| `grok` | `$GROK_HOME/auth.json`, then authenticated GET `https://cli-chat-proxy.grok.com/v1/billing?format=credits` (literal; headers Authorization Bearer + x-grok-client-mode); when that payload has no `creditUsagePercent`, one GET `https://cli-chat-proxy.grok.com/v1/billing` (same headers) whose `used / monthlyLimit` ratio becomes `monthly` (amounts discarded); its HTTP failures are the same typed results as the first request so stale retention applies, and a 2xx body without a ratio keeps the credits reading | `weekly` (credits) or `monthly` (limit ratio), or no windows when the plan publishes neither | 90 s | 10 s | one network/timeout retry per request |
 | `antigravity` | resolved `agy --version` (requires 1.1.11 or newer, because older builds send `/usage` to the model as a prompt) then `agy --print /usage --output-format json` with `NO_COLOR=1`, `TERM=dumb`; windows come from the `gemini-weekly` and `gemini-5h` bucket ids, the `Claude and GPT models` group is ignored | `gemini-weekly`, `gemini-5h` | 90 s | 10 s | none |
 
 Antigravity was removed once (see `CHANGELOG.md`) when it read credentials and
@@ -240,7 +240,7 @@ nonzero usage-command results are never retried. Adapter source fallback is
 not counted as a retry.
 
 Provider labels are fixed English copy: Claude `Session`/`Weekly`, Codex
-`Session`/`Weekly`, Amp `Daily`, Grok `Weekly`, and Antigravity
+`Session`/`Weekly`, Amp `Daily`, Grok `Weekly (7d)`/`Monthly`, and Antigravity
 `Session (5h)`/`Weekly (7d)`. Dynamic model labels are
 sanitized plain text. A dynamic Claude model ID is lowercased, limited to
 ASCII letters/digits/hyphens, and prefixed with `weekly-model:`; collisions

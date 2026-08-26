@@ -125,7 +125,8 @@ not literal UI.
   not imply authentication failure.
 - `UX-032`: Provider errors never render raw stderr or rich text.
 - `UX-032A`: A ready provider with no normalized percentage window shows `—`
-  in its chip and `This account is billed another way.` in the popup.
+  in its chip and `This plan does not publish a usage percentage.` in the
+  popup. The copy never implies pay-as-you-go billing.
 
 ## Settings
 
@@ -197,7 +198,8 @@ Requirements:
   creates no custom elevation or motion system.
 - `UX-057`: No theme-specific color is hardcoded.
 - `UX-058`: No spend, currency, credit balance, or other monetary value is
-  rendered.
+  rendered. Ratio-derived percentages (PROD-019A) render like any other
+  window.
 
 ## Keyboard and focus
 

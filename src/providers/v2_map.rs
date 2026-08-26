@@ -152,6 +152,14 @@ struct GrokBillingDoc {
     billing_period_end: Option<String>,
     #[serde(default, rename = "subscriptionTiers")]
     subscription_tiers: Option<String>,
+    /// Monthly-limit shape (`/v1/billing` without `format=credits`): only the
+    /// `used / monthlyLimit` ratio survives; the amounts are never emitted.
+    /// Kept as raw values (like the discarded fields below) so an unexpected
+    /// shape can never fail the whole payload.
+    #[serde(default, rename = "monthlyLimit")]
+    monthly_limit: Option<Value>,
+    #[serde(default)]
+    used: Option<Value>,
     /// Discarded monetary fields.
     #[serde(default, rename = "prepaidBalance")]
     prepaid_balance: Option<Value>,
@@ -185,12 +193,13 @@ fn grok_window_identity(period_type: Option<&str>) -> (String, String) {
     }
 }
 
-/// Parse Grok billing JSON into a single weekly percentage window.
+/// Parse Grok billing JSON into at most one percentage window.
 ///
-/// - `creditUsagePercent` → used; remaining = 100 − used
+/// - `creditUsagePercent` (subscription credits) → used; remaining = 100 − used
+/// - otherwise `used / monthlyLimit` (monthly-limit accounts) → `monthly`
 /// - `currentPeriod.end` or `billingPeriodEnd` → resetsAt
 /// - money-like fields discarded; never emits a `context` window
-/// - missing/invalid percent → Ready with empty windows
+/// - neither shape (plans without a published quota) → Ready, empty windows
 pub fn grok_from_billing_json(
     bytes: &[u8],
     account_label: Option<String>,
@@ -218,19 +227,26 @@ pub fn grok_from_billing_json(
     );
 
     let mut windows = Vec::new();
-    if let Some(used_raw) = doc.credit_usage_percent {
-        if used_raw.is_finite() {
-            let used = used_raw.clamp(0.0, 100.0);
-            let remaining = (100.0 - used).clamp(0.0, 100.0);
-            let resets = grok_billing_resets_at(&doc);
-            let (id, label) = grok_window_identity(
-                doc.current_period
-                    .as_ref()
-                    .and_then(|p| p.period_type.as_deref()),
-            );
-            if let Ok(w) = UsageWindow::try_new(&id, &label, used, remaining, resets) {
-                windows.push(w);
-            }
+    let credit = doc.credit_usage_percent.map(|used| {
+        let (id, label) = grok_window_identity(
+            doc.current_period
+                .as_ref()
+                .and_then(|p| p.period_type.as_deref()),
+        );
+        (id, label, used)
+    });
+    let monthly = || {
+        grok_monthly_used_percent(&doc).map(|used| {
+            let id = "monthly";
+            (id.to_owned(), format_plan_label(id), used)
+        })
+    };
+    if let Some((id, label, used_raw)) = credit.or_else(monthly) {
+        let used = used_raw.clamp(0.0, 100.0);
+        let remaining = (100.0 - used).clamp(0.0, 100.0);
+        let resets = grok_billing_resets_at(&doc);
+        if let Ok(w) = UsageWindow::try_new(&id, &label, used, remaining, resets) {
+            windows.push(w);
         }
     }
 
@@ -266,6 +282,26 @@ fn parse_grok_billing_doc(bytes: &[u8]) -> Result<GrokBillingDoc, serde_json::Er
         _ => value,
     };
     serde_json::from_value(payload)
+}
+
+/// `used / monthlyLimit` as a percentage. A zero, negative, or absent limit,
+/// or an absent `used`, is "no quota published", never a fabricated 0 %.
+/// The live shape is `{"val": N}`; a bare number is tolerated.
+fn grok_monthly_used_percent(doc: &GrokBillingDoc) -> Option<f64> {
+    let limit = grok_amount(doc.monthly_limit.as_ref()?)?;
+    let used = grok_amount(doc.used.as_ref()?)?;
+    if limit <= 0.0 {
+        return None;
+    }
+    Some(used / limit * 100.0)
+}
+
+fn grok_amount(value: &Value) -> Option<f64> {
+    match value {
+        Value::Number(n) => n.as_f64(),
+        Value::Object(map) => map.get("val").and_then(Value::as_f64),
+        _ => None,
+    }
 }
 
 fn grok_billing_resets_at(doc: &GrokBillingDoc) -> Option<OffsetDateTime> {
@@ -1382,6 +1418,99 @@ mod tests {
             ProviderResult::Ready { windows, .. } => {
                 assert_eq!(windows[0].id(), "weekly");
                 assert_eq!(windows[0].label(), "Weekly (7d)");
+            }
+            other => panic!("expected ready, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn grok_credits_without_percent_is_ready_with_no_windows() {
+        let body =
+            include_bytes!("../../tests/fixtures/providers/grok/billing-credits-no-quota.json");
+        let result = grok_from_billing_json(body, None, datetime!(2026-08-26 12:00:00 UTC), true);
+        assert_no_money(&result);
+        match result {
+            ProviderResult::Ready { windows, plan, .. } => {
+                assert!(windows.is_empty(), "got {windows:?}");
+                assert!(plan.is_none());
+            }
+            other => panic!("expected ready, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn grok_monthly_limit_becomes_percentage_window() {
+        let body = include_bytes!("../../tests/fixtures/providers/grok/billing-monthly-limit.json");
+        let result = grok_from_billing_json(body, None, datetime!(2026-08-26 12:00:00 UTC), true);
+        assert_no_money(&result);
+        match result {
+            ProviderResult::Ready { windows, .. } => {
+                assert_eq!(windows.len(), 1, "got {windows:?}");
+                assert_eq!(windows[0].id(), "monthly");
+                assert_eq!(windows[0].label(), "Monthly");
+                assert!((windows[0].used_percent() - 25.0).abs() < 0.01);
+                assert!((windows[0].remaining_percent() - 75.0).abs() < 0.01);
+                assert_eq!(
+                    windows[0].resets_at(),
+                    Some(datetime!(2026-09-01 00:00:00 UTC))
+                );
+            }
+            other => panic!("expected ready, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn grok_monthly_zero_limit_has_no_window() {
+        let body = include_bytes!("../../tests/fixtures/providers/grok/billing-monthly-zero.json");
+        let result = grok_from_billing_json(body, None, datetime!(2026-08-26 12:00:00 UTC), true);
+        assert_no_money(&result);
+        match result {
+            ProviderResult::Ready { windows, .. } => assert!(windows.is_empty()),
+            other => panic!("expected ready, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn grok_monthly_limit_without_used_has_no_window() {
+        let json = br#"{"monthlyLimit": {"val": 100}, "billingPeriodEnd": "2026-09-01T00:00:00Z"}"#;
+        let result = grok_from_billing_json(json, None, datetime!(2026-08-26 12:00:00 UTC), true);
+        match result {
+            ProviderResult::Ready { windows, .. } => assert!(windows.is_empty(), "{windows:?}"),
+            other => panic!("expected ready, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn grok_scalar_amounts_never_fail_the_credits_payload() {
+        // The same struct parses both endpoints: an unexpected scalar for
+        // `used`/`monthlyLimit` must not turn a SuperGrok reading into an error.
+        let json = br#"{"creditUsagePercent": 33.0, "used": 12.5, "monthlyLimit": 200}"#;
+        let result = grok_from_billing_json(json, None, datetime!(2026-08-26 12:00:00 UTC), true);
+        match result {
+            ProviderResult::Ready { windows, .. } => {
+                assert_eq!(windows.len(), 1);
+                assert_eq!(windows[0].id(), "weekly");
+            }
+            other => panic!("expected ready, got {other:?}"),
+        }
+        let json = br#"{"used": "12.5", "monthlyLimit": [200]}"#;
+        let result = grok_from_billing_json(json, None, datetime!(2026-08-26 12:00:00 UTC), true);
+        match result {
+            ProviderResult::Ready { windows, .. } => assert!(windows.is_empty()),
+            other => panic!("expected ready, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn grok_credit_percent_wins_over_monthly_limit() {
+        let json =
+            br#"{"creditUsagePercent": 40.0, "monthlyLimit": {"val": 100}, "used": {"val": 10}}"#;
+        let result = grok_from_billing_json(json, None, datetime!(2026-08-26 12:00:00 UTC), true);
+        match result {
+            ProviderResult::Ready { windows, .. } => {
+                assert_eq!(windows.len(), 1);
+                assert_eq!(windows[0].id(), "weekly");
+                assert!((windows[0].used_percent() - 40.0).abs() < 0.01);
             }
             other => panic!("expected ready, got {other:?}"),
         }

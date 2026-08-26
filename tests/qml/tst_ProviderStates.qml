@@ -50,7 +50,7 @@ TestCase {
     var p = firstProvider("valid-empty-windows.json")
     compare(Core.contentMode(p), "empty_windows")
     compare(Core.stateBody(p), Core.emptyWindowsMessage())
-    verify(Core.stateBody(p).indexOf("billed another way") >= 0)
+    verify(Core.stateBody(p).indexOf("does not publish a usage percentage") >= 0)
   }
 
   // UX-028 (amended): stale renders through the ready path. The dedicated
@@ -492,7 +492,7 @@ TestCase {
   function test_state_copy_ready_no_quota() {
     var p = { id: "claude", name: "Claude", state: "ready", windows: [], error: null }
     compare(Core.stateTitle(p), "Claude reports no quota")
-    compare(Core.stateBody(p), "This account is billed another way.")
+    compare(Core.stateBody(p), "This plan does not publish a usage percentage.")
   }
 
   function test_state_body_error_message_precedence() {
