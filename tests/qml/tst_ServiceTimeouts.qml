@@ -59,7 +59,7 @@ TestCase {
     service.maintenanceCheckTimeoutMs = 50
     service.maintenanceHandoffTimeoutMs = 50
     service.collectionDelayMs = 10000
-    service.applyVersionProbeResult("10.3.17\n", "", 0)
+    service.applyVersionProbeResult(service.activeVersionProbeGeneration, "10.3.17\n", "", 0)
     return service
   }
 
@@ -111,7 +111,7 @@ TestCase {
 
   function test_settings_write_timeout_returns_dirty() {
     var s = createService()
-    s.applySettingsBootstrapResult("", 1)
+    s.applySettingsBootstrapResult(s.activeSettingsBootstrapGeneration, "", 1)
     s.openSettings("monitor-a")
     var generation = s.activeSettingsReadGeneration
     s.applySettingsReadResult(generation, JSON.stringify(validSettings()), 0)
@@ -120,6 +120,39 @@ TestCase {
     compare(s.settingsState.phase, "saving")
     tryVerify(function () { return s.settingsState.phase === "dirty" }, 500)
     compare(s.settingsWriteBusy, false)
+  }
+
+  function test_late_timed_out_write_cannot_adopt_old_canonical() {
+    var s = createService()
+    s.applySettingsBootstrapResult(s.activeSettingsBootstrapGeneration, "", 1)
+    s.openSettings("monitor-a")
+    s.applySettingsReadResult(
+      s.activeSettingsReadGeneration,
+      JSON.stringify(validSettings()),
+      0
+    )
+    s.setDisplayMetric("used")
+    verify(s.saveSettings())
+    var generationA = s.activeSettingsWriteGeneration
+    var canonicalA = JSON.parse(JSON.stringify(s.settingsDraft))
+    tryVerify(function () { return s.settingsState.phase === "dirty" }, 500)
+
+    s.setDisplayMetric("remaining")
+    verify(s.saveSettings())
+    var generationB = s.activeSettingsWriteGeneration
+    verify(generationB !== generationA)
+    compare(s.settingsState.phase, "saving")
+    compare(s.settingsDraft.display.metric, "remaining")
+    verify(s.pendingSettingsPayload.indexOf('"metric":"remaining"') >= 0)
+
+    s.settingsWriteExited(0, generationA, JSON.stringify(canonicalA))
+
+    compare(s.settingsState.phase, "saving")
+    compare(s.settingsDraft.display.metric, "remaining")
+    compare(s.settingsState.snapshot.display.metric, "remaining")
+    compare(s.appliedSettings.display.metric, "remaining")
+    verify(s.pendingSettingsPayload.indexOf('"metric":"remaining"') >= 0)
+    compare(Object.keys(s.timedOutLanes).length, 0)
   }
 
   function test_update_check_timeout_enters_error() {
@@ -145,9 +178,61 @@ TestCase {
     tryCompare(s, "statusBusy", false, 500)
   }
 
+  function test_late_timed_out_status_cannot_replace_new_request() {
+    var s = createService()
+    s.beginCollection()
+    var generationA = s.activeStatusGeneration
+    tryCompare(s, "statusBusy", false, 500)
+    s.kickStatus()
+    var generationB = s.activeStatusGeneration
+    verify(generationB !== generationA)
+
+    s.statusExited(0, generationA, validEnvelope(), "")
+
+    compare(s.activeStatusGeneration, generationB)
+    compare(s.statusBusy, true)
+    compare(s.snapshot, null)
+    compare(Object.keys(s.timedOutLanes).length, 0)
+  }
+
+  function test_late_timed_out_bootstrap_cannot_replace_new_request() {
+    var s = createService()
+    var generationA = s.activeSettingsBootstrapGeneration
+    tryCompare(s, "settingsBootstrapBusy", false, 500)
+    s.kickSettingsBootstrap()
+    var generationB = s.activeSettingsBootstrapGeneration
+    verify(generationB !== generationA)
+
+    s.settingsBootstrapExited(0, generationA, JSON.stringify(validSettings()))
+
+    compare(s.activeSettingsBootstrapGeneration, generationB)
+    compare(s.settingsBootstrapBusy, true)
+    compare(s.appliedSettings, null)
+    compare(Object.keys(s.timedOutLanes).length, 0)
+  }
+
+  function test_stale_non_timeout_exit_is_ignored_completely() {
+    var s = createService()
+    s.beginCollection()
+    var generationA = s.activeStatusGeneration
+    s.statusBusy = false
+    s.kickStatus()
+    var generationB = s.activeStatusGeneration
+    var completedBefore = s.completedCallbackCount
+    s.recordLaneTimeout("settingsRead")
+
+    s.statusExited(0, generationA, validEnvelope(), "")
+
+    compare(s.activeStatusGeneration, generationB)
+    compare(s.statusBusy, true)
+    compare(s.snapshot, null)
+    compare(s.completedCallbackCount, completedBefore)
+    verify(s.timedOutLanes.settingsRead)
+  }
+
   function test_runtime_health_accumulates_and_real_callback_resets() {
     var s = createService()
-    s.applySettingsBootstrapResult("", 1)
+    s.applySettingsBootstrapResult(s.activeSettingsBootstrapGeneration, "", 1)
     s.openSettings("monitor-a")
     tryVerify(function () { return s.settingsState.phase === "load_failed" }, 500)
     compare(s.runtimeHealth, "ok")
@@ -164,7 +249,7 @@ TestCase {
 
   function test_health_reports_stalled_first() {
     var s = createService()
-    s.applySettingsBootstrapResult("", 1)
+    s.applySettingsBootstrapResult(s.activeSettingsBootstrapGeneration, "", 1)
     s.openSettings("monitor-a")
     tryVerify(function () { return s.settingsState.phase === "load_failed" }, 500)
     s.checkForUpdates()

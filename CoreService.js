@@ -57,6 +57,33 @@ function recordLaneTimeout(timedOutLanes, lane) {
   return next
 }
 
+function settleLane(settledLanes, lane, generation) {
+  var next = {}
+  for (var key in (settledLanes || {}))
+    next[key] = settledLanes[key]
+  next[String(lane)] = Number(generation)
+  return next
+}
+
+function isLaneSettled(settledLanes, lane, generation) {
+  if (!settledLanes)
+    return false
+  var key = String(lane)
+  return Object.prototype.hasOwnProperty.call(settledLanes, key)
+      && Number(settledLanes[key]) === Number(generation)
+}
+
+function clearSettledLane(settledLanes, lane, generation) {
+  if (!isLaneSettled(settledLanes, lane, generation))
+    return settledLanes || {}
+  var next = {}
+  for (var key in settledLanes) {
+    if (key !== String(lane))
+      next[key] = settledLanes[key]
+  }
+  return next
+}
+
 function isClosedProvider(providerId) {
   return !!CLOSED_PROVIDERS[String(providerId || "")]
 }

@@ -54,6 +54,7 @@ Item {
   property var pendingMaintenanceIntention: null
   property string pendingMaintenancePayload: ""
   property var timedOutLanes: ({})
+  property var settledLanes: ({})
   property int completedCallbackCount: 0
   readonly property string runtimeHealth: Core.runtimeHealth(timedOutLanes)
 
@@ -75,11 +76,27 @@ Item {
   // Generation counters for stale-callback rejection
   property int statusGeneration: 0
   property int settingsGeneration: 0
+  property int versionProbeGeneration: 0
+  property int settingsBootstrapGeneration: 0
+  property int maintenanceCheckGeneration: 0
+  property int maintenanceHandoffGeneration: 0
+  property int activeVersionProbeGeneration: 0
   property int activeStatusGeneration: 0
   property int activeSettingsReadGeneration: 0
+  property int activeSettingsBootstrapGeneration: 0
   property int activeSettingsWriteGeneration: 0
+  property int activeMaintenanceCheckGeneration: 0
+  property int activeMaintenanceHandoffGeneration: 0
+  property int versionProbeStartedGeneration: 0
+  property int statusStartedGeneration: 0
+  property int settingsReadStartedGeneration: 0
+  property int settingsBootstrapStartedGeneration: 0
+  property int settingsWriteStartedGeneration: 0
+  property int maintenanceCheckStartedGeneration: 0
+  property int maintenanceHandoffStartedGeneration: 0
   // Immutable captured JSON for the in-flight config apply (SET-018).
   property string pendingSettingsPayload: ""
+  property int pendingSettingsPayloadGeneration: 0
 
   // Bookkeeping
   property int refreshRequestCount: 0
@@ -123,8 +140,10 @@ Item {
     )
   }
 
-  function recordLaneTimeout(lane) {
+  function recordLaneTimeout(lane, generation) {
     timedOutLanes = Core.recordLaneTimeout(timedOutLanes, lane)
+    if (generation !== undefined)
+      settledLanes = Core.settleLane(settledLanes, lane, generation)
   }
 
   function recordCompletedCallback(fromTimeout) {
@@ -132,6 +151,15 @@ Item {
       return
     completedCallbackCount++
     timedOutLanes = ({})
+  }
+
+  function shouldApplyProcessExit(lane, generation, activeGeneration) {
+    if (Core.isLaneSettled(settledLanes, lane, generation)) {
+      settledLanes = Core.clearSettledLane(settledLanes, lane, generation)
+      recordCompletedCallback(false)
+      return false
+    }
+    return Core.shouldApplyGeneration(activeGeneration, generation)
   }
 
   // IPC refresh(providerId) — queue one cache-bypass provider refresh.
@@ -296,6 +324,7 @@ Item {
     settingsGeneration++
     var gen = settingsGeneration
     pendingSettingsPayload = JSON.stringify(payloadObj)
+    pendingSettingsPayloadGeneration = gen
     settingsState = Settings.settingsBeginSave(settingsState, gen, payloadObj)
     settingsDraft = settingsState.draft
     activeSettingsWriteGeneration = gen
@@ -350,11 +379,15 @@ Item {
     if (!Core.canStartLane(maintenanceCheckBusy))
       return
     syncMaintenanceVersion()
+    maintenanceCheckGeneration++
+    activeMaintenanceCheckGeneration = maintenanceCheckGeneration
     maintenanceUi = Maintenance.maintenanceUiChecking(maintenanceUi)
     maintenanceCheckBusy = true
     maintenanceCheckTimeout.restart()
-    if (testMode)
+    if (testMode) {
+      maintenanceCheckStartedGeneration = activeMaintenanceCheckGeneration
       return
+    }
     var helper = resolvedHelperPath()
     if (!helper.length) {
       maintenanceCheckBusy = false
@@ -365,7 +398,9 @@ Item {
     maintenanceCheckProcess.running = true
   }
 
-  function applyUpdateCheckResult(stdout, exitCode, fromTimeout) {
+  function applyUpdateCheckResult(generation, stdout, exitCode, fromTimeout) {
+    if (!Core.shouldApplyGeneration(activeMaintenanceCheckGeneration, generation))
+      return
     maintenanceCheckTimeout.stop()
     maintenanceCheckBusy = false
     recordCompletedCallback(!!fromTimeout)
@@ -466,7 +501,9 @@ Item {
   // Version probe lane
   // -------------------------------------------------------------------------
 
-  function applyVersionProbeResult(stdout, stderr, exitCode, fromTimeout) {
+  function applyVersionProbeResult(generation, stdout, stderr, exitCode, fromTimeout) {
+    if (!Core.shouldApplyGeneration(activeVersionProbeGeneration, generation))
+      return
     recordCompletedCallback(!!fromTimeout)
     var version = Core.parseVersionStdout(stdout, stderr, exitCode)
     if (version)
@@ -503,6 +540,8 @@ Item {
     }
     versionProbeRunning = true
     versionFailed = false
+    versionProbeGeneration++
+    activeVersionProbeGeneration = versionProbeGeneration
     // StdioCollector.text is read-only; waitForEnd replaces content per run.
     versionProbe.command = [helper, "version"]
     versionProbe.running = true
@@ -572,6 +611,7 @@ Item {
     statusTimeout.restart()
     // StdioCollector.text is read-only; waitForEnd replaces content per run.
     if (testMode) {
+      statusStartedGeneration = gen
       // Tests call applyStatusResult(gen, stdout, stderr, code)
       return
     }
@@ -624,15 +664,21 @@ Item {
     var helper = resolvedHelperPath()
     if (!helper.length)
       return
+    settingsBootstrapGeneration++
+    activeSettingsBootstrapGeneration = settingsBootstrapGeneration
     settingsBootstrapBusy = true
     settingsBootstrapTimeout.restart()
-    if (testMode)
+    if (testMode) {
+      settingsBootstrapStartedGeneration = activeSettingsBootstrapGeneration
       return
+    }
     settingsBootstrapProcess.command = Settings.settingsArgvShow(helper)
     settingsBootstrapProcess.running = true
   }
 
-  function applySettingsBootstrapResult(stdout, exitCode, fromTimeout) {
+  function applySettingsBootstrapResult(generation, stdout, exitCode, fromTimeout) {
+    if (!Core.shouldApplyGeneration(activeSettingsBootstrapGeneration, generation))
+      return
     settingsBootstrapTimeout.stop()
     settingsBootstrapBusy = false
     recordCompletedCallback(!!fromTimeout)
@@ -648,8 +694,10 @@ Item {
       return
     settingsReadBusy = true
     settingsReadTimeout.restart()
-    if (testMode)
+    if (testMode) {
+      settingsReadStartedGeneration = activeSettingsReadGeneration
       return
+    }
     settingsReadProcess.command = Settings.settingsArgvShow(helper)
     settingsReadProcess.running = true
   }
@@ -696,8 +744,10 @@ Item {
       return
     settingsWriteBusy = true
     settingsWriteTimeout.restart()
-    if (testMode)
+    if (testMode) {
+      settingsWriteStartedGeneration = activeSettingsWriteGeneration
       return
+    }
     // Re-arm stdin: each save closes it after writing (EOF delivery below).
     settingsWriteProcess.stdinEnabled = true
     settingsWriteProcess.command = Settings.settingsArgvApplyStdin(helper)
@@ -710,7 +760,10 @@ Item {
     settingsWriteTimeout.stop()
     settingsWriteBusy = false
     recordCompletedCallback(!!fromTimeout)
-    pendingSettingsPayload = ""
+    if (pendingSettingsPayloadGeneration === generation) {
+      pendingSettingsPayload = ""
+      pendingSettingsPayloadGeneration = 0
+    }
     settingsState = Settings.settingsFinishSave(settingsState, generation, ok, canonical)
     settingsDraft = settingsState ? settingsState.draft : null
     if (ok && canonical)
@@ -734,6 +787,8 @@ Item {
       return
     if (!Core.canStartLane(maintenanceHandoffBusy))
       return
+    maintenanceHandoffGeneration++
+    activeMaintenanceHandoffGeneration = maintenanceHandoffGeneration
     maintenanceHandoffBusy = true
     maintenanceHandoffTimeout.restart()
     var helper = resolvedHelperPath()
@@ -746,8 +801,10 @@ Item {
     else
       argv = helper && helper.length ? [helper, "doctor", "scan"] : null
 
-    if (testMode)
+    if (testMode) {
+      maintenanceHandoffStartedGeneration = activeMaintenanceHandoffGeneration
       return
+    }
     if (!argv) {
       maintenanceHandoffBusy = false
       return
@@ -762,7 +819,9 @@ Item {
     maintenanceHandoffProcess.running = true
   }
 
-  function applyMaintenanceHandoffDone(exitCode, fromTimeout) {
+  function applyMaintenanceHandoffDone(generation, exitCode, fromTimeout) {
+    if (!Core.shouldApplyGeneration(activeMaintenanceHandoffGeneration, generation))
+      return
     maintenanceHandoffTimeout.stop()
     maintenanceHandoffBusy = false
     recordCompletedCallback(!!fromTimeout)
@@ -794,6 +853,83 @@ Item {
     }
   }
 
+  function versionProbeExited(exitCode, generation, stdout, stderr) {
+    var gen = generation === undefined ? versionProbeStartedGeneration : generation
+    if (!shouldApplyProcessExit("versionProbe", gen, activeVersionProbeGeneration))
+      return
+    applyVersionProbeResult(gen,
+                            stdout === undefined ? versionOut.text || "" : stdout,
+                            stderr === undefined ? versionErr.text || "" : stderr,
+                            exitCode)
+  }
+
+  function statusExited(exitCode, generation, stdout, stderr) {
+    var gen = generation === undefined ? statusStartedGeneration : generation
+    if (!shouldApplyProcessExit("status", gen, activeStatusGeneration))
+      return
+    applyStatusResult(gen,
+                      stdout === undefined ? statusOut.text || "" : stdout,
+                      stderr === undefined ? statusErr.text || "" : stderr,
+                      exitCode)
+  }
+
+  function settingsReadExited(exitCode, generation, stdout) {
+    var gen = generation === undefined ? settingsReadStartedGeneration : generation
+    if (!shouldApplyProcessExit("settingsRead", gen, activeSettingsReadGeneration))
+      return
+    applySettingsReadResult(gen,
+                            stdout === undefined ? settingsReadOut.text || "" : stdout,
+                            exitCode)
+  }
+
+  function settingsBootstrapExited(exitCode, generation, stdout) {
+    var gen = generation === undefined ? settingsBootstrapStartedGeneration : generation
+    if (!shouldApplyProcessExit("settingsBootstrap", gen, activeSettingsBootstrapGeneration))
+      return
+    applySettingsBootstrapResult(
+      gen,
+      stdout === undefined ? settingsBootstrapOut.text || "" : stdout,
+      exitCode
+    )
+  }
+
+  function settingsWriteExited(exitCode, generation, stdout) {
+    var gen = generation === undefined ? settingsWriteStartedGeneration : generation
+    if (!shouldApplyProcessExit("settingsWrite", gen, activeSettingsWriteGeneration))
+      return
+    var ok = exitCode === 0
+    var canonical = null
+    if (ok) {
+      try {
+        var output = stdout === undefined ? settingsWriteOut.text || "" : stdout
+        canonical = JSON.parse(String(output).trim())
+        if (!Settings.validateSettingsDraft(canonical).ok)
+          ok = false
+      } catch (e) {
+        ok = false
+      }
+    }
+    applySettingsWriteResult(gen, ok, canonical)
+  }
+
+  function maintenanceCheckExited(exitCode, generation, stdout) {
+    var gen = generation === undefined ? maintenanceCheckStartedGeneration : generation
+    if (!shouldApplyProcessExit("maintenanceCheck", gen, activeMaintenanceCheckGeneration))
+      return
+    applyUpdateCheckResult(
+      gen,
+      stdout === undefined ? maintenanceCheckOut.text || "" : stdout,
+      exitCode
+    )
+  }
+
+  function maintenanceHandoffExited(exitCode, generation) {
+    var gen = generation === undefined ? maintenanceHandoffStartedGeneration : generation
+    if (!shouldApplyProcessExit("maintenanceHandoff", gen, activeMaintenanceHandoffGeneration))
+      return
+    applyMaintenanceHandoffDone(gen, exitCode)
+  }
+
   // -------------------------------------------------------------------------
   // Processes (isolated lanes)
   // -------------------------------------------------------------------------
@@ -802,42 +938,32 @@ Item {
     id: versionProbe
     stdout: StdioCollector { id: versionOut; waitForEnd: true }
     stderr: StdioCollector { id: versionErr; waitForEnd: true }
-    onExited: function (exitCode) {
-      if (!root.versionProbeRunning)
-        return
-      root.applyVersionProbeResult(versionOut.text || "", versionErr.text || "", exitCode)
-    }
+    onStarted: root.versionProbeStartedGeneration = root.activeVersionProbeGeneration
+    onExited: function (exitCode) { root.versionProbeExited(exitCode) }
   }
 
   Process {
     id: statusProcess
     stdout: StdioCollector { id: statusOut; waitForEnd: true }
     stderr: StdioCollector { id: statusErr; waitForEnd: true }
-    onExited: function (exitCode) {
-      root.applyStatusResult(root.activeStatusGeneration, statusOut.text || "", statusErr.text || "", exitCode)
-    }
+    onStarted: root.statusStartedGeneration = root.activeStatusGeneration
+    onExited: function (exitCode) { root.statusExited(exitCode) }
   }
 
   Process {
     id: settingsReadProcess
     stdout: StdioCollector { id: settingsReadOut; waitForEnd: true }
     stderr: StdioCollector { id: settingsReadErr; waitForEnd: true }
-    onExited: function (exitCode) {
-      root.applySettingsReadResult(
-        root.activeSettingsReadGeneration,
-        settingsReadOut.text || "",
-        exitCode
-      )
-    }
+    onStarted: root.settingsReadStartedGeneration = root.activeSettingsReadGeneration
+    onExited: function (exitCode) { root.settingsReadExited(exitCode) }
   }
 
   Process {
     id: settingsBootstrapProcess
     stdout: StdioCollector { id: settingsBootstrapOut; waitForEnd: true }
     stderr: StdioCollector { id: settingsBootstrapErr; waitForEnd: true }
-    onExited: function (exitCode) {
-      root.applySettingsBootstrapResult(settingsBootstrapOut.text || "", exitCode)
-    }
+    onStarted: root.settingsBootstrapStartedGeneration = root.activeSettingsBootstrapGeneration
+    onExited: function (exitCode) { root.settingsBootstrapExited(exitCode) }
   }
 
   Process {
@@ -846,37 +972,25 @@ Item {
     stdout: StdioCollector { id: settingsWriteOut; waitForEnd: true }
     stderr: StdioCollector { id: settingsWriteErr; waitForEnd: true }
     onStarted: {
+      root.settingsWriteStartedGeneration = root.activeSettingsWriteGeneration
       // Write the immutable captured payload; never re-read live draft (SET-018).
       // config apply stdin reads until EOF — write() alone does not deliver it;
       // stdinEnabled=false closes the write channel (same as maintenance handoff).
-      if (root.pendingSettingsPayload && root.pendingSettingsPayload.length) {
+      if (root.pendingSettingsPayloadGeneration === root.settingsWriteStartedGeneration
+          && root.pendingSettingsPayload && root.pendingSettingsPayload.length) {
         write(root.pendingSettingsPayload + "\n")
         settingsWriteProcess.stdinEnabled = false
       }
     }
-    onExited: function (exitCode) {
-      var ok = exitCode === 0
-      var canonical = null
-      if (ok) {
-        try {
-          canonical = JSON.parse(String(settingsWriteOut.text || "").trim())
-          if (!Settings.validateSettingsDraft(canonical).ok)
-            ok = false
-        } catch (e) {
-          ok = false
-        }
-      }
-      root.applySettingsWriteResult(root.activeSettingsWriteGeneration, ok, canonical)
-    }
+    onExited: function (exitCode) { root.settingsWriteExited(exitCode) }
   }
 
   Process {
     id: maintenanceCheckProcess
     stdout: StdioCollector { id: maintenanceCheckOut; waitForEnd: true }
     stderr: StdioCollector { id: maintenanceCheckErr; waitForEnd: true }
-    onExited: function (exitCode) {
-      root.applyUpdateCheckResult(maintenanceCheckOut.text || "", exitCode)
-    }
+    onStarted: root.maintenanceCheckStartedGeneration = root.activeMaintenanceCheckGeneration
+    onExited: function (exitCode) { root.maintenanceCheckExited(exitCode) }
   }
 
   Process {
@@ -885,6 +999,7 @@ Item {
     stdout: StdioCollector { id: maintenanceHandoffOut; waitForEnd: true }
     stderr: StdioCollector { id: maintenanceHandoffErr; waitForEnd: true }
     onStarted: {
+      root.maintenanceHandoffStartedGeneration = root.activeMaintenanceHandoffGeneration
       // BUNDLE-036 / UX-048: non-TTY uninstall confirmation uses read_to_end.
       // write() alone does not deliver EOF; stdinEnabled=false closes the write channel.
       if (root.pendingMaintenancePayload && root.pendingMaintenancePayload.length
@@ -893,9 +1008,7 @@ Item {
         maintenanceHandoffProcess.stdinEnabled = false
       }
     }
-    onExited: function (exitCode) {
-      root.applyMaintenanceHandoffDone(exitCode)
-    }
+    onExited: function (exitCode) { root.maintenanceHandoffExited(exitCode) }
   }
 
   // Single completed handler — QML rejects duplicate assignments of this
@@ -910,7 +1023,8 @@ Item {
         return
       if (versionProbe.running)
         versionProbe.running = false
-      root.finishVersionProbeFailure()
+      root.recordLaneTimeout("versionProbe", root.activeVersionProbeGeneration)
+      root.applyVersionProbeResult(root.activeVersionProbeGeneration, "", "timeout", 1, true)
     }
   }
 
@@ -923,7 +1037,7 @@ Item {
         return
       if (statusProcess.running)
         statusProcess.running = false
-      root.recordLaneTimeout("status")
+      root.recordLaneTimeout("status", root.activeStatusGeneration)
       root.applyStatusResult(root.activeStatusGeneration, "", "timeout", 1, true)
     }
   }
@@ -937,7 +1051,7 @@ Item {
         return
       if (settingsReadProcess.running)
         settingsReadProcess.running = false
-      root.recordLaneTimeout("settingsRead")
+      root.recordLaneTimeout("settingsRead", root.activeSettingsReadGeneration)
       root.applySettingsReadResult(root.activeSettingsReadGeneration, "", 1, true)
     }
   }
@@ -951,8 +1065,8 @@ Item {
         return
       if (settingsBootstrapProcess.running)
         settingsBootstrapProcess.running = false
-      root.recordLaneTimeout("settingsBootstrap")
-      root.applySettingsBootstrapResult("", 1, true)
+      root.recordLaneTimeout("settingsBootstrap", root.activeSettingsBootstrapGeneration)
+      root.applySettingsBootstrapResult(root.activeSettingsBootstrapGeneration, "", 1, true)
     }
   }
 
@@ -965,7 +1079,7 @@ Item {
         return
       if (settingsWriteProcess.running)
         settingsWriteProcess.running = false
-      root.recordLaneTimeout("settingsWrite")
+      root.recordLaneTimeout("settingsWrite", root.activeSettingsWriteGeneration)
       root.applySettingsWriteResult(root.activeSettingsWriteGeneration, false, null, true)
     }
   }
@@ -979,8 +1093,8 @@ Item {
         return
       if (maintenanceCheckProcess.running)
         maintenanceCheckProcess.running = false
-      root.recordLaneTimeout("maintenanceCheck")
-      root.applyUpdateCheckResult("", 1, true)
+      root.recordLaneTimeout("maintenanceCheck", root.activeMaintenanceCheckGeneration)
+      root.applyUpdateCheckResult(root.activeMaintenanceCheckGeneration, "", 1, true)
     }
   }
 
@@ -993,8 +1107,8 @@ Item {
         return
       if (maintenanceHandoffProcess.running)
         maintenanceHandoffProcess.running = false
-      root.recordLaneTimeout("maintenanceHandoff")
-      root.applyMaintenanceHandoffDone(1, true)
+      root.recordLaneTimeout("maintenanceHandoff", root.activeMaintenanceHandoffGeneration)
+      root.applyMaintenanceHandoffDone(root.activeMaintenanceHandoffGeneration, 1, true)
     }
   }
 

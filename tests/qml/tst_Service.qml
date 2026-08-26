@@ -430,6 +430,17 @@ TestCase {
     verify(original.settingsRead === undefined)
   }
 
+  function test_settled_lane_generation_is_immutable() {
+    var original = { status: 3 }
+    var settled = Core.settleLane(original, "settingsWrite", 7)
+    verify(Core.isLaneSettled(settled, "settingsWrite", 7))
+    verify(!Core.isLaneSettled(settled, "settingsWrite", 8))
+    compare(original.settingsWrite, undefined)
+    var cleared = Core.clearSettledLane(settled, "settingsWrite", 7)
+    verify(!Core.isLaneSettled(cleared, "settingsWrite", 7))
+    compare(cleared.status, 3)
+  }
+
   // Live Quattro: duplicate Component.onCompleted → "Property value set multiple times"
   // and the service never loads (bar chips disappear).
   function test_service_qml_has_single_component_on_completed() {
