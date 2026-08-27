@@ -262,15 +262,18 @@ The table is product data, not an example:
 - `ARCH-020`: `Service.qml` owns one `IpcHandler` target named
   `othavi0.agent-bar` with only `health(expectedVersion)` and
   `refresh(providerId)` methods.
-- `ARCH-021`: `health` returns `ok` only when the loaded manifest version and
-  last verified helper version both equal `expectedVersion`. `refresh`
+- `ARCH-021`: `health` returns `stalled` when two distinct process lanes exceed
+  their deadlines before an accepted helper callback completes. Otherwise, it
+  returns `ok` only when the loaded manifest version and last verified helper
+  version both equal `expectedVersion`. `refresh`
   validates the closed provider ID, queues one cache-bypass provider refresh,
   and returns `ok`; invalid IDs return `unknown`.
 - `ARCH-022`: The locked source order, window IDs, limits, TTL, timeout, and
   retry policy above are literal contract tests.
-- `ARCH-023`: `Service.qml` owns distinct process lanes for `status`,
-  `versionProbe`, `settingsRead`, `settingsWrite`, `maintenanceCheck`, and
-  `maintenanceHandoff`. No lane calls `exec()` while its process is running.
+- `ARCH-023`: `Service.qml` owns seven distinct process lanes: `status`,
+  `versionProbe`, `settingsRead`, `settingsBootstrap`, `settingsWrite`,
+  `maintenanceCheck`, and `maintenanceHandoff`. No lane calls `exec()` while
+  its process is running.
 - `ARCH-024`: Status requests coalesce through the target-aware rules. Settings
   writes serialize. Maintenance handoff blocks new settings writes and polling;
   an already-running status or settings write drains before detached handoff,

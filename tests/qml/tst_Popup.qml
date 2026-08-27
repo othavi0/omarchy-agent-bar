@@ -25,6 +25,62 @@ TestCase {
     return String(xhr.responseText || "")
   }
 
+  function test_state_message_restart_action_emits_typed_signal() {
+    var source = read("components/StateMessage.qml")
+    source = source.replace("import qs.Commons\n", "")
+    source = source.replace("import qs.Ui\n", "")
+    source = source.replace("  id: root\n",
+                            "  id: root\n  property alias actionRepeaterForTest: actionRepeater\n")
+    source = source.replace(/Style\.space\((\d+)\)/g, "$1")
+    source = source.replace(/Style\.cornerRadius/g, "4")
+    source = source.replace(/Style\.selectedFill/g, '"#333333"')
+    source = source.replace(/Style\.hoverFill/g, '"#444444"')
+    source = source.replace(/Style\.font\.body/g, "14")
+    source = source.replace(/Style\.font\.caption/g, "12")
+    source = source.replace(/Color\.foreground/g, '"#ffffff"')
+    source = source.replace(/Style\.font\.family/g, '"sans"')
+    source = source.replace(/Util\.alpha\(root\.foreground, 0\.72\)/g,
+                            "root.foreground")
+    source = source.replace(/          text: modelData[^\n]*\n/, "")
+    source = source.replace(/          foreground: root\.foreground\n/, "")
+    source = source.replace(/          fontFamily: root\.fontFamily\n/, "")
+    source = source.replace(/          bordered: true\n/, "")
+    source = source.replace(/          focusable: true\n/, "")
+    source = source.replace(/          leftAlign: true\n/, "")
+    source = source.replace(
+      "        Button {",
+      "        Rectangle {\n"
+        + "          property string text: modelData && modelData.label"
+        + " ? String(modelData.label) : \"\"\n"
+        + "          property color foreground: root.foreground\n"
+        + "          property string fontFamily: root.fontFamily\n"
+        + "          property bool bordered: true\n"
+        + "          property bool focusable: true\n"
+        + "          property bool leftAlign: true\n"
+        + "          signal clicked()"
+    )
+    var message = Qt.createQmlObject(source, testCase,
+                                     "StateMessageHarness.qml")
+    verify(message !== null)
+    message.width = 320
+    message.title = "Agent Bar lost contact with its helper"
+    message.body = "Restart the shell to recover."
+    message.actions = [{
+      kind: "restart_shell",
+      label: "Restart shell",
+      target: null
+    }]
+    wait(1)
+    var receivedKind = ""
+    message.actionActivated.connect(function (kind, target) {
+      receivedKind = kind
+    })
+    compare(message.actionRepeaterForTest.count, 1)
+    message.actionRepeaterForTest.itemAt(0).focusActivate()
+    compare(receivedKind, "restart_shell")
+    message.destroy()
+  }
+
   function test_popup_uses_keyboard_panel_and_rail() {
     var src = read("Popup.qml")
     verify(src.indexOf("KeyboardPanel") >= 0)
@@ -32,6 +88,21 @@ TestCase {
     verify(src.indexOf("ProviderView") >= 0)
     verify(src.indexOf("PanelKeyCatcher") >= 0)
     verify(src.indexOf("fittedContent") >= 0 || src.indexOf("maxContentWidth") >= 0)
+  }
+
+  function test_stalled_banner_is_conditional_and_actionable() {
+    var src = read("Popup.qml")
+    var banner = src.indexOf("id: stalledMessage")
+    verify(banner >= 0)
+    var loader = src.indexOf("id: contentLoader")
+    verify(loader > banner, "the stalled banner must render above the active view")
+    var body = src.substring(banner, loader)
+    verify(body.indexOf('runtimeHealth === "stalled"') >= 0)
+    verify(body.indexOf('title: "Agent Bar lost contact with its helper"') >= 0)
+    verify(body.indexOf('body: "Restart the shell to recover."') >= 0)
+    verify(body.indexOf('label: "Restart shell"') >= 0)
+    verify(body.indexOf("root.agentService.restartShell()") >= 0)
+    verify(src.indexOf("stalledMessage.collectFocusTargets()") >= 0)
   }
 
   function test_rail_is_icon_only_settings_at_bottom() {

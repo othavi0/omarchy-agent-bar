@@ -111,6 +111,11 @@ refreshes cannot become accidental all-provider refreshes or disappear.
 A dedicated two-second private-helper `version` probe establishes health before
 provider network collection. Independent QML process lanes prevent status,
 settings, version, and maintenance requests from cancelling each other.
+Each lane has its own deadline. Timeouts finish through the lane's typed state
+transition instead of leaving a busy flag set forever. Timeouts in two distinct
+lanes set `runtimeHealth` to `stalled`; the next accepted helper callback clears
+the signal. While stalled, the popup offers `omarchy-restart-shell` through an
+exact argv array. Settings offers the same recovery action after a failed load.
 
 ## Settings
 

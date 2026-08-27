@@ -49,6 +49,8 @@ Item {
   property int loginRequestCount: 0
   property string lastLoginProviderId: ""
   property var lastLoginArgv: null
+  property var lastRestartShellArgv: null
+  property int restartShellRequestCount: 0
   property string lastViewInstallationUrl: ""
   // Pending maintenance intention after confirm (update apply / uninstall).
   property var pendingMaintenanceIntention: null
@@ -356,6 +358,15 @@ Item {
     if (testMode)
       return
     // Exact argv array — never shell-string construction (UX-048).
+    Quickshell.execDetached(argv)
+  }
+
+  function restartShell() {
+    var argv = Maintenance.restartShellArgv()
+    lastRestartShellArgv = argv.slice()
+    restartShellRequestCount++
+    if (testMode)
+      return
     Quickshell.execDetached(argv)
   }
 

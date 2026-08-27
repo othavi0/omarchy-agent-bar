@@ -36,6 +36,12 @@ TestCase {
     compare(Core.loginDetachedArgv("", "claude"), null)
   }
 
+  function test_restart_shell_argv_exact() {
+    var argv = Core.restartShellArgv()
+    compare(argv.length, 1)
+    compare(argv[0], "omarchy-restart-shell")
+  }
+
   function test_terminal_helper_xdg_argv_exact() {
     var argv = Core.terminalHelperXdgArgv("/plugin", "amp")
     compare(argv[0], "xdg-terminal-exec")
@@ -203,6 +209,21 @@ TestCase {
     verify(src.indexOf("loginDetachedArgv") >= 0)
     verify(src.indexOf("bash -lc") < 0)
     verify(src.indexOf("sh -c") < 0)
+  }
+
+  function test_service_restart_shell_uses_exec_detached() {
+    var src = read("Service.qml")
+    var start = src.indexOf("function restartShell()")
+    verify(start >= 0)
+    var end = src.indexOf("function ", start + 10)
+    verify(end > start)
+    var body = src.substring(start, end)
+    verify(body.indexOf("Maintenance.restartShellArgv()") >= 0)
+    verify(body.indexOf("lastRestartShellArgv = argv.slice()") >= 0)
+    verify(body.indexOf("restartShellRequestCount++") >= 0)
+    verify(body.indexOf("if (testMode)") >= 0)
+    verify(body.indexOf("Quickshell.execDetached(argv)") >= 0)
+    verify(body.indexOf("sh -c") < 0)
   }
 
   // BUNDLE-036 / UX-048: after writing uninstall confirmation, close stdin so the

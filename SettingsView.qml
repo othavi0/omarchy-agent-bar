@@ -72,6 +72,10 @@ Item {
     return String(root.iconBase) + name
   }
 
+  function collectFocusTargets() {
+    return root.loadFailed ? [restartShellButton] : []
+  }
+
   Column {
     id: col
     width: parent.width
@@ -110,6 +114,26 @@ Item {
       textFormat: Text.PlainText
       Accessible.role: Accessible.StaticText
       Accessible.name: text
+    }
+
+    Button {
+      id: restartShellButton
+      visible: root.loadFailed
+      text: "Restart shell"
+      bordered: true
+      focusable: true
+      foreground: root.foreground
+      fontFamily: root.fontFamily
+      Accessible.name: "Restart shell"
+      function focusActivate() {
+        if (root.agentService)
+          root.agentService.restartShell()
+      }
+      Keys.onReturnPressed: focusActivate()
+      Keys.onEnterPressed: focusActivate()
+      Keys.onSpacePressed: focusActivate()
+      Accessible.onPressAction: focusActivate()
+      onClicked: focusActivate()
     }
 
     Text {

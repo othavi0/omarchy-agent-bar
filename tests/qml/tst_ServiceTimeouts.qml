@@ -338,4 +338,16 @@ TestCase {
     tryCompare(s, "runtimeHealth", "stalled", 500)
     compare(s.health("10.3.17"), "stalled")
   }
+
+  function test_restart_shell_records_exact_argv_without_execution_in_test_mode() {
+    var s = createService()
+    compare(s.restartShellRequestCount, 0)
+    compare(s.lastRestartShellArgv, null)
+
+    s.restartShell()
+
+    compare(s.restartShellRequestCount, 1)
+    compare(s.lastRestartShellArgv.length, 1)
+    compare(s.lastRestartShellArgv[0], "omarchy-restart-shell")
+  }
 }

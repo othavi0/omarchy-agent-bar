@@ -46,6 +46,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- fix: bound every service process lane with a deadline, report repeated lane
+  timeouts as a stalled runtime, and offer a shell restart from the popup and
+  failed Settings load state ([#73](https://github.com/othavi0/omarchy-agent-bar/issues/73)).
 - fix: Grok accounts whose credits payload has no `creditUsagePercent`
   (X Premium, monthly-limit teams) no longer read as "billed another way".
   The helper now also reads `GET /v1/billing` and turns

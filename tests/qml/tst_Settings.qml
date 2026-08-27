@@ -195,6 +195,10 @@ TestCase {
     // SET-026: the failed-load copy is rendered by the view itself.
     verify(src.indexOf("Settings could not be loaded") >= 0)
     verify(src.indexOf("load_failed") >= 0)
+    verify(src.indexOf('text: "Restart shell"') >= 0)
+    verify(src.indexOf('Accessible.name: "Restart shell"') >= 0)
+    verify(src.indexOf("root.agentService.restartShell()") >= 0)
+    verify(src.indexOf("function collectFocusTargets()") >= 0)
     // No credentials / money / theme / cache editor
     verify(src.indexOf("credential") < 0 || src.toLowerCase().indexOf("no credential") >= 0)
     verify(src.indexOf("password") < 0)
