@@ -13,6 +13,7 @@ Item {
   property int index: -1
   property var flickable: null
   property int lineHeight: 18
+  property bool focusBlocked: false
 
   readonly property int count: targets && targets.length ? targets.length : 0
   readonly property var current: {
@@ -45,14 +46,28 @@ Item {
   }
 
   function setTargets(list) {
+    var previousCurrent = current
     targets = list || []
     if (count === 0) {
       index = -1
       return
     }
-    if (index < 0 || index >= count)
+
+    var preservedIndex = -1
+    if (previousCurrent) {
+      for (var i = 0; i < count; i++) {
+        if (targets[i] === previousCurrent) {
+          preservedIndex = i
+          break
+        }
+      }
+    }
+    if (preservedIndex >= 0)
+      index = preservedIndex
+    else if (index < 0 || index >= count)
       index = 0
-    focusCurrent()
+    if (!focusBlocked)
+      focusCurrent()
   }
 
   function move(direction) {

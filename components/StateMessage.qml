@@ -114,14 +114,8 @@ Column {
               modelData ? modelData.target : null
             )
           }
-          Keys.onReturnPressed: focusActivate()
-          Keys.onEnterPressed: focusActivate()
-          Keys.onSpacePressed: focusActivate()
           Accessible.onPressAction: focusActivate()
-          onClicked: root.actionActivated(
-            modelData && modelData.kind ? String(modelData.kind) : "",
-            modelData ? modelData.target : null
-          )
+          onClicked: focusActivate()
         }
       }
     }

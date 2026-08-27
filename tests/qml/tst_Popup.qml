@@ -27,6 +27,8 @@ TestCase {
 
   function test_state_message_restart_action_emits_typed_signal() {
     var source = read("components/StateMessage.qml")
+    verify(source.indexOf("Keys.onReturnPressed") < 0,
+           "StateMessage must rely on the host Button key mapping")
     source = source.replace("import qs.Commons\n", "")
     source = source.replace("import qs.Ui\n", "")
     source = source.replace("  id: root\n",
@@ -72,12 +74,24 @@ TestCase {
     }]
     wait(1)
     var receivedKind = ""
+    var activationCount = 0
     message.actionActivated.connect(function (kind, target) {
       receivedKind = kind
+      activationCount += 1
     })
     compare(message.actionRepeaterForTest.count, 1)
-    message.actionRepeaterForTest.itemAt(0).focusActivate()
+    var action = message.actionRepeaterForTest.itemAt(0)
+    action.clicked()
     compare(receivedKind, "restart_shell")
+    compare(activationCount, 1)
+    action.focusActivate()
+    compare(activationCount, 2)
+
+    message.visible = false
+    compare(message.collectFocusTargets().length, 0)
+    message.visible = true
+    message.skeleton = true
+    compare(message.collectFocusTargets().length, 0)
     message.destroy()
   }
 

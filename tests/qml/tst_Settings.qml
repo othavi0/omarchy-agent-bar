@@ -196,9 +196,13 @@ TestCase {
     verify(src.indexOf("Settings could not be loaded") >= 0)
     verify(src.indexOf("load_failed") >= 0)
     verify(src.indexOf('text: "Restart shell"') >= 0)
+    verify(src.indexOf("visible: root.loadFailed") >= 0)
     verify(src.indexOf('Accessible.name: "Restart shell"') >= 0)
     verify(src.indexOf("root.agentService.restartShell()") >= 0)
     verify(src.indexOf("function collectFocusTargets()") >= 0)
+    verify(src.indexOf("return root.loadFailed ? [restartShellButton] : []") >= 0)
+    verify(src.indexOf("Keys.onReturnPressed") < 0,
+           "Settings must rely on the host Button key mapping")
     // No credentials / money / theme / cache editor
     verify(src.indexOf("credential") < 0 || src.toLowerCase().indexOf("no credential") >= 0)
     verify(src.indexOf("password") < 0)

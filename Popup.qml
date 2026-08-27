@@ -165,6 +165,7 @@ KeyboardPanel {
     id: focusController
     flickable: contentFlick
     lineHeight: root.contentLineHeight
+    focusBlocked: root.editorActive
   }
 
   function rebuildFocusTargets() {

@@ -129,9 +129,6 @@ Item {
         if (root.agentService)
           root.agentService.restartShell()
       }
-      Keys.onReturnPressed: focusActivate()
-      Keys.onEnterPressed: focusActivate()
-      Keys.onSpacePressed: focusActivate()
       Accessible.onPressAction: focusActivate()
       onClicked: focusActivate()
     }
