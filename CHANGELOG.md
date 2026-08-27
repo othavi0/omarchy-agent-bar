@@ -59,6 +59,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `This plan does not publish a usage percentage.` (PROD-031 / UX-032A
   amended).
 
+## [10.3.18] - 2026-08-27
+
+### Changed
+
+- fix: single-fire restart action and keep focus
+- feat: offer shell restart when service stalls
+- fix: reap only the timed-out lane it belongs to
+- fix: pin lane callbacks to their start generation
+- fix: bound every service lane with a timeout
+
 ## [10.3.17] - 2026-08-26
 
 ### Changed
