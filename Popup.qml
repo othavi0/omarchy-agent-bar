@@ -165,6 +165,7 @@ KeyboardPanel {
     id: focusController
     flickable: contentFlick
     lineHeight: root.contentLineHeight
+    focusBlocked: root.editorActive
   }
 
   function rebuildFocusTargets() {
@@ -173,6 +174,8 @@ KeyboardPanel {
     var list = []
     if (rail && typeof rail.collectFocusTargets === "function")
       list = list.concat(rail.collectFocusTargets())
+    if (stalledMessage && typeof stalledMessage.collectFocusTargets === "function")
+      list = list.concat(stalledMessage.collectFocusTargets())
     if (contentLoader.item && typeof contentLoader.item.collectFocusTargets === "function")
       list = list.concat(contentLoader.item.collectFocusTargets())
     focusController.setTargets(list)
@@ -192,6 +195,9 @@ KeyboardPanel {
       focusController.clampScroll()
     if (typeof root.rebuildFocusTargets === "function")
       root.rebuildFocusTargets()
+  })
+  onAgentServiceChanged: Qt.callLater(function () {
+    root.rebuildFocusTargets()
   })
 
   PanelKeyCatcher {
@@ -307,6 +313,28 @@ KeyboardPanel {
           Column {
             id: contentColumn
             width: contentFlick.width
+            spacing: Style.space(12)
+
+            StateMessage {
+              id: stalledMessage
+              width: parent.width
+              visible: root.agentService
+                  && root.agentService.runtimeHealth === "stalled"
+              title: "Agent Bar lost contact with its helper"
+              body: "Restart the shell to recover."
+              actions: [{
+                kind: "restart_shell",
+                label: "Restart shell",
+                target: null
+              }]
+              foreground: Color.foreground
+              fontFamily: Style.font.family
+              onActionActivated: function (kind, target) {
+                if (kind === "restart_shell" && root.agentService)
+                  root.agentService.restartShell()
+              }
+              onVisibleChanged: Qt.callLater(root.rebuildFocusTargets)
+            }
 
             Loader {
               id: contentLoader

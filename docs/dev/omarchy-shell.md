@@ -81,8 +81,10 @@ for successful interactive login. The target architecture fixes the exact
 return values and validation.
 
 Service startup verifies the private helper with a dedicated two-second
-`version` process before provider polling. Health therefore depends on
-manifest/helper equality, not provider network latency.
+`version` process before provider polling. Health normally depends on
+manifest/helper equality, not provider network latency. It returns `stalled`
+when two distinct process lanes exceed their deadlines before an accepted
+helper callback completes.
 
 Each chip registers with `bar.registerClickTarget()`, implements
 `triggerPress(button)`, and unregisters on destruction.

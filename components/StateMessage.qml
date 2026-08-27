@@ -18,6 +18,18 @@ Column {
   width: parent ? parent.width : implicitWidth
   spacing: Style.space(10)
 
+  function collectFocusTargets() {
+    var targets = []
+    if (!root.visible || root.skeleton)
+      return targets
+    for (var i = 0; i < actionRepeater.count; i++) {
+      var item = actionRepeater.itemAt(i)
+      if (item)
+        targets.push(item)
+    }
+    return targets
+  }
+
   // UX-026 skeleton placeholders (no plugin-authored motion).
   Column {
     visible: root.skeleton
@@ -83,6 +95,7 @@ Column {
       spacing: Style.space(8)
 
       Repeater {
+        id: actionRepeater
         model: root.actions
 
         Button {
@@ -95,10 +108,14 @@ Column {
           // Keep action labels fully inside content (no left clip).
           leftAlign: true
           Accessible.name: text
-          onClicked: root.actionActivated(
-            modelData && modelData.kind ? String(modelData.kind) : "",
-            modelData ? modelData.target : null
-          )
+          function focusActivate() {
+            root.actionActivated(
+              modelData && modelData.kind ? String(modelData.kind) : "",
+              modelData ? modelData.target : null
+            )
+          }
+          Accessible.onPressAction: focusActivate()
+          onClicked: focusActivate()
         }
       }
     }

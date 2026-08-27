@@ -103,6 +103,14 @@ provider's TTL instead.
 
 Collection discovery is separate from interactive login-CLI discovery.
 
+## Stalled service recovery
+
+The shared QML service gives each helper process lane a deadline. If two
+different lanes time out before any helper callback completes, the popup shows
+that Agent Bar has lost contact with its helper. Select `Restart shell` to run
+`omarchy-restart-shell`. A failed Settings load keeps its existing error text
+and offers the same action.
+
 ## Privacy
 
 Logs, screenshots, checkpoints, cache, and doctor reports redact tokens,

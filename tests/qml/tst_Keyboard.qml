@@ -1,6 +1,7 @@
 import QtQuick
 import QtTest
 import "../../CoreScroll.js" as Core
+import "../../components"
 
 TestCase {
   id: testCase
@@ -22,6 +23,19 @@ TestCase {
     xhr.open("GET", "file://" + repoRoot + "/" + rel, false)
     xhr.send()
     return String(xhr.responseText || "")
+  }
+
+  Component {
+    id: focusControllerComponent
+    FocusController { }
+  }
+
+  Component {
+    id: focusTargetComponent
+    Item {
+      width: 20
+      height: 20
+    }
   }
 
   function test_provider_jk_and_arrows_delta() {
@@ -93,5 +107,35 @@ TestCase {
     verify(src.indexOf("scrollPage") >= 0)
     verify(src.indexOf("Behavior") < 0)
     verify(src.indexOf("Transition") < 0)
+  }
+
+  function test_focus_controller_preserves_current_target_identity() {
+    var controller = createTemporaryObject(focusControllerComponent, testCase)
+    var first = createTemporaryObject(focusTargetComponent, testCase)
+    var current = createTemporaryObject(focusTargetComponent, testCase)
+    var inserted = createTemporaryObject(focusTargetComponent, testCase)
+    verify(controller && first && current && inserted)
+
+    controller.setTargets([first, current])
+    controller.index = 1
+    controller.setTargets([inserted, first, current])
+
+    compare(controller.index, 2)
+    compare(controller.current, current)
+  }
+
+  function test_focus_controller_does_not_refocus_while_editor_active() {
+    var controller = createTemporaryObject(focusControllerComponent, testCase)
+    var editor = createTemporaryObject(focusTargetComponent, testCase)
+    var action = createTemporaryObject(focusTargetComponent, testCase)
+    verify(controller && editor && action)
+
+    editor.forceActiveFocus()
+    verify(editor.activeFocus)
+    controller.focusBlocked = true
+    controller.setTargets([action])
+
+    verify(editor.activeFocus)
+    verify(!action.activeFocus)
   }
 }

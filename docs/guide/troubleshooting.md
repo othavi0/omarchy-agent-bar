@@ -87,6 +87,10 @@ Then inspect:
 Do not run `omarchy bar plugin add` over an existing entry; it can reset
 placement.
 
+If the popup reports that Agent Bar lost contact with its helper, use its
+`Restart shell` button. The banner appears after helper calls stall in two
+process lanes.
+
 ## Settings stay on "Loading" or report "could not be loaded" after an update
 
 `omarchy plugin update` replaces the plugin tree and the helper on disk, but
@@ -94,6 +98,8 @@ the QML already running keeps the old code until the shell restarts. When the
 new helper lists a provider the old QML does not know, Settings cannot finish
 its load; a release before 10.3.13 stayed on "Loading" forever, current
 releases show "Settings could not be loaded". Either way:
+
+Use the `Restart shell` button in Settings, or run the command directly:
 
 ```bash
 omarchy-restart-shell

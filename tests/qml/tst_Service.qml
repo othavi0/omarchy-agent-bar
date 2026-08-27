@@ -51,7 +51,7 @@ TestCase {
     readonly property string manifestVersion: "10.0.0"
 
     function health(v) {
-      return Core.health(versionReady, versionFailed, helperVersion, manifestVersion, v)
+      return Core.health(versionReady, versionFailed, helperVersion, manifestVersion, v, "ok")
     }
     function applyVersion(stdout) {
       var v = Core.parseVersionStdout(stdout, "", 0)
@@ -391,7 +391,7 @@ TestCase {
     compare(Core.canStartLane(true), false)
   }
 
-  function test_service_qml_declares_six_process_lanes() {
+  function test_service_qml_declares_seven_process_lanes() {
     var xhr = new XMLHttpRequest()
     xhr.open("GET", serviceUrl, false)
     xhr.send()
@@ -399,11 +399,87 @@ TestCase {
     verify(src.indexOf("id: versionProbe") >= 0)
     verify(src.indexOf("id: statusProcess") >= 0)
     verify(src.indexOf("id: settingsReadProcess") >= 0)
+    verify(src.indexOf("id: settingsBootstrapProcess") >= 0)
     verify(src.indexOf("id: settingsWriteProcess") >= 0)
     verify(src.indexOf("id: maintenanceCheckProcess") >= 0)
     verify(src.indexOf("id: maintenanceHandoffProcess") >= 0)
     verify(src.indexOf("id: pollTimer") >= 0)
     verify(src.indexOf('target: "othavi0.agent-bar"') >= 0)
+  }
+
+  function test_service_qml_declares_lane_timeouts_and_destruction() {
+    var xhr = new XMLHttpRequest()
+    xhr.open("GET", serviceUrl, false)
+    xhr.send()
+    var src = String(xhr.responseText)
+    verify(src.indexOf("id: settingsReadTimeout") >= 0)
+    verify(src.indexOf("id: settingsBootstrapTimeout") >= 0)
+    verify(src.indexOf("id: settingsWriteTimeout") >= 0)
+    verify(src.indexOf("id: maintenanceCheckTimeout") >= 0)
+    verify(src.indexOf("id: maintenanceHandoffTimeout") >= 0)
+    verify(src.indexOf("Component.onDestruction") >= 0)
+  }
+
+  function test_runtime_health() {
+    compare(Core.runtimeHealth({}), "ok")
+    compare(Core.runtimeHealth({ settingsRead: true }), "ok")
+    compare(Core.runtimeHealth({ settingsRead: true, status: true }), "stalled")
+    var original = { status: true }
+    var next = Core.recordLaneTimeout(original, "settingsRead")
+    compare(Core.runtimeHealth(next), "stalled")
+    verify(original.settingsRead === undefined)
+  }
+
+  function test_settled_lane_generation_is_immutable() {
+    var original = { status: 3 }
+    var settled = Core.settleLane(original, "settingsWrite", 7)
+    verify(Core.isLaneSettled(settled, "settingsWrite", 7))
+    verify(!Core.isLaneSettled(settled, "settingsWrite", 8))
+    compare(original.settingsWrite, undefined)
+    var cleared = Core.clearSettledLane(settled, "settingsWrite", 7)
+    verify(!Core.isLaneSettled(cleared, "settingsWrite", 7))
+    compare(cleared.status, 3)
+  }
+
+  function test_lane_timeout_clear_is_immutable() {
+    var original = { status: true, settingsRead: true }
+    var cleared = Core.clearLaneTimeout(original, "status")
+    verify(original.status)
+    verify(!cleared.status)
+    verify(cleared.settingsRead)
+  }
+
+  function test_real_apply_clears_older_settled_generation() {
+    var s = Qt.createQmlObject([
+      "import QtQuick",
+      "import '../../CoreService.js' as Core",
+      "Item {",
+      "  property var settled: ({ status: 3, settingsRead: 8 })",
+      "  function applyStatus() { settled = Core.clearSettledLane(settled, 'status') }",
+      "}"
+    ].join("\n"), testCase)
+    verify(s !== null)
+    s.applyStatus()
+    verify(!Core.isLaneSettled(s.settled, "status", 3))
+    verify(Core.isLaneSettled(s.settled, "settingsRead", 8))
+    s.destroy()
+  }
+
+  function test_service_pins_started_generation_in_kick() {
+    var xhr = new XMLHttpRequest()
+    xhr.open("GET", serviceUrl, false)
+    xhr.send()
+    var src = String(xhr.responseText)
+    verify(src.indexOf("onStarted: root.versionProbeStartedGeneration") < 0)
+    verify(src.indexOf("onStarted: root.statusStartedGeneration") < 0)
+    verify(src.indexOf("onStarted: root.settingsReadStartedGeneration") < 0)
+    verify(src.indexOf("onStarted: root.settingsBootstrapStartedGeneration") < 0)
+    verify(src.indexOf("root.settingsWriteStartedGeneration = root.activeSettingsWriteGeneration\n      // Write") < 0)
+    verify(src.indexOf("onStarted: root.maintenanceCheckStartedGeneration") < 0)
+    verify(src.indexOf("root.maintenanceHandoffStartedGeneration = root.activeMaintenanceHandoffGeneration\n      // BUNDLE") < 0)
+    var pin = src.indexOf("statusStartedGeneration = gen")
+    var start = src.indexOf("statusProcess.running = true", pin)
+    verify(pin >= 0 && start > pin)
   }
 
   // Live Quattro: duplicate Component.onCompleted → "Property value set multiple times"

@@ -29,13 +29,68 @@ var PROVIDER_STATES = {
 // Version / health / IPC refresh
 // ---------------------------------------------------------------------------
 
-function health(versionReady, versionFailed, helperVersion, manifestVersion, expectedVersion) {
+function health(versionReady, versionFailed, helperVersion, manifestVersion, expectedVersion, runtimeHealthValue) {
+  if (runtimeHealthValue === "stalled")
+    return "stalled"
   var expected = String(expectedVersion || "")
   if (!versionReady || versionFailed)
     return "unknown"
   if (String(helperVersion) === expected && String(manifestVersion) === expected)
     return "ok"
   return "unknown"
+}
+
+function runtimeHealth(timedOutLanes) {
+  var count = 0
+  for (var lane in (timedOutLanes || {})) {
+    if (timedOutLanes[lane])
+      count++
+  }
+  return count >= 2 ? "stalled" : "ok"
+}
+
+function recordLaneTimeout(timedOutLanes, lane) {
+  var next = {}
+  for (var key in (timedOutLanes || {}))
+    next[key] = !!timedOutLanes[key]
+  next[String(lane)] = true
+  return next
+}
+
+function clearLaneTimeout(timedOutLanes, lane) {
+  var next = {}
+  for (var key in (timedOutLanes || {})) {
+    if (key !== String(lane))
+      next[key] = !!timedOutLanes[key]
+  }
+  return next
+}
+
+function settleLane(settledLanes, lane, generation) {
+  var next = {}
+  for (var key in (settledLanes || {}))
+    next[key] = settledLanes[key]
+  next[String(lane)] = Number(generation)
+  return next
+}
+
+function isLaneSettled(settledLanes, lane, generation) {
+  if (!settledLanes)
+    return false
+  var key = String(lane)
+  return Object.prototype.hasOwnProperty.call(settledLanes, key)
+      && Number(settledLanes[key]) === Number(generation)
+}
+
+function clearSettledLane(settledLanes, lane, generation) {
+  if (generation !== undefined && !isLaneSettled(settledLanes, lane, generation))
+    return settledLanes || {}
+  var next = {}
+  for (var key in settledLanes) {
+    if (key !== String(lane))
+      next[key] = settledLanes[key]
+  }
+  return next
 }
 
 function isClosedProvider(providerId) {

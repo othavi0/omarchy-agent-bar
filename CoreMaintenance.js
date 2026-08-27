@@ -41,6 +41,10 @@ function loginDetachedArgv(pluginRoot, providerId) {
   ]
 }
 
+function restartShellArgv() {
+  return ["omarchy-restart-shell"]
+}
+
 // Exact xdg-terminal-exec argv the Bash helper must exec (ARCH login flow).
 function terminalHelperXdgArgv(pluginRoot, providerId) {
   if (!pluginRoot || !Kernel.isClosedProvider(providerId))
