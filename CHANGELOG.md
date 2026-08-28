@@ -59,6 +59,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `This plan does not publish a usage percentage.` (PROD-031 / UX-032A
   amended).
 
+## [10.3.19] - 2026-08-28
+
+### Changed
+
+- docs: show how to move the widget section
+
 ## [10.3.18] - 2026-08-27
 
 ### Changed
