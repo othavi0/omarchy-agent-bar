@@ -47,8 +47,13 @@ omarchy plugin add https://github.com/othavi0/omarchy-agent-bar.git
 ```
 
 Omarchy asks where to put the widget when you enable the plugin. Skip the
-question and it lands in the right section of the bar. The install is one
-directory:
+question and it lands in the right section of the bar. Move it later with:
+
+```bash
+omarchy bar move othavi0.agent-bar --section center
+```
+
+The install is one directory:
 
 ```text
 ~/.config/omarchy/plugins/othavi0.agent-bar/
