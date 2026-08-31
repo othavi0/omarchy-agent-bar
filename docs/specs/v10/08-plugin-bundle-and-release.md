@@ -202,14 +202,14 @@ The tracked English release-notes source is
 `docs/releases/10.0.0.md`. The internal builder command is exactly:
 
 ```text
-agent-bar-bundle assemble output <plugin-dir>
-  source-commit <40-lowercase-hex>
+agent-bar-bundle stamp source-commit <40-lowercase-hex> [build-run <url>]
 ```
 
-`assemble` creates and validates a bundle using the explicit source commit;
-it does not claim the worktree matches that value. It requires the
-repository-root `README.md`, `LICENSE`, and `preview.png` to exist; the
-preview is a committed file, not generated. The `agent-bar-bundle release
+`stamp` writes the release artifacts into the repository root using the
+explicit source commit; it does not claim the worktree matches that value.
+It requires the repository-root `README.md`, `LICENSE`, and `preview.png` to
+exist; the preview is a committed file, not generated. `assemble`, `output`,
+and the `agent-bar-bundle release
 bundle` subcommand (archive/checksum/metadata builder) is removed; the
 builder is an internal development binary, not installed in the plugin.
 

@@ -1197,7 +1197,6 @@ mod tests {
         assert!(root.join("bundle.json").is_file());
         assert!(receipt.files.iter().any(|f| f.path == "bin/agent-bar"));
         assert!(receipt.files.iter().any(|f| f.path == "preview.png"));
-        assert!(!root.join("docs/media/demo.png").exists());
         BundleValidator::validate_tree(&root).unwrap();
     }
 

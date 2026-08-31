@@ -251,7 +251,7 @@ git status --porcelain           # confirm nothing else changed
 git checkout -- bin/agent-bar bundle.json
 ```
 
-If `git status --porcelain` shows anything beyond those three paths, the
+If `git status --porcelain` shows anything beyond those two paths, the
 tree had a stray mode difference before the stamp ran — check it out
 individually too rather than reaching for a blanket `git checkout -- .`,
 which would also discard unrelated in-progress work.
