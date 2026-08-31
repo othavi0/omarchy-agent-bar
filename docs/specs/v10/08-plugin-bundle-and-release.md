@@ -207,10 +207,9 @@ agent-bar-bundle assemble output <plugin-dir>
 ```
 
 `assemble` creates and validates a bundle using the explicit source commit;
-it does not claim the worktree matches that value. It requires
-`assets/dist/README.md`, the repository-root `LICENSE`, and
-`docs/media/demo.png` to exist, and copies them into the tree as
-`README.md`, `LICENSE`, and `preview.png`. The `agent-bar-bundle release
+it does not claim the worktree matches that value. It requires the
+repository-root `README.md`, `LICENSE`, and `preview.png` to exist; the
+preview is a committed file, not generated. The `agent-bar-bundle release
 bundle` subcommand (archive/checksum/metadata builder) is removed; the
 builder is an internal development binary, not installed in the plugin.
 

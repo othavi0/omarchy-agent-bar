@@ -2,7 +2,7 @@
 //!
 //! The plugin QML/JS/manifest tree now lives at the repo root alongside
 //! `src/`, `docs/`, and `target/`. `BundleBuilder::stamp` reads that root,
-//! stamps in the private helper and marketplace preview image, and writes
+//! stamps in the private helper, and writes
 //! `bundle.json` scoped to `SHIPPED_ROOT_FILES`/`SHIPPED_DIRS` only.
 //! `BundleValidator::validate_tree` covers receipt/filesystem consistency but
 //! never learned the shell's own manifest grammar (id regex, entry point
@@ -58,7 +58,7 @@ const ROOT_SOURCE_FILES: &[&str] = &[
 ///
 /// The QML/JS/manifest/`components`/`icons` tree is the real one, so the
 /// manifest and entry points this test checks are the ones that actually
-/// ship. The terminal helper, README, LICENSE, and demo image are small
+/// ship. The terminal helper, README, LICENSE, and preview image are small
 /// fakes: their exact bytes are not under test here, only that `stamp`
 /// picks them up and the resulting root is contract-complete. Non-shipped
 /// noise (`src/`, `docs/dev/`, `Cargo.toml`) stands in for the rest of the
@@ -84,9 +84,8 @@ fn fake_repo(root: &Path) {
     fs::write(root.join("LICENSE"), b"Fake license text.\n").unwrap();
     fs::write(root.join("README.md"), b"# Fake readme\n").unwrap();
 
-    fs::create_dir_all(root.join("docs/media")).unwrap();
     fs::write(
-        root.join("docs/media/demo.png"),
+        root.join("preview.png"),
         b"not a real png, just stand-in bytes",
     )
     .unwrap();

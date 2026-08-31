@@ -2,8 +2,8 @@
 //!
 //! The plugin QML/JS/manifest tree lives at the repo root (monorepo
 //! migration). `BundleBuilder::stamp` does not assemble a separate tree; it
-//! stamps release artifacts (private helper, marketplace preview image,
-//! `bundle.json`) directly into that root and validates the shipped scope.
+//! stamps release artifacts (private helper, `bundle.json`) directly into
+//! that root and validates the shipped scope.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsStr;
@@ -226,9 +226,9 @@ impl BundleBuilder {
     ///
     /// The plugin QML/JS/manifest tree already lives at `repo_root` (no
     /// separate assembly step or version substitution). This copies
-    /// `helper_bin` to `<repo_root>/bin/agent-bar` (mode 0755) and
-    /// `<repo_root>/docs/media/demo.png` to `<repo_root>/preview.png`
-    /// (mode 0644), builds the receipt from the shipped scope only
+    /// `helper_bin` to `<repo_root>/bin/agent-bar` (mode 0755), requires the
+    /// committed `<repo_root>/preview.png`, builds the receipt from the
+    /// shipped scope only
     /// ([`SHIPPED_ROOT_FILES`] / [`SHIPPED_DIRS`]), writes
     /// `<repo_root>/bundle.json`, and validates.
     pub fn stamp(&self, repo_root: &Path, helper_bin: &Path) -> Result<BundleReceipt, BundleError> {
@@ -265,11 +265,11 @@ impl BundleBuilder {
                 license.display()
             )));
         }
-        let preview_src = repo_root.join("docs/media/demo.png");
-        if !preview_src.is_file() {
+        let preview = repo_root.join("preview.png");
+        if !preview.is_file() {
             return Err(BundleError::msg(format!(
                 "preview image not found: {}",
-                preview_src.display()
+                preview.display()
             )));
         }
 
@@ -279,10 +279,6 @@ impl BundleBuilder {
         let dest_helper = bin_dir.join("agent-bar");
         fs::copy(helper_bin, &dest_helper)?;
         set_unix_mode(&dest_helper, 0o755)?;
-
-        // Marketplace preview image, stamped fresh every run.
-        fs::copy(&preview_src, repo_root.join("preview.png"))?;
-        set_unix_mode(&repo_root.join("preview.png"), 0o644)?;
 
         // Deterministic non-exec modes for ordinary shipped files.
         normalize_bundle_modes(repo_root)?;
@@ -1086,15 +1082,12 @@ mod tests {
     }
 
     /// A stamp-input root: everything `stamp` expects to already exist,
-    /// minus the two artifacts it creates itself (`bin/agent-bar`,
-    /// `preview.png`), plus `docs/media/demo.png` as the preview source.
+    /// minus the one artifact it creates itself (`bin/agent-bar`). The
+    /// committed `preview.png` is part of the input tree.
     fn write_stamp_source_root(root: &Path, version: &str) {
         write_minimal_plugin(root, version);
         fs::remove_file(root.join("bin/agent-bar")).unwrap();
         fs::remove_dir(root.join("bin")).unwrap();
-        fs::remove_file(root.join("preview.png")).unwrap();
-        fs::create_dir_all(root.join("docs/media")).unwrap();
-        fs::write(root.join("docs/media/demo.png"), b"not a real png\n").unwrap();
     }
 
     #[test]
@@ -1197,18 +1190,14 @@ mod tests {
         let receipt = builder.stamp(&root, &helper).unwrap();
         assert_eq!(receipt.version, version);
         assert_eq!(receipt.plugin_id, PLUGIN_ID);
-        // stamp creates these two artifacts fresh.
+        // stamp creates the helper fresh; the committed preview.png is
+        // carried into the receipt as-is.
         assert!(root.join("bin/agent-bar").is_file());
         assert!(root.join("preview.png").is_file());
         assert!(root.join("bundle.json").is_file());
         assert!(receipt.files.iter().any(|f| f.path == "bin/agent-bar"));
         assert!(receipt.files.iter().any(|f| f.path == "preview.png"));
-        // Non-shipped source material (the preview's own origin file) stays
-        // out of the receipt.
-        assert!(!receipt
-            .files
-            .iter()
-            .any(|f| f.path == "docs/media/demo.png"));
+        assert!(!root.join("docs/media/demo.png").exists());
         BundleValidator::validate_tree(&root).unwrap();
     }
 

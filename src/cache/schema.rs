@@ -70,7 +70,7 @@ impl CacheDocument {
     /// network_error, provider_error) are written for stale retention and
     /// singleflight bookkeeping but are never served from cache, so the next
     /// `cache use` collection retries live (CACHE-004/006 amendment,
-    /// docs/superpowers/specs/2026-08-25-login-state-visibility-design.md D4).
+    /// docs/specs/v10/amendments/2026-08-25-login-state-visibility-design.md D4).
     pub fn is_fresh(&self, id: ProviderId, now: OffsetDateTime) -> bool {
         self.get(id).is_some_and(|entry| {
             now < entry.expires_at
