@@ -91,7 +91,8 @@ the PR and approved before work continues.
 - v10 does not add an internationalization layer.
 - Changelog release sections beginning at `## [9.0.0]` and ADR bodies
   `0001`–`0003` remain untouched historical evidence and are excluded from
-  the active legacy gate; the language gate scans every tracked text file. `CHANGELOG.md` Unreleased,
+  the active legacy gate; the language gate scans every tracked text file
+  except the one allowlisted fixture named in `tests/active_language.rs`. `CHANGELOG.md` Unreleased,
   the ADR index, and ADR 0004 remain active and must pass.
 
 Documentation requirements:
@@ -101,7 +102,8 @@ Documentation requirements:
 - `DOC-003`: Changelog releases 9.0.0 and older, ADR bodies 0001–0003,
   dated release notes under `docs/releases/`, and `docs/specs/v10/**` are
   preserved and excluded from the legacy token scan; Unreleased, the ADR
-  index, and ADR 0004 are active. The language gate has no exclusions.
+  index, and ADR 0004 are active. The language gate excludes only the
+  allowlisted fixture named in `tests/active_language.rs`.
 - `DOC-004`: Active docs describe only the plugin-first v10 target after
   implementation completes.
 - `DOC-005`: Before implementation completes, active docs clearly label target
