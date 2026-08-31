@@ -38,8 +38,8 @@ installation.
    incremental compilation, on the pinned `ubuntu-24.04` runner image.
 4. `agent-bar-bundle stamp source-commit <hex> build-run <url>` stamps the release
    artifacts directly into the repository root: it copies the built
-   helper to `bin/agent-bar` (mode `0755`), refreshes `preview.png`,
-   normalizes the shipped tree's file modes, and writes `bundle.json`
+   helper to `bin/agent-bar` (mode `0755`), requires the committed
+   `preview.png`, normalizes the shipped tree's file modes, and writes `bundle.json`
    from the current, already-versioned root tree, including `buildRun`,
    the URL of the Actions run doing the stamping. `scripts/check-version`
    then confirms `Cargo.toml`, `manifest.json`, `bundle.json`, and the
@@ -239,8 +239,8 @@ cargo build --release
 cargo run --bin agent-bar-bundle -- stamp source-commit "$(git rev-parse HEAD)"
 ```
 
-This overwrites three tracked files in place — `bin/agent-bar`,
-`preview.png`, `bundle.json` — and normalizes the file mode of every
+This overwrites two tracked files in place — `bin/agent-bar` and
+`bundle.json` — and normalizes the file mode of every
 shipped file under the root inventory (`0755` for `bin/agent-bar` and
 `scripts/agent-bar-open-terminal`, `0644` for the rest). On a tree that
 already matches the last release, that mode normalization is a no-op;
@@ -248,10 +248,10 @@ confirm with `git status --porcelain` and discard the stamp's output with:
 
 ```bash
 git status --porcelain           # confirm nothing else changed
-git checkout -- bin/agent-bar bundle.json preview.png
+git checkout -- bin/agent-bar bundle.json
 ```
 
-If `git status --porcelain` shows anything beyond those three paths, the
+If `git status --porcelain` shows anything beyond those two paths, the
 tree had a stray mode difference before the stamp ran — check it out
 individually too rather than reaching for a blanket `git checkout -- .`,
 which would also discard unrelated in-progress work.
