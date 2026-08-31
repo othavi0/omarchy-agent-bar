@@ -92,7 +92,7 @@ uninstall-confirmation-dark.png
 Screenshots must use real rendered QML with deterministic fixture data. HTML
 mockups are design references, not acceptance evidence.
 
-Checkpoint 2 and checkpoint 4 both run:
+Every UI change runs:
 
 ```bash
 scripts/verify-v10-ui
@@ -101,7 +101,7 @@ scripts/verify-v10-ui
 The script recreates `target/v10-ui-evidence/`, invokes
 `tst_Screenshots.qml` through `qmltestrunner`, verifies the exact inventory
 above with no extra PNG, and writes sorted
-`target/v10-ui-evidence/SHA256SUMS`. The checkpoint records that directory and
+`target/v10-ui-evidence/SHA256SUMS`. The PR records that directory and
 hash file.
 
 ## Legacy and documentation gates
@@ -110,9 +110,10 @@ hash file.
   scripts contain no TUI, Waybar, history, chart, BRL/currency, Redb, Postcard,
   legacy status/config schema, AUR, cargo-binstall, or standalone-product
   behavior.
-- `TEST-031`: The gate excludes only changelog release sections 9.0.0 and
-  older and ADR bodies 0001–0003. It scans Unreleased,
-  the ADR index, and ADR 0004.
+- `TEST-031`: The token scan excludes changelog release sections 9.0.0 and
+  older, ADR bodies 0001–0003, dated release notes under `docs/releases/`
+  (not its README), and `docs/specs/v10/**`, which describes the removal
+  contract. It scans Unreleased, the ADR index, and ADR 0004.
 - `TEST-032`: Every active command example is exercised by CLI parser tests.
 - `TEST-033`: Every active JSON example validates against the checked-in
   schema.
@@ -183,22 +184,9 @@ schema v2, QML, cache, or logs. The bare words `usage`, `history`, `cost`,
 `credits`, `TUI`, and `Waybar` are not global regexes because negative
 documentation and normalized provider concepts can contain them.
 
-## Mandatory checkpoints
-
-1. Backend contract: CLI, JSON, providers, settings, cache, notifications.
-2. Quickshell: service, widgets, popup, Settings, Maintenance, scrolling,
-   icons, accessibility.
-3. Migration and cleanup: transactions, v9 migration, deletion, bundle,
-   active docs.
-4. Final release candidate: complete isolated verification before live QA.
-
-At each checkpoint Grok writes the approved checkpoint template and stops.
-Codex independently reviews the commit range, tests, screenshots, deviations,
-and requirement coverage. Blocking findings stop the next checkpoint.
-
 ## Live Omarchy QA
 
-Live QA is authorized only after checkpoint 4 isolated gates pass.
+Live QA is authorized only after the isolated gates pass.
 
 - `TEST-035`: Back up the exact current plugin, settings, shell entry, and
   transaction state.
@@ -226,6 +214,6 @@ v10 is done only when:
 - every mandatory test and screenshot exists and passes;
 - no blocker, undocumented deviation, skipped gate, or active legacy path
   remains;
-- final Codex review accepts the release candidate;
+- final review accepts the release candidate;
 - live QA and rollback pass;
 - the user explicitly approves the final result.

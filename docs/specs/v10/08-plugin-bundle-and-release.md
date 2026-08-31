@@ -390,8 +390,10 @@ confirmation document (`BUNDLE-036`'s schema) is unchanged and lives in
 
 - `BUNDLE-039`: The implementation prepares version `10.0.0`, changelog,
   migration guide, release-notes draft, archive, and checksum.
-- `BUNDLE-040`: Grok may commit, push the feature branch, and open a ready PR.
-- `BUNDLE-041`: Grok may not merge, tag, publish a GitHub Release, distribute
-  the archive, or change the live desktop before the authorized QA gate.
-- `BUNDLE-042`: Publishing requires final Codex review, passing live QA, user
+- `BUNDLE-040`: An implementer may commit, push the feature branch, and open
+  a ready PR.
+- `BUNDLE-041`: An implementer may not merge, tag, publish a GitHub Release,
+  distribute the archive, or change the live desktop before the authorized QA
+  gate.
+- `BUNDLE-042`: Publishing requires final review, passing live QA, user
   merge, and separate explicit release authorization.
