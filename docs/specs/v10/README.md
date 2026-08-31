@@ -75,11 +75,10 @@ unless a later file explicitly identifies the requirement ID it refines.
 | `BUNDLE` | Plugin assembly, installation, update, and uninstall |
 | `TEST` | Verification and acceptance |
 | `DOC` | Documentation |
-| `EXEC` | Grok execution and review workflow |
 
 Requirement IDs are stable. An implementation may not silently weaken,
 rename, or delete a requirement. A necessary deviation must be documented in
-the active checkpoint and approved before work continues.
+the PR and approved before work continues.
 
 ## Language policy
 

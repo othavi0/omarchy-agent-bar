@@ -92,7 +92,7 @@ uninstall-confirmation-dark.png
 Screenshots must use real rendered QML with deterministic fixture data. HTML
 mockups are design references, not acceptance evidence.
 
-Checkpoint 2 and checkpoint 4 both run:
+Every UI change runs:
 
 ```bash
 scripts/verify-v10-ui
@@ -101,7 +101,7 @@ scripts/verify-v10-ui
 The script recreates `target/v10-ui-evidence/`, invokes
 `tst_Screenshots.qml` through `qmltestrunner`, verifies the exact inventory
 above with no extra PNG, and writes sorted
-`target/v10-ui-evidence/SHA256SUMS`. The checkpoint records that directory and
+`target/v10-ui-evidence/SHA256SUMS`. The PR records that directory and
 hash file.
 
 ## Legacy and documentation gates
@@ -186,7 +186,7 @@ documentation and normalized provider concepts can contain them.
 
 ## Live Omarchy QA
 
-Live QA is authorized only after checkpoint 4 isolated gates pass.
+Live QA is authorized only after the isolated gates pass.
 
 - `TEST-035`: Back up the exact current plugin, settings, shell entry, and
   transaction state.
@@ -214,6 +214,6 @@ v10 is done only when:
 - every mandatory test and screenshot exists and passes;
 - no blocker, undocumented deviation, skipped gate, or active legacy path
   remains;
-- final Codex review accepts the release candidate;
+- final review accepts the release candidate;
 - live QA and rollback pass;
 - the user explicitly approves the final result.

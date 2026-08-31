@@ -62,7 +62,7 @@ Monitor 1 BarWidget   Monitor 2 BarWidget
 
 ## Target Rust boundaries
 
-The final names may change only through an approved checkpoint deviation. Each
+The final names may change only through an approved, documented deviation. Each
 module must remain a deep module with a small public surface.
 
 ```text
