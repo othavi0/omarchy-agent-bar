@@ -4,17 +4,15 @@ Status: **implemented, published as `v10.0.0`, live-accepted (2026-07-27),
 and amended by the git-native plugin distribution conversion (2026-08-05)**
 
 Approved on: 2026-07-26 · Merged: [PR #25](https://github.com/othavi0/agent-bar/pull/25) ·
-Release: [v10.0.0](https://github.com/othavi0/agent-bar/releases/tag/v10.0.0) ·
-Live QA: [docs/history/qa/v10.0.0-live-qa-2026-07-27.md](../../history/qa/v10.0.0-live-qa-2026-07-27.md)
+Release: [v10.0.0](https://github.com/othavi0/agent-bar/releases/tag/v10.0.0)
 
 This directory is the canonical product and engineering contract for Agent Bar
-v10. Post-merge notes and residuals:
-[docs/history/handoff-v10-post-merge.md](../../history/handoff-v10-post-merge.md).
+v10.
 
 The plugin update/uninstall, distribution, and installation model is
 superseded by the git-native plugin distribution design, approved
 2026-08-05:
-[docs/superpowers/specs/2026-08-05-git-plugin-distribution-design.md](../../superpowers/specs/2026-08-05-git-plugin-distribution-design.md).
+[docs/specs/v10/amendments/2026-08-05-git-plugin-distribution-design.md](amendments/2026-08-05-git-plugin-distribution-design.md).
 That design is this specification's change-control record for
 `01-product-contract.md` (PROD-007, PROD-010, the Maintain journey),
 `03-cli-and-json-contract.md` (the maintenance grammar and CLI-024..031),
@@ -25,7 +23,7 @@ the current, unamended contract.
 
 The login-state visibility design, approved 2026-08-25, refines `JSON-004`,
 `UX-030`, `CACHE-004`, `CACHE-006`, and `ARCH-021`:
-[docs/superpowers/specs/2026-08-25-login-state-visibility-design.md](../../superpowers/specs/2026-08-25-login-state-visibility-design.md).
+[docs/specs/v10/amendments/2026-08-25-login-state-visibility-design.md](amendments/2026-08-25-login-state-visibility-design.md).
 
 ## Product statement
 
@@ -47,10 +45,12 @@ application, an AUR product, or a cargo-binstall product.
 6. [06-migration-and-legacy-removal.md](06-migration-and-legacy-removal.md)
 7. [07-testing-and-acceptance.md](07-testing-and-acceptance.md)
 8. [08-plugin-bundle-and-release.md](08-plugin-bundle-and-release.md)
-9. [09-implementation-plan.md](09-implementation-plan.md)
-10. [10-grok-execution-runbook.md](10-grok-execution-runbook.md)
-11. [REQUIREMENTS_MATRIX.md](REQUIREMENTS_MATRIX.md)
-12. [CHECKPOINT_TEMPLATE.md](CHECKPOINT_TEMPLATE.md)
+9. [amendments/](amendments/) — approved design changes, in date order:
+   [2026-08-05 git plugin distribution](amendments/2026-08-05-git-plugin-distribution-design.md),
+   [2026-08-06 plugin ID rename](amendments/2026-08-06-plugin-id-rename-design.md),
+   [2026-08-06 remove chip tooltip](amendments/2026-08-06-remove-chip-tooltip-design.md),
+   [2026-08-11 monorepo migration](amendments/2026-08-11-monorepo-migration-design.md),
+   [2026-08-25 login-state visibility](amendments/2026-08-25-login-state-visibility-design.md).
 
 When two statements conflict, the earlier contract in this reading order wins
 unless a later file explicitly identifies the requirement ID it refines.
@@ -89,7 +89,7 @@ the active checkpoint and approved before work continues.
 - Provider trademarks and official command names retain their original form.
 - v10 does not add an internationalization layer.
 - Changelog release sections beginning at `## [9.0.0]`, ADR bodies
-  `0001`–`0003`, and `docs/superpowers/**` remain untouched historical evidence
+  and `0001`–`0003` remain untouched historical evidence
   and are excluded from the active language gate. `CHANGELOG.md` Unreleased,
   the ADR index, and ADR 0004 remain active and must pass.
 
@@ -97,8 +97,8 @@ Documentation requirements:
 
 - `DOC-001`: All active v10 product and engineering documentation is English.
 - `DOC-002`: Active commands and JSON examples are executable contract tests.
-- `DOC-003`: Changelog releases 9.0.0 and older, ADR bodies 0001–0003, and
-  `docs/superpowers/**` are preserved and explicitly excluded from active
+- `DOC-003`: Changelog releases 9.0.0 and older and ADR bodies 0001–0003
+  are preserved and explicitly excluded from active
   legacy/language gates; Unreleased, the ADR index, and ADR 0004 are active.
 - `DOC-004`: Active docs describe only the plugin-first v10 target after
   implementation completes.

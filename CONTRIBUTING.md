@@ -1,7 +1,6 @@
 # Contributing
 
-> v10 implementation follows the canonical plan in
-> [docs/specs/v10/09-implementation-plan.md](docs/specs/v10/09-implementation-plan.md).
+> The product contract is [docs/specs/v10/](docs/specs/v10/README.md).
 
 ## Prerequisites
 
@@ -86,7 +85,7 @@ stays behind the adapter. QML receives schema-v2 normalized data only.
 
 Active documentation is English and must match executable contracts.
 Every versioned changelog release section, `docs/releases/**`,
-`docs/history/**`, ADR bodies 0001–0003, and `docs/superpowers/**` remain
+and ADR bodies 0001–0003 remain
 historical: they record how things were and are never rewritten. The
 `[Unreleased]` changelog section, the ADR index, ADR 0004, and everything
 under `docs/specs/v10/**` and `docs/guide/**` are active and must match the

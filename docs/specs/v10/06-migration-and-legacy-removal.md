@@ -1,7 +1,7 @@
 # Migration and Legacy Removal
 
 Amended by the plugin-ID rename (2026-08-06):
-`docs/superpowers/specs/2026-08-06-plugin-id-rename-design.md`. The plugin ID
+`docs/specs/v10/amendments/2026-08-06-plugin-id-rename-design.md`. The plugin ID
 is `othavi0.agent-bar`; it read `agent-bar.usage` when this document was
 approved.
 
@@ -62,7 +62,7 @@ The manifest records:
 - `MIG-008`: Keep plugin ID `agent-bar.usage`. (Superseded 2026-08-06: the
   live ID is `othavi0.agent-bar`. The v9 migration matcher still recognizes
   the literal `agent-bar.usage` in legacy `shell.json` data on disk; see
-  `docs/superpowers/specs/2026-08-06-plugin-id-rename-design.md`.)
+  `docs/specs/v10/amendments/2026-08-06-plugin-id-rename-design.md`.)
 - `MIG-009`: Preserve valid provider enablement, order, display metric, refresh
   interval, notification preference, bar section, index, and compatible inline
   layout.
@@ -216,7 +216,7 @@ The Bash helper is retained only for interactive provider login and rewritten:
 ## Update and uninstall transactions
 
 Replaced by git-plugin-distribution (2026-08-05):
-`docs/superpowers/specs/2026-08-05-git-plugin-distribution-design.md`.
+`docs/specs/v10/amendments/2026-08-05-git-plugin-distribution-design.md`.
 Update and uninstall no longer stage, exchange, or roll back the plugin
 directory themselves; each hands its live mutation to the Omarchy CLI as a
 detached transient `systemd-run --user` unit, so the helper process can

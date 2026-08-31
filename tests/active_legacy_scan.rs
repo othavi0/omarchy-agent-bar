@@ -1,8 +1,8 @@
 //! Active legacy gate (TEST-030 / TEST-031 / TEST-034).
 //!
 //! Closed behavioral set and path inventory from
-//! `docs/specs/v10/07-testing-and-acceptance.md` and the locked deletion map in
-//! `docs/specs/v10/09-implementation-plan.md`.
+//! `docs/specs/v10/07-testing-and-acceptance.md`; the locked deletion map
+//! below is the executable record of the v10 legacy removal.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -120,18 +120,13 @@ const FORBIDDEN_TOKENS: &[&str] = &[
 
 /// Relative prefixes excluded from content scans (TEST-031 historical cuts).
 fn is_historical_cut(rel: &str) -> bool {
-    if rel.starts_with("docs/superpowers/") {
-        return true;
-    }
     // Dated, frozen release-note snapshots describe what a past,
     // already-published version actually shipped (e.g. `docs/releases/10.0.0.md`
     // naming that release's real `.tar.zst` asset). Same rationale as the
     // ADR/CHANGELOG historical-slice exclusions below: never rewritten.
     // `docs/releases/README.md` is the live index for the current pipeline
     // (Task 8), not a dated cut, so it is deliberately NOT covered here.
-    if (rel.starts_with("docs/releases/") && rel != "docs/releases/README.md")
-        || rel.starts_with("docs/history/")
-    {
+    if rel.starts_with("docs/releases/") && rel != "docs/releases/README.md" {
         return true;
     }
     if rel == "docs/adr/0001-omarchy-right-click-settings.md"
@@ -261,7 +256,6 @@ fn is_scannable_file(rel: &str) -> bool {
                 | "CONTEXT.md"
                 | "CONTRIBUTING.md"
                 | "CLAUDE.md"
-                | "AGENTS.md"
                 | "CHANGELOG.md"
                 | "install.sh"
                 | "LICENSE"
@@ -323,7 +317,6 @@ fn scan_content_for_tokens(rel: &str, content: &str, violations: &mut Vec<String
                     | "CONTEXT.md"
                     | "CONTRIBUTING.md"
                     | "CLAUDE.md"
-                    | "AGENTS.md"
                     | "CHANGELOG.md"
             ));
 

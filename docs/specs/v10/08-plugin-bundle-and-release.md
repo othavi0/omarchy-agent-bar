@@ -1,13 +1,13 @@
 # Plugin Bundle and Release
 
 Amended by git-plugin-distribution (2026-08-05):
-`docs/superpowers/specs/2026-08-05-git-plugin-distribution-design.md`. The
+`docs/specs/v10/amendments/2026-08-05-git-plugin-distribution-design.md`. The
 manifest and receipt shapes below carry forward; the release-files,
 update-transaction, and uninstall-transaction sections are replaced by the
 distribution-repository model.
 
 Amended by the plugin-ID rename (2026-08-06):
-`docs/superpowers/specs/2026-08-06-plugin-id-rename-design.md`. The plugin ID
+`docs/specs/v10/amendments/2026-08-06-plugin-id-rename-design.md`. The plugin ID
 is `othavi0.agent-bar`; it read `agent-bar.usage` when this document was
 approved.
 

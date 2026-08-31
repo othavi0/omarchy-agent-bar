@@ -111,7 +111,7 @@ hash file.
   legacy status/config schema, AUR, cargo-binstall, or standalone-product
   behavior.
 - `TEST-031`: The gate excludes only changelog release sections 9.0.0 and
-  older, ADR bodies 0001–0003, and `docs/superpowers/**`. It scans Unreleased,
+  older and ADR bodies 0001–0003. It scans Unreleased,
   the ADR index, and ADR 0004.
 - `TEST-032`: Every active command example is exercised by CLI parser tests.
 - `TEST-033`: Every active JSON example validates against the checked-in

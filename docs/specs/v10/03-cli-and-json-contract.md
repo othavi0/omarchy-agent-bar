@@ -1,7 +1,7 @@
 # Private CLI and JSON Contract
 
 Amended by the plugin-ID rename (2026-08-06):
-`docs/superpowers/specs/2026-08-06-plugin-id-rename-design.md`. The plugin ID
+`docs/specs/v10/amendments/2026-08-06-plugin-id-rename-design.md`. The plugin ID
 is `othavi0.agent-bar`; it read `agent-bar.usage` when this document was
 approved.
 
@@ -303,7 +303,7 @@ view_installation
 ## Maintenance command contract
 
 Amended by git-plugin-distribution (2026-08-05):
-`docs/superpowers/specs/2026-08-05-git-plugin-distribution-design.md`.
+`docs/specs/v10/amendments/2026-08-05-git-plugin-distribution-design.md`.
 `update apply` and `uninstall` no longer stage, exchange, or roll back the
 plugin directory in-process; each resolves `omarchy` and `systemd-run` to
 absolute paths, then detaches unconditionally to the Omarchy CLI as a
