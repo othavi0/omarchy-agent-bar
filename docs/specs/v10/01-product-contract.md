@@ -1,7 +1,7 @@
 # Product Contract
 
 Amended by the plugin-ID rename (2026-08-06):
-`docs/superpowers/specs/2026-08-06-plugin-id-rename-design.md`. The plugin ID
+`docs/specs/v10/amendments/2026-08-06-plugin-id-rename-design.md`. The plugin ID
 is `othavi0.agent-bar`; it read `agent-bar.usage` when this document was
 approved.
 

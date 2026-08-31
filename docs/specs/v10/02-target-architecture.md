@@ -1,7 +1,7 @@
 # Target Architecture
 
 Amended by the plugin-ID rename (2026-08-06):
-`docs/superpowers/specs/2026-08-06-plugin-id-rename-design.md`. The plugin ID
+`docs/specs/v10/amendments/2026-08-06-plugin-id-rename-design.md`. The plugin ID
 is `othavi0.agent-bar`; it read `agent-bar.usage` when this document was
 approved.
 
@@ -62,7 +62,7 @@ Monitor 1 BarWidget   Monitor 2 BarWidget
 
 ## Target Rust boundaries
 
-The final names may change only through an approved checkpoint deviation. Each
+The final names may change only through an approved, documented deviation. Each
 module must remain a deep module with a small public surface.
 
 ```text

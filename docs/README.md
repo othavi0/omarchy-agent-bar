@@ -22,9 +22,6 @@ Active product and engineering documentation for Agent Bar.
 - [Omarchy integration](dev/omarchy-shell.md) — Quattro plugin contract.
 - [Releasing](dev/releasing.md) — automatic release pipeline and manual
   boundary.
-- [Agent process](dev/agents/domain.md) — reading order, plus the
-  [issue tracker](dev/agents/issue-tracker.md) and
-  [triage labels](dev/agents/triage-labels.md).
 - [ADRs](adr/README.md) — durable architectural decisions.
 - [Domain vocabulary](../CONTEXT.md) — canonical terms.
 
@@ -36,18 +33,11 @@ Active product and engineering documentation for Agent Bar.
 ## Canonical v10 package
 
 - [Specification index](specs/v10/README.md)
-- [Implementation plan](specs/v10/09-implementation-plan.md)
-- [Grok runbook](specs/v10/10-grok-execution-runbook.md)
-- [Requirements matrix](specs/v10/REQUIREMENTS_MATRIX.md)
+- [Design amendments](specs/v10/amendments/) — approved changes to the
+  original v10 contract, newest last.
 
 ## Historical records
 
-- [v10 post-merge handoff](history/handoff-v10-post-merge.md) — 2026-07-27
-  snapshot.
-- [v10.0.0 live QA](history/qa/v10.0.0-live-qa-2026-07-27.md) — post-release
-  TEST-035…042 matrix and screenshots.
-
-`CHANGELOG.md` release sections 9.0.0 and older, ADR bodies 0001–0003, the
-dated snapshots under `docs/history/`, and `docs/superpowers/**` preserve
-earlier design and delivery history. The Unreleased changelog section and
+`CHANGELOG.md` release sections 9.0.0 and older and ADR bodies 0001–0003
+preserve earlier design and delivery history. The Unreleased changelog section and
 the ADR index remain active.

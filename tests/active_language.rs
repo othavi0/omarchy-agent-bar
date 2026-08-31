@@ -8,9 +8,6 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// Past session artefacts. Build record, not documentation.
-const EXCLUDED_PREFIXES: &[&str] = &["docs/superpowers/"];
-
 /// Deliberate non-ASCII, with the reason it stays.
 const ALLOWLIST: &[(&str, &str)] = &[(
     "src/support/redact.rs",
@@ -51,9 +48,6 @@ fn tracked_files(root: &Path) -> Vec<String> {
 }
 
 fn is_scannable(rel: &str) -> bool {
-    if EXCLUDED_PREFIXES.iter().any(|p| rel.starts_with(p)) {
-        return false;
-    }
     if ALLOWLIST.iter().any(|(path, _)| *path == rel) {
         return false;
     }

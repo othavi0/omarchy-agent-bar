@@ -1,13 +1,13 @@
 # Plugin Bundle and Release
 
 Amended by git-plugin-distribution (2026-08-05):
-`docs/superpowers/specs/2026-08-05-git-plugin-distribution-design.md`. The
+`docs/specs/v10/amendments/2026-08-05-git-plugin-distribution-design.md`. The
 manifest and receipt shapes below carry forward; the release-files,
 update-transaction, and uninstall-transaction sections are replaced by the
 distribution-repository model.
 
 Amended by the plugin-ID rename (2026-08-06):
-`docs/superpowers/specs/2026-08-06-plugin-id-rename-design.md`. The plugin ID
+`docs/specs/v10/amendments/2026-08-06-plugin-id-rename-design.md`. The plugin ID
 is `othavi0.agent-bar`; it read `agent-bar.usage` when this document was
 approved.
 
@@ -391,8 +391,10 @@ confirmation document (`BUNDLE-036`'s schema) is unchanged and lives in
 
 - `BUNDLE-039`: The implementation prepares version `10.0.0`, changelog,
   migration guide, release-notes draft, archive, and checksum.
-- `BUNDLE-040`: Grok may commit, push the feature branch, and open a ready PR.
-- `BUNDLE-041`: Grok may not merge, tag, publish a GitHub Release, distribute
-  the archive, or change the live desktop before the authorized QA gate.
-- `BUNDLE-042`: Publishing requires final Codex review, passing live QA, user
+- `BUNDLE-040`: An implementer may commit, push the feature branch, and open
+  a ready PR.
+- `BUNDLE-041`: An implementer may not merge, tag, publish a GitHub Release,
+  distribute the archive, or change the live desktop before the authorized QA
+  gate.
+- `BUNDLE-042`: Publishing requires final review, passing live QA, user
   merge, and separate explicit release authorization.

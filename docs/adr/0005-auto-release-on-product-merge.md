@@ -36,7 +36,7 @@ remain human-driven.
 ## 2026-08-05 amendment
 
 The git-native plugin distribution conversion
-(`docs/superpowers/specs/2026-08-05-git-plugin-distribution-design.md`)
+(`docs/specs/v10/amendments/2026-08-05-git-plugin-distribution-design.md`)
 replaced the "GitHub release with all assets in one call" step. The
 workflow now pushes the assembled plugin tree as one commit to the
 distribution repository (`othavi0/omarchy-agent-bar`) before publishing the

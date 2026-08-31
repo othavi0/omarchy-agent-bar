@@ -27,7 +27,7 @@ verified Quattro-native glyphs or explicit English text labels.
   exists, and a plain-language state qualifier when the provider is not
   ready — survives as the chip's accessible name. Raw state identifiers
   never render. Reset detail lives only in the popup. See
-  `docs/superpowers/specs/2026-08-06-remove-chip-tooltip-design.md`.
+  `docs/specs/v10/amendments/2026-08-06-remove-chip-tooltip-design.md`.
 - `UX-012` (amended 2026-08-10): Error states use an icon/text cue in addition
   to color. Stale is excluded — it presents a real reading and is rendered
   like ready (`UX-028`), so it carries no cue and adds no qualifier to the

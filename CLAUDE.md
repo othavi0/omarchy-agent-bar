@@ -1,9 +1,9 @@
 # Agent Bar Engineering Contract
 
-`AGENTS.md` is the Codex adapter. This file is the repository's canonical agent
-contract for Agent Bar v10. Source and executable tests win over ordinary
-documentation; the approved specification in `docs/specs/v10/` is the product
-contract when documentation and behavior disagree.
+This file is the repository's canonical agent contract for Agent Bar v10.
+Source and executable tests win over ordinary documentation; the approved
+specification in `docs/specs/v10/` is the product contract when documentation
+and behavior disagree.
 
 ## Hard rules
 
@@ -149,24 +149,19 @@ live install).
 7. Review for secrets, shell construction, legacy leakage, and unrelated diff.
 8. Commit with an English Conventional Commit subject of at most 50
    characters.
-9. Stop at the mandatory Grok/Codex checkpoint.
-
-The implementation branch is `feat/quickshell-native-v10`, created from the
-exact `spec/quickshell-native-v10` commit. Grok may push and open the final
-ready PR. Grok may not merge.
+9. Open a PR against `master`; every product merge cuts a release.
 
 ## Documentation
 
 Active docs and public copy are English, enforced by
-`tests/active_language.rs`. Only `docs/superpowers/**` is excluded: it holds
-past session plans and specs, which are a build record rather than
-documentation. New files written there are English.
+`tests/active_language.rs` over every tracked text file. Session plans and
+specs are not kept in this repository; approved design amendments live in
+`docs/specs/v10/amendments/`.
 
 ## Pointers
 
 - `docs/specs/v10/README.md` — canonical v10 reading order.
-- `docs/specs/v10/09-implementation-plan.md` — executable plan.
-- `docs/specs/v10/10-grok-execution-runbook.md` — permissions and checkpoints.
+- `docs/specs/v10/amendments/` — approved design amendments to the v10 spec.
 - `README.md` — product overview.
 - `docs/dev/architecture.md` — runtime data flow.
 - `docs/guide/commands.md` — private helper contract.

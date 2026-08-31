@@ -1,7 +1,6 @@
 # Contributing
 
-> v10 implementation follows the canonical plan in
-> [docs/specs/v10/09-implementation-plan.md](docs/specs/v10/09-implementation-plan.md).
+> The product contract is [docs/specs/v10/](docs/specs/v10/README.md).
 
 ## Prerequisites
 
@@ -74,23 +73,24 @@ shellcheck scripts/agent-bar-open-terminal
 Read [docs/dev/new-provider.md](docs/dev/new-provider.md). Provider-specific behavior
 stays behind the adapter. QML receives schema-v2 normalized data only.
 
-## Commits and checkpoints
+## Commits
 
 - Use English Conventional Commit subjects of at most 50 characters.
 - Keep one reviewable behavior per commit.
 - Do not bypass hooks or signatures.
-- Stop at the mandatory checkpoints in the implementation plan.
-- Record exact commands, results, screenshots, and deviations.
+- Record exact commands, results, screenshots, and deviations in the PR.
 
 ## Documentation
 
 Active documentation is English and must match executable contracts.
 Every versioned changelog release section, `docs/releases/**`,
-`docs/history/**`, ADR bodies 0001–0003, and `docs/superpowers/**` remain
+and ADR bodies 0001–0003 remain
 historical: they record how things were and are never rewritten. The
-`[Unreleased]` changelog section, the ADR index, ADR 0004, and everything
-under `docs/specs/v10/**` and `docs/guide/**` are active and must match the
-shipped behavior.
+`[Unreleased]` changelog section, the ADR index, ADR 0004, the numbered
+files under `docs/specs/v10/`, and `docs/guide/**` are active and must match
+the shipped behavior. `docs/specs/v10/amendments/**` are the approved design
+documents as written on their approval date: frozen, never rewritten, and
+superseded wherever a numbered spec file or the code says otherwise.
 
 ## Release
 

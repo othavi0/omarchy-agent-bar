@@ -25,7 +25,6 @@ fn active_doc_paths(root: &Path) -> Vec<PathBuf> {
         "CONTEXT.md",
         "CONTRIBUTING.md",
         "CLAUDE.md",
-        "AGENTS.md",
         "CHANGELOG.md",
     ];
     for rel in top_level {
@@ -48,7 +47,7 @@ fn active_doc_paths(root: &Path) -> Vec<PathBuf> {
                 let path = entry.path();
                 let name = entry.file_name().to_string_lossy().into_owned();
                 if path.is_dir() {
-                    if name == "superpowers" || name == "specs" {
+                    if name == "specs" {
                         continue;
                     }
                     stack.push(path);
