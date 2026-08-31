@@ -60,5 +60,5 @@ Costs:
 
 ## Canonical detail
 
-The approved requirements and implementation plan live in
+The approved requirements and their amendments live in
 `docs/specs/v10/`.

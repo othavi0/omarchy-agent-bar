@@ -73,4 +73,4 @@ Removed:
 ## Canonical specification
 
 [docs/specs/v10/README.md](docs/specs/v10/README.md) contains the approved
-requirements and implementation plan.
+requirements and their amendments.

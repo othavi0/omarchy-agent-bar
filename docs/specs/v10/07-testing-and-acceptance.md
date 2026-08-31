@@ -110,9 +110,10 @@ hash file.
   scripts contain no TUI, Waybar, history, chart, BRL/currency, Redb, Postcard,
   legacy status/config schema, AUR, cargo-binstall, or standalone-product
   behavior.
-- `TEST-031`: The gate excludes only changelog release sections 9.0.0 and
-  older and ADR bodies 0001–0003. It scans Unreleased,
-  the ADR index, and ADR 0004.
+- `TEST-031`: The token scan excludes changelog release sections 9.0.0 and
+  older, ADR bodies 0001–0003, dated release notes under `docs/releases/`
+  (not its README), and `docs/specs/v10/**`, which describes the removal
+  contract. It scans Unreleased, the ADR index, and ADR 0004.
 - `TEST-032`: Every active command example is exercised by CLI parser tests.
 - `TEST-033`: Every active JSON example validates against the checked-in
   schema.
@@ -182,19 +183,6 @@ must assert their legacy or monetary fields never reach `ProviderResult`,
 schema v2, QML, cache, or logs. The bare words `usage`, `history`, `cost`,
 `credits`, `TUI`, and `Waybar` are not global regexes because negative
 documentation and normalized provider concepts can contain them.
-
-## Mandatory checkpoints
-
-1. Backend contract: CLI, JSON, providers, settings, cache, notifications.
-2. Quickshell: service, widgets, popup, Settings, Maintenance, scrolling,
-   icons, accessibility.
-3. Migration and cleanup: transactions, v9 migration, deletion, bundle,
-   active docs.
-4. Final release candidate: complete isolated verification before live QA.
-
-At each checkpoint Grok writes the approved checkpoint template and stops.
-Codex independently reviews the commit range, tests, screenshots, deviations,
-and requirement coverage. Blocking findings stop the next checkpoint.
 
 ## Live Omarchy QA
 
