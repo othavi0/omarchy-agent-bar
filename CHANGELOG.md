@@ -59,6 +59,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `This plan does not publish a usage percentage.` (PROD-031 / UX-032A
   amended).
 
+## [10.3.20] - 2026-08-31
+
+### Changed
+
+- docs: stamp also requires the terminal helper
+- docs: list every language gate exclusion
+- docs: name the language gate allowlist
+- docs: fix verb agreement in bundle spec
+- docs: describe stamp where assemble was
+- docs: drop Grok and Codex as spec actors
+- docs: finish removing the checkpoint process
+- build: stamp keeps committed preview.png
+- docs: drop session plans and process files
+
 ## [10.3.19] - 2026-08-28
 
 ### Changed
