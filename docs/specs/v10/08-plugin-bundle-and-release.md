@@ -207,8 +207,9 @@ agent-bar-bundle stamp source-commit <40-lowercase-hex> [build-run <url>]
 
 `stamp` writes the release artifacts into the repository root using the
 explicit source commit; it does not claim the worktree matches that value.
-It requires the repository-root `README.md`, `LICENSE`, and `preview.png` to
-exist; the preview is a committed file, not generated. The `assemble` and
+It requires the repository-root `README.md`, `LICENSE`, `preview.png`, and
+`scripts/agent-bar-open-terminal` to exist; the preview is a committed file,
+not generated. The `assemble` and
 `output` verbs and the `agent-bar-bundle release bundle` subcommand
 (archive/checksum/metadata builder) are removed; the builder is an internal
 development binary, not installed in the plugin.
