@@ -25,7 +25,8 @@ The login-state visibility design, approved 2026-08-25, refines `JSON-004`,
 `UX-030`, `CACHE-004`, `CACHE-006`, and `ARCH-021`:
 [docs/specs/v10/amendments/2026-08-25-login-state-visibility-design.md](amendments/2026-08-25-login-state-visibility-design.md).
 
-The session-window-leads design, approved 2026-09-04, amends `UX-020D`:
+The session-window-leads design, approved 2026-09-04, amends `UX-020C` and
+`UX-020D`:
 [docs/specs/v10/amendments/2026-09-04-session-window-leads-design.md](amendments/2026-09-04-session-window-leads-design.md).
 
 ## Product statement

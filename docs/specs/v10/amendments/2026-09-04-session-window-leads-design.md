@@ -38,6 +38,8 @@ and the `!` cue, and in the popup, never by taking the chip number.
 A session window leads whenever one is delivered. The existing election
 applies only when no session window exists.
 
+This document is the change-control record for `UX-020C` and `UX-020D`.
+
 Session windows are identified by id. The Rust mappers author these ids as
 typed schema data: `session` for Claude and Codex, `gemini-5h` for
 Antigravity. This is the same contract the `plan-` prefix already relies on
@@ -55,8 +57,11 @@ does not know, which is the defect the pre-2026-08-07 allowlist had.
   above the critical threshold still paints the numeral urgent and shows
   `!` while the numeral itself stays the session percentage.
 - Per provider: Claude, Codex, and Antigravity now lead with their session
-  window. Grok delivers only `weekly` and Amp leads with `plan-` windows, so
-  neither changes.
+  window. Grok delivers at most one window and Amp delivers `daily` and
+  `plan-` windows, so neither changes.
+- Codex maps a primary window with an unlisted duration to
+  `other:<minutes>:<ordinal>`; such an account keeps the previous election.
+  Only the two ids above are promoted.
 
 ## Not changing
 
@@ -75,12 +80,21 @@ does not know, which is the defect the pre-2026-08-07 allowlist had.
   per-model window keeps the urgent tint and the `!` cue without taking the
   number.
 - `test_gemini_5h_window_leads_like_session` covers the Antigravity id.
-- `test_lead_election_critical_beats_nearest_reset` and
+- `test_lead_election_critical_beats_nearest_reset`,
+  `test_lead_election_nearest_future_reset_when_healthy`, and
   `test_unknown_window_id_can_lead` previously used `session` as the losing
-  window; they now use non-session ids so they keep proving the steps they
-  are named after.
+  or winning window; they now use non-session ids so they keep proving the
+  steps they are named after.
 
 ## Spec amendment
+
+`UX-020C` gains two clauses: a critical window renders its numeral and track
+in the urgent theme colour whether it is the lead or a compact row, and the
+chip's accessible name carries the word `critical` even when the numeral
+belongs to a non-critical session window. Both already hold in
+`components/UsageWindow.qml` and `components/ProviderChip.qml`; the text now
+requires them, because after this change the critical window is usually a
+compact row.
 
 `UX-002` reads: the chip shows the used or remaining percentage of the
 elected lead window (per `UX-020D`), so chip and popup always name the same

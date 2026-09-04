@@ -322,14 +322,16 @@ TestCase {
     compare(layout.lead.severity, "critical")
   }
 
+  // Non-session ids on purpose: a session window would be pinned before this
+  // step ever ran (see the 2026-09-04 tests).
   function test_lead_election_nearest_future_reset_when_healthy() {
     var layout = layoutOf([
       { id: "weekly", label: "Weekly (7d)", usedPercent: 40, remainingPercent: 60,
         resetsAt: "2026-07-31T11:59:59Z" },
-      { id: "session", label: "Session (5h)", usedPercent: 4, remainingPercent: 96,
+      { id: "daily", label: "Daily (1d)", usedPercent: 4, remainingPercent: 96,
         resetsAt: "2026-07-28T18:00:00Z" }
     ], "2026-07-28T15:00:00Z")
-    compare(layout.lead.id, "session")
+    compare(layout.lead.id, "daily")
     // The rest keeps delivered order, not election order.
     compare(layout.rest.length, 1)
     compare(layout.rest[0].id, "weekly")
@@ -405,7 +407,7 @@ TestCase {
       { id: "weekly-model:opus", label: "Opus", usedPercent: 97, remainingPercent: 3,
         resetsAt: "2026-07-31T11:59:59Z" },
       { id: "weekly", label: "Weekly (7d)", usedPercent: 10, remainingPercent: 90,
-        resetsAt: "2026-07-31T11:59:59Z" }
+        resetsAt: "2026-07-28T15:30:00Z" }
     ], "2026-07-28T15:00:00Z")
     compare(layout.lead.id, "weekly-model:opus")
   }
@@ -452,6 +454,9 @@ TestCase {
     compare(Core.chipPercentText(provider, "remaining", now), "90%")
     compare(Core.chipSeverityUrgent(provider), true)
     compare(Core.chipStateCue(provider), "!")
+    // The urgent numeral is not the critical number, so the word carried by
+    // the cue is what keeps this from being a colour-only signal (UX-020C).
+    compare(Core.chipCueLabel(provider), "critical")
   }
 
   // Antigravity's five-hour bucket is the same kind of window under its own id.

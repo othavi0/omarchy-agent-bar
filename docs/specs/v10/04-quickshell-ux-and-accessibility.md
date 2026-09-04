@@ -72,13 +72,16 @@ not literal UI.
 - `UX-020A`: Every percentage window row shows a horizontal usage track
   filled by the displayed metric (used or remaining), in both the lead window
   and the compact rows, so secondary windows stay comparable.
-- `UX-020C`: Severity is computed from `usedPercent`, independent of the
-  displayed metric, using the notification thresholds: at or above 95 the
-  window is Critical, at or above 90 it is Warning. The popup header shows a
-  severity tag reading `Critical` or `Low` when the provider has one, the
-  critical lead window renders its numeral and track in the urgent theme
-  colour, and a ready provider with a critical window shows the `!` cue on its
-  bar chip. Every level carries a word; no level is colour-only.
+- `UX-020C` (amended 2026-09-04): Severity is computed from `usedPercent`,
+  independent of the displayed metric, using the notification thresholds: at
+  or above 95 the window is Critical, at or above 90 it is Warning. The popup
+  header shows a severity tag reading `Critical` or `Low` when the provider
+  has one, a critical window renders its numeral and track in the urgent
+  theme colour whether it is the lead or a compact row, and a ready provider
+  with a critical window shows the `!` cue on its bar chip, whose accessible
+  name carries the word `critical` even when the chip numeral belongs to a
+  non-critical session window. Every level carries a word; no level is
+  colour-only.
 - `UX-020D` (amended 2026-09-04): The popup renders exactly one lead
   window, elected deterministically: a session window (window id `session`
   or `gemini-5h`) leads whenever present, the first delivered one if
