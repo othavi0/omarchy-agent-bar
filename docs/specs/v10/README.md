@@ -25,6 +25,10 @@ The login-state visibility design, approved 2026-08-25, refines `JSON-004`,
 `UX-030`, `CACHE-004`, `CACHE-006`, and `ARCH-021`:
 [docs/specs/v10/amendments/2026-08-25-login-state-visibility-design.md](amendments/2026-08-25-login-state-visibility-design.md).
 
+The session-window-leads design, approved 2026-09-04, amends `UX-020C` and
+`UX-020D`:
+[docs/specs/v10/amendments/2026-09-04-session-window-leads-design.md](amendments/2026-09-04-session-window-leads-design.md).
+
 ## Product statement
 
 Agent Bar v10 is an Omarchy Quattro Quickshell plugin. Its only graphical
@@ -52,7 +56,8 @@ application, an AUR product, or a cargo-binstall product.
    [2026-08-06 plugin ID rename](amendments/2026-08-06-plugin-id-rename-design.md),
    [2026-08-06 remove chip tooltip](amendments/2026-08-06-remove-chip-tooltip-design.md),
    [2026-08-11 monorepo migration](amendments/2026-08-11-monorepo-migration-design.md),
-   [2026-08-25 login-state visibility](amendments/2026-08-25-login-state-visibility-design.md).
+   [2026-08-25 login-state visibility](amendments/2026-08-25-login-state-visibility-design.md),
+   [2026-09-04 session window leads](amendments/2026-09-04-session-window-leads-design.md).
 
 When two statements conflict, the earlier contract in this reading order wins
 unless a later file explicitly identifies the requirement ID it refines.

@@ -92,10 +92,11 @@ function visibleProviders(snapshot, settings) {
   return out
 }
 
-// UX-002 / UX-032A (amended 2026-08-07): the chip renders the elected lead
-// window's used|remaining percent — the same election the popup runs — or an
-// em-dash when there is no window. Chip and popup can never disagree on
-// which window a number belongs to.
+// UX-002 / UX-032A (amended 2026-08-07, 2026-09-04): the chip renders the
+// elected lead window's used|remaining percent — the same election the popup
+// runs, which pins a session window first — or an em-dash when there is no
+// window. Chip and popup can never disagree on which window a number
+// belongs to.
 function chipPercentText(provider, metric, nowMs) {
   var lines = windowDisplayLines(provider, metric, nowMs)
   var lead = electLeadIndex(lines)
@@ -643,10 +644,20 @@ function remainingRank(line) {
   return line.remainingPercent === null ? Infinity : line.remainingPercent
 }
 
-// §8: deterministic four-step lead election: critical, plan, nearest future
-// reset, then first delivered. This replaces the old id allowlist that silently
-// demoted any window id it did not know. Returns an index into `lines`, or -1
-// when there is nothing to lead.
+// UX-020D (amended 2026-09-04): the window ids the Rust mappers emit for a
+// provider's short rolling window (Claude/Codex `session`, Antigravity
+// `gemini-5h`). Typed schema data, like the `plan-` prefix below — this list
+// only promotes known ids; an id it does not know is never demoted.
+var SESSION_WINDOW_IDS = ["session", "gemini-5h"]
+
+function isSessionWindowId(id) {
+  return SESSION_WINDOW_IDS.indexOf(String(id)) >= 0
+}
+
+// §8: deterministic five-step lead election: session, critical, plan, nearest
+// future reset, then first delivered. This replaces the old id allowlist that
+// silently demoted any window id it did not know. Returns an index into
+// `lines`, or -1 when there is nothing to lead.
 //
 // Delivered order is unique per line, so `<` on the index is already a total
 // tiebreak; the spec's further "then by window id" step is unreachable and is
@@ -657,6 +668,17 @@ function electLeadIndex(lines) {
 
   var i
   var best = -1
+
+  // 0. UX-020D (amended 2026-09-04): a session window leads whenever one is
+  //    delivered, even after its reset elapsed and even when a weekly window
+  //    is critical — the weekly still tints the chip and shows the "!" cue
+  //    through providerSeverity, it just never takes the number. Without
+  //    this, every morning the elapsed session reset handed the chip to the
+  //    weekly percentage.
+  for (i = 0; i < lines.length; i++) {
+    if (isSessionWindowId(lines[i].id))
+      return i
+  }
 
   // 1. Any critical window leads; among criticals, the lowest remaining.
   for (i = 0; i < lines.length; i++) {

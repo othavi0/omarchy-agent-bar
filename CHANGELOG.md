@@ -34,6 +34,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- fix: the chip and popup lead with the session window whenever the provider
+  delivers one (`session` for Claude and Codex, `gemini-5h` for Antigravity).
+  Once the five-hour reset elapsed overnight the old election handed the
+  chip to the weekly percentage every morning; a weekly window near its
+  limit still tints the numeral and shows `!`, it no longer takes the number
+  (UX-020D amended, see
+  `docs/specs/v10/amendments/2026-09-04-session-window-leads-design.md`).
 - feat: a first run now enables Claude and Codex only. Amp, Grok, and
   Antigravity are opt-in from Settings, so a provider whose CLI is absent no
   longer renders as a chip nobody asked for. This is not limited to brand-new

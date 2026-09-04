@@ -230,9 +230,11 @@ TestCase {
     compare(Core.windowLayout(provider, "used", now).lead.severity, "critical")
   }
 
+  // Among non-session windows severity still outranks the nearest reset
+  // (a session window would pin the lead first; see the 2026-09-04 tests).
   function test_lead_election_critical_beats_nearest_reset() {
     var layout = layoutOf([
-      { id: "session", label: "Session (5h)", usedPercent: 10, remainingPercent: 90,
+      { id: "daily", label: "Daily (1d)", usedPercent: 10, remainingPercent: 90,
         resetsAt: "2026-07-28T15:30:00Z" },
       { id: "weekly", label: "Weekly (7d)", usedPercent: 96, remainingPercent: 4,
         resetsAt: "2026-07-31T11:59:59Z" }
@@ -240,7 +242,7 @@ TestCase {
     compare(layout.lead.id, "weekly")
     compare(layout.lead.severity, "critical")
     compare(layout.rest.length, 1)
-    compare(layout.rest[0].id, "session")
+    compare(layout.rest[0].id, "daily")
   }
 
   function test_lead_election_lowest_remaining_among_criticals() {
@@ -320,14 +322,16 @@ TestCase {
     compare(layout.lead.severity, "critical")
   }
 
+  // Non-session ids on purpose: a session window would be pinned before this
+  // step ever ran (see the 2026-09-04 tests).
   function test_lead_election_nearest_future_reset_when_healthy() {
     var layout = layoutOf([
       { id: "weekly", label: "Weekly (7d)", usedPercent: 40, remainingPercent: 60,
         resetsAt: "2026-07-31T11:59:59Z" },
-      { id: "session", label: "Session (5h)", usedPercent: 4, remainingPercent: 96,
+      { id: "daily", label: "Daily (1d)", usedPercent: 4, remainingPercent: 96,
         resetsAt: "2026-07-28T18:00:00Z" }
     ], "2026-07-28T15:00:00Z")
-    compare(layout.lead.id, "session")
+    compare(layout.lead.id, "daily")
     // The rest keeps delivered order, not election order.
     compare(layout.rest.length, 1)
     compare(layout.rest[0].id, "weekly")
@@ -402,10 +406,68 @@ TestCase {
     var layout = layoutOf([
       { id: "weekly-model:opus", label: "Opus", usedPercent: 97, remainingPercent: 3,
         resetsAt: "2026-07-31T11:59:59Z" },
-      { id: "session", label: "Session (5h)", usedPercent: 10, remainingPercent: 90,
+      { id: "weekly", label: "Weekly (7d)", usedPercent: 10, remainingPercent: 90,
         resetsAt: "2026-07-28T15:30:00Z" }
     ], "2026-07-28T15:00:00Z")
     compare(layout.lead.id, "weekly-model:opus")
+  }
+
+  // UX-020D (amended 2026-09-04): a session window leads whenever present.
+  // Live data from 2026-09-03: overnight the session reset elapsed, so the
+  // old election handed the chip to the weekly window every morning.
+  function test_session_window_leads_over_sooner_weekly_reset() {
+    var windows = [
+      { id: "session", label: "Session (5h)", usedPercent: 21, remainingPercent: 79,
+        resetsAt: "2026-09-04T03:10:00Z" },
+      { id: "weekly", label: "Weekly (7d)", usedPercent: 64, remainingPercent: 36,
+        resetsAt: "2026-09-04T12:00:00Z" },
+      { id: "weekly-model:fable", label: "Fable", usedPercent: 79, remainingPercent: 21,
+        resetsAt: "2026-09-04T12:00:00Z" }
+    ]
+    var morning = Date.parse("2026-09-04T10:00:00Z")
+    compare(Core.windowLayout(readyWith(windows), "remaining", morning).lead.id, "session")
+    compare(Core.chipPercentText(readyWith(windows), "used", morning), "21%")
+
+    // An active session whose reset comes after the weekly reset still leads.
+    var active = layoutOf([
+      { id: "session", label: "Session (5h)", usedPercent: 3, remainingPercent: 97,
+        resetsAt: "2026-09-04T16:00:00Z" },
+      { id: "weekly", label: "Weekly (7d)", usedPercent: 64, remainingPercent: 36,
+        resetsAt: "2026-09-04T12:00:00Z" }
+    ], "2026-09-04T11:00:00Z")
+    compare(active.lead.id, "session")
+    compare(active.rest.length, 1)
+    compare(active.rest[0].id, "weekly")
+  }
+
+  // A critical weekly window keeps the urgent tint and the "!" cue but never
+  // takes the chip number away from the session.
+  function test_session_window_leads_over_critical_weekly() {
+    var provider = readyWith([
+      { id: "session", label: "Session (5h)", usedPercent: 10, remainingPercent: 90,
+        resetsAt: "2026-09-04T16:00:00Z" },
+      { id: "weekly-model:fable", label: "Fable", usedPercent: 96, remainingPercent: 4,
+        resetsAt: "2026-09-11T12:00:00Z" }
+    ])
+    var now = Date.parse("2026-09-04T11:00:00Z")
+    compare(Core.windowLayout(provider, "remaining", now).lead.id, "session")
+    compare(Core.chipPercentText(provider, "remaining", now), "90%")
+    compare(Core.chipSeverityUrgent(provider), true)
+    compare(Core.chipStateCue(provider), "!")
+    // The urgent numeral is not the critical number, so the word carried by
+    // the cue is what keeps this from being a colour-only signal (UX-020C).
+    compare(Core.chipCueLabel(provider), "critical")
+  }
+
+  // Antigravity's five-hour bucket is the same kind of window under its own id.
+  function test_gemini_5h_window_leads_like_session() {
+    var layout = layoutOf([
+      { id: "gemini-weekly", label: "Weekly (7d)", usedPercent: 40, remainingPercent: 60,
+        resetsAt: "2026-09-05T12:00:00Z" },
+      { id: "gemini-5h", label: "Session (5h)", usedPercent: 12, remainingPercent: 88,
+        resetsAt: null }
+    ], "2026-09-04T11:00:00Z")
+    compare(layout.lead.id, "gemini-5h")
   }
 
   function test_lines_carry_raw_percentages_and_countdown() {
