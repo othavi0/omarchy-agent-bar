@@ -414,10 +414,39 @@ mod tests {
         }
     }
 
+    /// HTTP seam that rejects every bearer token, the answer a real server
+    /// gives to an expired Grok access token.
+    struct RejectingHttp;
+    impl HttpClient for RejectingHttp {
+        fn get(
+            &self,
+            url: &str,
+            _headers: &[(&str, &str)],
+            _max_body_bytes: usize,
+        ) -> BoxFuture<'_, Result<HttpResponse, HttpError>> {
+            let final_url = url.to_owned();
+            Box::pin(async move {
+                Ok(HttpResponse {
+                    status: 401,
+                    final_url,
+                    body: br#"{"error":"unauthorized"}"#.to_vec(),
+                })
+            })
+        }
+    }
+
     fn coord_at(
         dir: &Path,
         now: OffsetDateTime,
     ) -> StatusCoordinator<FixedClock, MapFs, NoopProcess, NoopHttp> {
+        coord_with_http(dir, now, NoopHttp)
+    }
+
+    fn coord_with_http<H: HttpClient>(
+        dir: &Path,
+        now: OffsetDateTime,
+        http: H,
+    ) -> StatusCoordinator<FixedClock, MapFs, NoopProcess, H> {
         let gate = Arc::new(MaintenanceGate::open(dir.join("m.lock")).unwrap());
         let settings_store = SettingsStore::new(dir.join("settings.json"), gate.clone());
         settings_store.apply(&SettingsDocument::defaults()).unwrap();
@@ -425,7 +454,7 @@ mod tests {
             clock: FixedClock(now),
             fs: MapFs::default(),
             process: NoopProcess,
-            http: NoopHttp,
+            http,
             env: ExecutionEnvironment {
                 home: dir.join("home"),
                 path_dirs: vec![],
@@ -665,6 +694,62 @@ mod tests {
         assert_eq!(out.state(), ProviderState::Stale);
         assert_eq!(out.windows().len(), 1, "prior windows must be retained");
         assert!(out.error().is_some_and(|e| e.retryable));
+    }
+
+    /// End to end through the real Grok adapter: an expired `auth.json` with
+    /// no `grok` executable to refresh it keeps the cached reading as stale
+    /// (CACHE-024) instead of overwriting it with `unauthenticated`.
+    #[tokio::test]
+    async fn expired_grok_token_keeps_cached_reading_as_stale() {
+        let dir = tempfile::tempdir().unwrap();
+        let now = datetime!(2026-09-04 06:00:00 UTC);
+        // Without the local expiry check the adapter would send the expired
+        // token, get 401, and report a non-retryable rejection.
+        let coord = coord_with_http(dir.path(), now, RejectingHttp);
+        coord.fs.files.lock().unwrap().insert(
+            dir.path().join("home").join(".grok").join("auth.json"),
+            // Synthetic key — not a real credential.
+            br#"{"https://auth.x.ai::client":{"key":"SYNTH_GROK_KEY_NOT_REAL","first_name":"Ada","expires_at":"2026-09-04T05:39:31.448014581Z","auth_mode":"oidc"}}"#
+                .to_vec(),
+        );
+        let earlier = now - time::Duration::hours(2);
+        let prior = ProviderStatus::ready(
+            ProviderId::Grok,
+            "Grok",
+            DataSource::Live,
+            None,
+            None,
+            vec![UsageWindow::try_new("weekly", "Weekly (7d)", 11.0, 89.0, None).unwrap()],
+            earlier,
+        )
+        .unwrap();
+        coord
+            .cache_store
+            .merge_provider(
+                ProviderId::Grok,
+                entry_from_status(prior, earlier, earlier, GROK.cache_ttl),
+                earlier,
+            )
+            .unwrap();
+
+        let envelope = coord
+            .collect(CollectRequest {
+                format: StatusFormat::Json,
+                provider: Some(ProviderId::Grok),
+                cache: CacheMode::Bypass,
+                notifications: NotificationMode::Skip,
+            })
+            .await
+            .unwrap();
+        let grok = &envelope.providers()[0];
+        assert_eq!(grok.state(), ProviderState::Stale, "{grok:?}");
+        assert_eq!(grok.windows().len(), 1);
+        assert_eq!(grok.windows()[0].id(), "weekly");
+        assert_eq!(grok.last_success_at(), Some(earlier));
+
+        let cached = std::fs::read_to_string(dir.path().join("status-v2.json")).unwrap();
+        assert!(!cached.contains("SYNTH_GROK"), "token in cache: {cached}");
+        assert!(cached.contains("\"stale\""), "{cached}");
     }
 
     #[tokio::test]

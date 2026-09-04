@@ -68,6 +68,16 @@ When billing returns no usable percentage, Grok is connected with empty windows
 and the chip shows `—`. Weekly reset comes from the billing period end.
 Context is no longer a product window.
 
+## Grok shows Sign in after hours idle
+
+The Grok CLI's access token lives six hours and nothing renews it while the
+CLI is idle. Agent Bar checks the expiry before every request; when it has
+passed and the `grok` executable is installed, the helper runs `grok models`
+headless so the CLI renews the token, and the chip keeps the last reading as
+stale meanwhile. If the chip still says Sign in, the executable was not
+found on `PATH`, `$GROK_HOME/bin`, `~/.grok/bin`, or `~/.local/bin`, or the
+CLI itself is signed out: run `grok` once in a terminal.
+
 ## Popup does not appear
 
 Check:

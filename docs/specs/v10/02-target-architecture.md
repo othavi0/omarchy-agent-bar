@@ -158,8 +158,9 @@ availability. A provider may collect without an installed login CLI; this must
 not become `cli_missing`.
 `CollectionContext` exposes narrow process, HTTP, filesystem, clock, and
 redaction capabilities. This supports Claude HTTP collection, Grok HTTP billing
-collection, Codex composite app-server/session-log collection, and Amp process
-collection without forcing them into a fake command abstraction.
+collection (with one headless `grok models` run to renew an expired token),
+Codex composite app-server/session-log collection, and Amp process collection
+without forcing them into a fake command abstraction.
 `ProviderResult` is a typed domain result, not serialized provider JSON.
 `status::schema` is the only serialization boundary.
 
@@ -210,7 +211,7 @@ Locked collection policy:
 | `claude` | `$HOME/.claude/.credentials.json`, then authenticated `GET https://api.anthropic.com/api/oauth/usage` | `session`, `weekly`, then provider-scoped `weekly-model:<sanitized-id>` | 300 s | 10 s | one network/timeout retry |
 | `codex` | resolved `codex app-server` JSON-RPC `rateLimits/read`, then newest valid rate-limit event below `$HOME/.codex/sessions` | `session`, `weekly`, then `other:<duration-minutes>:<ordinal>` | 90 s | 10 s | one app-server timeout retry before filesystem fallback |
 | `amp` | resolved `amp usage` with `NO_COLOR=1`, `TERM=dumb` | `daily`, or no windows when the account exposes no percentage | 90 s | 10 s | one timeout/process-I/O retry |
-| `grok` | `$GROK_HOME/auth.json`, then authenticated GET `https://cli-chat-proxy.grok.com/v1/billing?format=credits` (literal; headers Authorization Bearer + x-grok-client-mode); when that payload has no `creditUsagePercent`, one GET `https://cli-chat-proxy.grok.com/v1/billing` (same headers) whose `used / monthlyLimit` ratio becomes `monthly` (amounts discarded); its HTTP failures are the same typed results as the first request so stale retention applies, and a 2xx body without a ratio keeps the credits reading | `weekly` (credits) or `monthly` (limit ratio), or no windows when the plan publishes neither | 90 s | 10 s | one network/timeout retry per request |
+| `grok` | `$GROK_HOME/auth.json` (when its `expires_at` is within 60 s of now and the `grok` executable was discovered, one argv-only `grok models` run with the catalog timeout, output ignored, then `auth.json` re-read; a token still expired is a retryable `unauthenticated` so the prior reading is retained as `stale`), then authenticated GET `https://cli-chat-proxy.grok.com/v1/billing?format=credits` (literal; headers Authorization Bearer + x-grok-client-mode); when that payload has no `creditUsagePercent`, one GET `https://cli-chat-proxy.grok.com/v1/billing` (same headers) whose `used / monthlyLimit` ratio becomes `monthly` (amounts discarded); its HTTP failures are the same typed results as the first request so stale retention applies, and a 2xx body without a ratio keeps the credits reading | `weekly` (credits) or `monthly` (limit ratio), or no windows when the plan publishes neither | 90 s | 10 s | one network/timeout retry per request |
 | `antigravity` | resolved `agy --version` (requires 1.1.11 or newer, because older builds send `/usage` to the model as a prompt) then `agy --print /usage --output-format json` with `NO_COLOR=1`, `TERM=dumb`; windows come from the `gemini-weekly` and `gemini-5h` bucket ids, the `Claude and GPT models` group is ignored | `gemini-weekly`, `gemini-5h` | 90 s | 10 s | none |
 
 Antigravity was removed once (see `CHANGELOG.md`) when it read credentials and
