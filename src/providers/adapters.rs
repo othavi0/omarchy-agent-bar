@@ -170,12 +170,13 @@ impl ProviderAdapter for GrokAdapter {
                         Ok(renewed) => creds = renewed,
                         // A dead refresh token makes the CLI clear the file:
                         // that is a sign-out, not an expired session.
-                        Err(GrokAuthError::NotAuthenticated) => {
-                            return grok_auth_failure(GrokAuthError::NotAuthenticated, login);
+                        Err(err @ GrokAuthError::NotAuthenticated)
+                        | Err(err @ GrokAuthError::Unreadable) => {
+                            return grok_auth_failure(err, login);
                         }
-                        // Torn or unreadable mid-rewrite: fall through with
-                        // the expired token and report the session expired.
-                        Err(_) => {}
+                        // Torn mid-rewrite: fall through with the expired
+                        // token and report the session expired.
+                        Err(GrokAuthError::Torn) => {}
                     }
                 }
                 if grok_token_expired(&creds, context.clock.now_utc()) {
@@ -2279,6 +2280,68 @@ mod tests {
                 assert_eq!(message, "Grok is not authenticated.");
             }
             other => panic!("{other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn grok_second_read_after_refresh_keeps_torn_and_unreadable_apart() {
+        // Same rules as the first read: a torn document mid-rewrite falls
+        // through to "session expired" (retryable); a file that cannot be
+        // read is the typed non-retryable error, never stale retention.
+        for (second_read, expect_retryable_expired) in [
+            (
+                Ok(b"{\"https://auth.x.ai::client\":{\"key\":\"SYNTH_GROK_KEY_NOT_REAL\"".to_vec()),
+                true,
+            ),
+            (Err(std::io::ErrorKind::PermissionDenied), false),
+        ] {
+            let http = grok_billing_ok();
+            let process = empty_process();
+            let env = grok_env();
+            let fs = ScriptedFs::new(
+                grok_auth_path(&env),
+                vec![
+                    Ok(grok_auth_json(
+                        "SYNTH_GROK_OLD_KEY_NOT_REAL",
+                        GROK_EXPIRED_AT,
+                    )),
+                    second_read,
+                ],
+            );
+            let clock = FixedClock(GROK_NOW);
+            let ctx = CollectionContext {
+                env: &env,
+                clock: &clock,
+                fs: &fs,
+                process: &process,
+                http: &http,
+                plugin_root: None,
+            };
+            let exe = Path::new("/home/u/.grok/bin/grok");
+            let result = GROK_ADAPTER.collect(&ctx, &discovery_with_exe(exe)).await;
+            assert_eq!(process.calls().len(), 1);
+            assert!(http.last_url.lock().unwrap().is_none());
+            match (expect_retryable_expired, result) {
+                (
+                    true,
+                    ProviderResult::Unauthenticated {
+                        retryable, message, ..
+                    },
+                ) => {
+                    assert!(retryable, "{message}");
+                    assert_eq!(message, "Grok session expired. Open Grok to refresh it.");
+                }
+                (
+                    false,
+                    ProviderResult::ProviderError {
+                        retryable, message, ..
+                    },
+                ) => {
+                    assert!(!retryable, "{message}");
+                    assert_eq!(message, "Grok credentials could not be read.");
+                }
+                (_, other) => panic!("{other:?}"),
+            }
         }
     }
 
