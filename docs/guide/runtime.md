@@ -99,7 +99,8 @@ provider's TTL instead.
   CLI's access token lives six hours; when it is expired and the `grok`
   executable is installed, the helper runs `grok models` headless so the CLI
   renews it, then re-reads the auth file. Until a renewed token works, the
-  previous reading stays on the bar as `stale`.
+  previous reading, when the cache holds one, stays on the bar as `stale`;
+  a first collection with an expired token reports the session expired.
 - Antigravity uses its official `agy --print /usage --output-format json`
   command, reads the `gemini-weekly` and `gemini-5h` buckets by id, and reads
   no credential files. It requires `agy` 1.1.11 or newer; older builds send

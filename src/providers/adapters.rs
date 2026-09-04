@@ -157,15 +157,25 @@ impl ProviderAdapter for GrokAdapter {
                 if let Some(exe) = collection_exe(discovery) {
                     let mut spec = ProcessSpec::new(exe, ["models"])
                         .with_timeout(GROK.timeout)
-                        .with_max_output(GROK.max_output_bytes);
+                        .with_max_output(GROK.max_output_bytes)
+                        .with_env("NO_COLOR", "1")
+                        .with_env("TERM", "dumb");
                     if let Some(home) = &context.env.grok_home {
                         spec = spec.with_env("GROK_HOME", home.to_string_lossy());
                     }
                     // Exit code and output are irrelevant: the CLI prints "not
                     // authenticated" and still renews. Only the file matters.
                     let _ = context.process.run(&spec).await;
-                    if let Ok(renewed) = read_grok_credentials(context, &auth_path) {
-                        creds = renewed;
+                    match read_grok_credentials(context, &auth_path) {
+                        Ok(renewed) => creds = renewed,
+                        // A dead refresh token makes the CLI clear the file:
+                        // that is a sign-out, not an expired session.
+                        Err(GrokAuthError::NotAuthenticated) => {
+                            return grok_auth_failure(GrokAuthError::NotAuthenticated, login);
+                        }
+                        // Torn or unreadable mid-rewrite: fall through with
+                        // the expired token and report the session expired.
+                        Err(_) => {}
                     }
                 }
                 if grok_token_expired(&creds, context.clock.now_utc()) {
@@ -345,13 +355,17 @@ struct GrokCredentials {
 enum GrokAuthError {
     /// No file, or a well-formed document without a token: signed out.
     NotAuthenticated,
-    /// The file exists but could not be read or parsed whole — the CLI
-    /// rewrites it non-atomically, so this is transient.
+    /// The file exists but is not a whole JSON document — the CLI rewrites
+    /// it non-atomically, so this is transient.
+    Torn,
+    /// The file exists but cannot be read (permissions, I/O): neither a
+    /// sign-out nor a rewrite window, so neither "Sign in" nor stale
+    /// retention is honest.
     Unreadable,
 }
 
-/// Read and parse `auth.json`. A missing file is `NotAuthenticated`; any
-/// other I/O error is `Unreadable`.
+/// Read and parse `auth.json`. A missing file is `NotAuthenticated`, any
+/// other I/O error is `Unreadable`, and a partial document is `Torn`.
 fn read_grok_credentials(
     context: &CollectionContext<'_>,
     auth_path: &std::path::Path,
@@ -376,7 +390,7 @@ fn grok_auth_failure(err: GrokAuthError, login: bool) -> ProviderResult {
             GROK.installation_url,
             false,
         ),
-        GrokAuthError::Unreadable => unauthenticated(
+        GrokAuthError::Torn => unauthenticated(
             ProviderId::Grok,
             GROK.display_name,
             "Grok credentials are being refreshed.",
@@ -384,19 +398,25 @@ fn grok_auth_failure(err: GrokAuthError, login: bool) -> ProviderResult {
             GROK.installation_url,
             true,
         ),
+        GrokAuthError::Unreadable => ProviderResult::ProviderError {
+            id: ProviderId::Grok,
+            name: GROK.display_name.to_owned(),
+            message: "Grok credentials could not be read.".into(),
+            retryable: false,
+        },
     }
 }
 
 /// Extract the access token, optional `first_name` label, and optional
 /// `expires_at` from Grok `auth.json`.
 ///
-/// An unparseable document is `Unreadable`; a parseable one with no non-empty
+/// An unparseable document is `Torn`; a parseable one with no non-empty
 /// `key` is `NotAuthenticated`. A missing or malformed `expires_at` means "no
 /// known expiry" and the token is used as is. The token must only be used for
 /// the HTTP Authorization header and must never enter `ProviderResult`.
 fn parse_grok_credentials(bytes: &[u8]) -> Result<GrokCredentials, GrokAuthError> {
     let value: serde_json::Value =
-        serde_json::from_slice(bytes).map_err(|_| GrokAuthError::Unreadable)?;
+        serde_json::from_slice(bytes).map_err(|_| GrokAuthError::Torn)?;
     let map = value.as_object().ok_or(GrokAuthError::NotAuthenticated)?;
     for (_k, entry) in map {
         let key = entry.get("key").and_then(|v| v.as_str()).unwrap_or("");
@@ -1897,6 +1917,17 @@ mod tests {
             "the CLI needs HOME to find its auth file"
         );
         assert_eq!(calls[0].timeout, GROK.timeout);
+        assert_eq!(calls[0].max_stdout_bytes, GROK.max_output_bytes);
+        assert!(
+            calls[0]
+                .env
+                .contains(&("NO_COLOR".to_owned(), "1".to_owned()))
+                && calls[0]
+                    .env
+                    .contains(&("TERM".to_owned(), "dumb".to_owned())),
+            "same headless hardening as the other CLI adapters: {:?}",
+            calls[0].env
+        );
         let spec_dbg = format!("{:?}", calls[0]);
         assert!(
             !spec_dbg.contains("SYNTH_GROK"),
@@ -2082,9 +2113,12 @@ mod tests {
         let result = GROK_ADAPTER.collect(&ctx, &discovery_with_exe(exe)).await;
         let calls = process.calls();
         assert_eq!(calls.len(), 1);
-        assert_eq!(
-            calls[0].env,
-            vec![("GROK_HOME".to_owned(), "/srv/grok-home".to_owned())]
+        assert!(
+            calls[0]
+                .env
+                .contains(&("GROK_HOME".to_owned(), "/srv/grok-home".to_owned())),
+            "{:?}",
+            calls[0].env
         );
         assert!(matches!(result, ProviderResult::Ready { .. }), "{result:?}");
     }
@@ -2139,38 +2173,142 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn grok_auth_read_failure_with_file_present_is_retryable() {
+    async fn grok_torn_auth_file_is_retryable() {
         // A torn read while the CLI rewrites auth.json (lock file lands ~2 ms
         // before the document) must not destroy the last good reading.
-        for read in [
-            Err(std::io::ErrorKind::PermissionDenied),
-            Ok(b"{\"https://auth.x.ai::client\":{\"key\":\"SYNTH_GROK_KEY_NOT_REAL\"".to_vec()),
-        ] {
-            let http = grok_billing_ok();
-            let process = empty_process();
-            let env = grok_env();
-            let fs = ScriptedFs::new(grok_auth_path(&env), vec![read]);
-            let clock = FixedClock(GROK_NOW);
-            let ctx = CollectionContext {
-                env: &env,
-                clock: &clock,
-                fs: &fs,
-                process: &process,
-                http: &http,
-                plugin_root: None,
-            };
-            let result = GROK_ADAPTER.collect(&ctx, &grok_no_exe()).await;
-            assert!(http.last_url.lock().unwrap().is_none());
-            match result {
-                ProviderResult::Unauthenticated {
-                    retryable, message, ..
-                } => {
-                    assert!(retryable, "{message}");
-                    assert_eq!(message, "Grok credentials are being refreshed.");
-                }
-                other => panic!("{other:?}"),
+        let http = grok_billing_ok();
+        let process = empty_process();
+        let env = grok_env();
+        let fs = ScriptedFs::new(
+            grok_auth_path(&env),
+            vec![Ok(
+                b"{\"https://auth.x.ai::client\":{\"key\":\"SYNTH_GROK_KEY_NOT_REAL\"".to_vec(),
+            )],
+        );
+        let clock = FixedClock(GROK_NOW);
+        let ctx = CollectionContext {
+            env: &env,
+            clock: &clock,
+            fs: &fs,
+            process: &process,
+            http: &http,
+            plugin_root: None,
+        };
+        let result = GROK_ADAPTER.collect(&ctx, &grok_no_exe()).await;
+        assert!(http.last_url.lock().unwrap().is_none());
+        match result {
+            ProviderResult::Unauthenticated {
+                retryable, message, ..
+            } => {
+                assert!(retryable, "{message}");
+                assert_eq!(message, "Grok credentials are being refreshed.");
             }
+            other => panic!("{other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn grok_unreadable_auth_file_is_a_typed_non_retryable_error() {
+        // EACCES (root-owned file after `sudo grok`) is neither a sign-out
+        // nor a rewrite window: a retryable result would keep days-old usage
+        // on the bar forever, and "Sign in" would be a lie.
+        let http = grok_billing_ok();
+        let process = empty_process();
+        let env = grok_env();
+        let fs = ScriptedFs::new(
+            grok_auth_path(&env),
+            vec![Err(std::io::ErrorKind::PermissionDenied)],
+        );
+        let clock = FixedClock(GROK_NOW);
+        let ctx = CollectionContext {
+            env: &env,
+            clock: &clock,
+            fs: &fs,
+            process: &process,
+            http: &http,
+            plugin_root: None,
+        };
+        let result = GROK_ADAPTER.collect(&ctx, &grok_no_exe()).await;
+        assert!(http.last_url.lock().unwrap().is_none());
+        match result {
+            ProviderResult::ProviderError {
+                retryable, message, ..
+            } => {
+                assert!(!retryable, "{message}");
+                assert_eq!(message, "Grok credentials could not be read.");
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn grok_refresh_that_clears_credentials_asks_to_sign_in() {
+        // A dead refresh token makes the CLI delete auth.json. The second read
+        // then says signed out, and that must win over "session expired".
+        let http = grok_billing_ok();
+        let process = empty_process();
+        let env = grok_env();
+        let fs = ScriptedFs::new(
+            grok_auth_path(&env),
+            vec![
+                Ok(grok_auth_json(
+                    "SYNTH_GROK_OLD_KEY_NOT_REAL",
+                    GROK_EXPIRED_AT,
+                )),
+                Err(std::io::ErrorKind::NotFound),
+            ],
+        );
+        let clock = FixedClock(GROK_NOW);
+        let ctx = CollectionContext {
+            env: &env,
+            clock: &clock,
+            fs: &fs,
+            process: &process,
+            http: &http,
+            plugin_root: None,
+        };
+        let exe = Path::new("/home/u/.grok/bin/grok");
+        let result = GROK_ADAPTER.collect(&ctx, &discovery_with_exe(exe)).await;
+        assert_eq!(process.calls().len(), 1);
+        assert!(http.last_url.lock().unwrap().is_none());
+        match result {
+            ProviderResult::Unauthenticated {
+                retryable, message, ..
+            } => {
+                assert!(!retryable, "{message}");
+                assert_eq!(message, "Grok is not authenticated.");
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn grok_non_string_expires_at_means_no_known_expiry() {
+        // Fail open on purpose: a shape this adapter does not understand is
+        // used as is, exactly like a file that carries no expiry at all.
+        let http = grok_billing_ok();
+        let process = empty_process();
+        let env = grok_env();
+        let fs = ScriptedFs::new(
+            grok_auth_path(&env),
+            vec![Ok(
+                br#"{"https://auth.x.ai::client":{"key":"SYNTH_GROK_KEY_NOT_REAL","expires_at":1756900000}}"#
+                    .to_vec(),
+            )],
+        );
+        let clock = FixedClock(GROK_NOW);
+        let ctx = CollectionContext {
+            env: &env,
+            clock: &clock,
+            fs: &fs,
+            process: &process,
+            http: &http,
+            plugin_root: None,
+        };
+        let exe = Path::new("/home/u/.grok/bin/grok");
+        let result = GROK_ADAPTER.collect(&ctx, &discovery_with_exe(exe)).await;
+        assert!(process.calls().is_empty());
+        assert!(matches!(result, ProviderResult::Ready { .. }), "{result:?}");
     }
 
     #[tokio::test]

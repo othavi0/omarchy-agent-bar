@@ -132,8 +132,11 @@ pub async fn run_process(spec: &ProcessSpec) -> Result<ProcessOutput, ProcessErr
     }
 
     let mut command = Command::new(&spec.program);
+    // No terminal: a CLI that would fall back to an interactive prompt hits
+    // EOF at once instead of waiting for the timeout's SIGKILL.
     command
         .args(&spec.args)
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
@@ -256,6 +259,19 @@ pub async fn run_process(spec: &ProcessSpec) -> Result<ProcessOutput, ProcessErr
 mod tests {
     use super::*;
     use std::path::Path;
+
+    /// Every one-shot provider command runs without a terminal: a CLI that
+    /// falls back to an interactive prompt must hit EOF, never a waiting
+    /// stdin that the timeout later kills with SIGKILL.
+    #[tokio::test]
+    async fn stdin_is_closed_for_every_process() {
+        let spec =
+            ProcessSpec::new("/bin/cat", Vec::<String>::new()).with_timeout(Duration::from_secs(5));
+        let out = run_process(&spec).await.expect("cat spawns");
+        assert!(!out.timed_out, "cat waited on stdin");
+        assert_eq!(out.exit_code, Some(0));
+        assert_eq!(out.stdout, "");
+    }
 
     #[tokio::test]
     async fn preserves_argv_and_exit_code() {

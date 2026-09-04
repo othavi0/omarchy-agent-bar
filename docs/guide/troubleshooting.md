@@ -74,9 +74,11 @@ The Grok CLI's access token lives six hours and nothing renews it while the
 CLI is idle. Agent Bar checks the expiry before every request; when it has
 passed and the `grok` executable is installed, the helper runs `grok models`
 headless so the CLI renews the token, and the chip keeps the last reading as
-stale meanwhile. If the chip still says Sign in, the executable was not
-found on `PATH`, `$GROK_HOME/bin`, `~/.grok/bin`, or `~/.local/bin`, or the
-CLI itself is signed out: run `grok` once in a terminal.
+stale meanwhile. If the chip still says Sign in, one of three things
+happened: the executable was not found on `PATH`, `$GROK_HOME/bin`,
+`~/.grok/bin`, or `~/.local/bin`; the CLI ran but could not renew (refresh
+token revoked, or offline); or the CLI itself is signed out. Running `grok`
+once in a terminal resolves all three.
 
 ## Popup does not appear
 
