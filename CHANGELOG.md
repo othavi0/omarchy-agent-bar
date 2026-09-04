@@ -76,6 +76,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `This plan does not publish a usage percentage.` (PROD-031 / UX-032A
   amended).
 
+## [10.3.22] - 2026-09-04
+
+### Changed
+
+- fix: typed error on unreadable Grok re-read
+- fix: harden Grok token refresh edge cases
+- fix: renew expired Grok token before billing
+
 ## [10.3.21] - 2026-09-04
 
 ### Changed
