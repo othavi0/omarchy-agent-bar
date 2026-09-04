@@ -66,6 +66,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `This plan does not publish a usage percentage.` (PROD-031 / UX-032A
   amended).
 
+## [10.3.21] - 2026-09-04
+
+### Changed
+
+- docs: disambiguate the cue clause in UX-020C
+- test: keep election tests on non-session ids
+- fix: session window leads chip and popup
+
 ## [10.3.20] - 2026-08-31
 
 ### Changed
