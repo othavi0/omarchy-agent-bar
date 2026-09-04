@@ -75,10 +75,11 @@ interactive login CLI.
 
 CLI discovery verifies executable permission, not only file existence.
 
-Consulting the collection executable is itself optional: Claude and Grok
-collect purely from credential files plus HTTP and never read the
-collection-discovery result; only Amp, Codex, and Antigravity resolve the
-discovered executable.
+Consulting the collection executable is itself optional: Claude collects
+purely from credential files plus HTTP and never reads the
+collection-discovery result. Grok does the same while its token is valid and
+only resolves the discovered executable to run `grok models` when the token
+expired; Amp, Codex, and Antigravity always resolve it.
 
 ## Process invocation notes
 

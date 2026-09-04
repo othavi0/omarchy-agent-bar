@@ -53,6 +53,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- fix: Grok no longer flips to "Sign in" after hours idle. The CLI's access
+  token lives six hours and nothing renews it while the CLI is idle; sending
+  it expired earned a 401 that read as a real rejection and discarded the
+  last good reading. The helper now reads `expires_at` from `auth.json`,
+  runs `grok models` headless so the CLI renews an expired token, and keeps
+  the previous reading as `stale` until a renewed token works. A torn read of
+  `auth.json` while the CLI rewrites it is retried the same way; a missing
+  file, a signed-out file, or a rejected valid token still ask to sign in,
+  and a file that cannot be read is a plain non-retryable error. Every
+  one-shot provider command now runs with a closed stdin.
 - fix: bound every service process lane with a deadline. Timeouts in two
   distinct lanes before any accepted helper callback report a stalled runtime
   and offer a shell restart from the popup and failed Settings load state

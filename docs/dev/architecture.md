@@ -74,9 +74,9 @@ coalescing), `CoreSettings.js` (draft and persisted settings flow),
 
 Provider adapters receive a narrow context for process, HTTP, filesystem,
 clock, and redaction. Claude may collect through HTTP, Grok through
-authenticated billing HTTP, Codex through a composite app-server/session-log
-flow, and Amp through its CLI. Adapters are not forced into a command-only
-abstraction.
+authenticated billing HTTP (running `grok models` once to renew an expired
+token), Codex through a composite app-server/session-log flow, and Amp
+through its CLI. Adapters are not forced into a command-only abstraction.
 
 ## Data contract
 
