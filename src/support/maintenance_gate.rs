@@ -1,5 +1,3 @@
-//! Shared/exclusive maintenance gate for settings, cache, and plugin work.
-
 use std::fs::{File, OpenOptions};
 use std::io;
 use std::path::{Path, PathBuf};
@@ -14,13 +12,11 @@ pub struct MaintenanceGate {
     path: PathBuf,
 }
 
-/// RAII guard holding a shared maintenance lock.
 #[derive(Debug)]
 pub struct SharedMaintenanceGuard {
     file: File,
 }
 
-/// RAII guard holding an exclusive maintenance lock.
 #[derive(Debug)]
 pub struct ExclusiveMaintenanceGuard {
     file: File,
@@ -39,13 +35,11 @@ impl Drop for ExclusiveMaintenanceGuard {
 }
 
 impl MaintenanceGate {
-    /// Open (or create) the lock file at `path`.
     pub fn open(path: impl Into<PathBuf>) -> io::Result<Self> {
         let path = path.into();
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        // Ensure the lock file exists for reopen() callers.
         let _file = OpenOptions::new()
             .read(true)
             .write(true)
@@ -59,7 +53,6 @@ impl MaintenanceGate {
         &self.path
     }
 
-    /// Block until a shared lock is available.
     pub fn lock_shared(&self) -> io::Result<SharedMaintenanceGuard> {
         let file = self.reopen()?;
         // Prefer fs2 over std::fs::File locks (Rust 1.89+) for stable io::Error.
@@ -67,7 +60,6 @@ impl MaintenanceGate {
         Ok(SharedMaintenanceGuard { file })
     }
 
-    /// Non-blocking shared lock attempt.
     pub fn try_lock_shared(&self) -> io::Result<Option<SharedMaintenanceGuard>> {
         let file = self.reopen()?;
         match FileExt::try_lock_shared(&file) {
@@ -77,14 +69,12 @@ impl MaintenanceGate {
         }
     }
 
-    /// Block until an exclusive lock is available.
     pub fn lock_exclusive(&self) -> io::Result<ExclusiveMaintenanceGuard> {
         let file = self.reopen()?;
         FileExt::lock_exclusive(&file)?;
         Ok(ExclusiveMaintenanceGuard { file })
     }
 
-    /// Non-blocking exclusive lock attempt.
     pub fn try_lock_exclusive(&self) -> io::Result<Option<ExclusiveMaintenanceGuard>> {
         let file = self.reopen()?;
         match FileExt::try_lock_exclusive(&file) {
@@ -111,7 +101,6 @@ fn is_lock_busy(err: &io::Error) -> bool {
         || err.to_string().to_ascii_lowercase().contains("would block")
 }
 
-/// Shared ownership wrapper for process-wide gate injection in stores.
 pub type SharedMaintenanceGate = Arc<MaintenanceGate>;
 
 pub fn shared_gate(path: impl Into<PathBuf>) -> io::Result<SharedMaintenanceGate> {
@@ -156,7 +145,6 @@ mod tests {
         let gate2 = Arc::clone(&gate);
         let (tx, rx) = mpsc::channel();
         let handle = thread::spawn(move || {
-            // Must not obtain shared while exclusive is held.
             assert!(gate2.try_lock_shared().unwrap().is_none());
             tx.send(()).unwrap();
             let _shared = gate2.lock_shared().unwrap();

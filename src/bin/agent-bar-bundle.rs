@@ -72,8 +72,6 @@ fn run_stamp(args: &mut [String]) -> Result<PathBuf, String> {
     Ok(repo_root)
 }
 
-/// Parse alternating keyword value pairs. Required keywords must appear
-/// exactly once; optional ones at most once.
 fn parse_kv(
     args: &[String],
     required: &[&str],
@@ -104,7 +102,6 @@ fn parse_kv(
 }
 
 fn repo_root() -> Result<PathBuf, String> {
-    // Prefer CARGO_MANIFEST_DIR when invoked via cargo run; else walk from cwd.
     if let Ok(m) = env::var("CARGO_MANIFEST_DIR") {
         return Ok(PathBuf::from(m));
     }

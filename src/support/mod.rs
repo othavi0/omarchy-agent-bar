@@ -1,5 +1,3 @@
-//! Shared test seams and filesystem/clock primitives for v10.
-
 pub mod atomic_file;
 mod clock;
 pub mod countdown;

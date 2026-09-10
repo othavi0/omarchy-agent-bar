@@ -1,9 +1,3 @@
-//! Codex `app-server` JSON-RPC collection over bidirectional stdio.
-//!
-//! Spawns `codex app-server`, runs initialize → account/read →
-//! account/rateLimits/read, and normalizes the camelCase payload into JSON
-//! accepted by [`crate::providers::v2_map::codex_from_rate_limits_json`].
-
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::process::Stdio;
@@ -42,8 +36,6 @@ fn error_is_auth_required(error: &serde_json::Value) -> bool {
         .unwrap_or(false)
 }
 
-// ---- App-server wire types (camelCase) ----
-
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CodexAppServerWindow {
@@ -70,7 +62,6 @@ struct CodexAppServerResetCredits {
     available_count: Option<u32>,
 }
 
-// credits{balance,...} is monetary and intentionally undeclared (JSON-022B).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CodexAppServerLimitBucket {
@@ -122,8 +113,6 @@ struct AppServerResponse {
     error: Option<serde_json::Value>,
 }
 
-// ---- Normalization → codex_from_rate_limits_json shape ----
-
 fn window_to_json(raw: &CodexAppServerWindow, fallback_minutes: i64) -> serde_json::Value {
     serde_json::json!({
         "usedPercent": raw.used_percent,
@@ -164,20 +153,10 @@ fn normalize_to_rate_limits_json(
     let mut secondary = root.and_then(|r| r.secondary.as_ref());
     let mut individual_limit = root.and_then(|r| r.individual_limit.as_ref());
 
-    // Preferred bucket: root `rateLimits` first when it carries windows,
-    // otherwise explicit `codex` key (mirrors the upstream backend's own
-    // preference), then any bucket that actually carries windows. Every
-    // other data-carrying bucket in `rateLimitsByLimitId` is preserved as an
-    // extra bucket instead of being silently dropped — this must happen even
-    // when the root already supplied primary/secondary, since the real
-    // payload has root and the by-id map coexist.
     let root_has_windows = primary.is_some() || secondary.is_some();
     let mut extra: Vec<serde_json::Value> = Vec::new();
     if let Some(by_id) = raw.rate_limits_by_limit_id.as_ref() {
         if root_has_windows {
-            // Root already won; skip only the map entry that IS the root
-            // bucket (same limit_id, falling back to "codex" when absent) so
-            // it isn't duplicated into extraBuckets.
             let root_limit_id = root.and_then(|r| r.limit_id.as_deref()).unwrap_or("codex");
             for (k, b) in by_id.iter() {
                 if k.as_str() != root_limit_id && has_window_data(b) {
@@ -312,13 +291,11 @@ where
     }
 
     let mut lines = BufReader::new(reader).lines();
-    // None = not yet; Some(None) = received without plan_type; Some(Some) = plan.
     let mut account_plan: Option<Option<String>> = None;
     let mut rate_limits: Option<CodexAppServerRateLimitsReadResult> = None;
 
     let hard = tokio::time::sleep(timeout);
     tokio::pin!(hard);
-    // Grace starts far enough that it cannot fire before armed.
     let grace = tokio::time::sleep(timeout + Duration::from_secs(1));
     tokio::pin!(grace);
     let mut grace_armed = false;
@@ -326,7 +303,6 @@ where
     loop {
         tokio::select! {
             _ = &mut hard => {
-                // Prefer already-parsed rate limits over classifying as timeout.
                 return match rate_limits.as_ref().and_then(|r| {
                     let plan = account_plan.as_ref().and_then(|o| o.as_deref());
                     normalize_to_rate_limits_json(r, plan)
@@ -355,7 +331,6 @@ where
                 };
                 match msg.id {
                     Some(0) => {
-                        // Initialize response: error or missing result → fail now.
                         if msg.error.is_some() || msg.result.is_none() {
                             log::debug!(
                                 "Codex app-server initialize returned error or no result"
@@ -421,7 +396,6 @@ where
                     }
                     Some(2) => {
                         if let Some(error) = msg.error.as_ref() {
-                            // Immediate failure; do not wait for hard timeout.
                             if error_is_auth_required(error) {
                                 log::debug!("Codex app-server: account not authenticated");
                                 return AppServerOutcome::Unauthenticated;
@@ -517,7 +491,6 @@ mod tests {
         let (read_half, mut write_half) = tokio::io::split(server);
         let mut lines = BufReader::new(read_half).lines();
 
-        // initialize
         let init = lines.next_line().await.expect("init").expect("line");
         assert!(init.contains("initialize"), "{init}");
         write_half
@@ -526,7 +499,6 @@ mod tests {
             .expect("write init result");
         write_half.write_all(b"\n").await.expect("nl");
 
-        // initialized + account/read + rateLimits/read (order may vary across lines)
         let mut saw_account = false;
         let mut saw_limits = false;
         while !(saw_account && saw_limits) {
@@ -548,9 +520,7 @@ mod tests {
                     .expect("limits");
                 write_half.write_all(b"\n").await.expect("nl");
             }
-            // ignore "initialized" notification
         }
-        // Keep the stream open briefly so the client can finish.
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
 
@@ -702,14 +672,13 @@ mod tests {
         let server_task = tokio::spawn(async move {
             let (read_half, mut write_half) = tokio::io::split(server);
             let mut lines = BufReader::new(read_half).lines();
-            let _ = lines.next_line().await; // initialize
+            let _ = lines.next_line().await;
             write_half
                 .write_all(br#"{"id":0,"result":{}}"#)
                 .await
                 .expect("init");
             write_half.write_all(b"\n").await.expect("nl");
 
-            // Drain client follow-ups; respond id=2 with error immediately.
             let mut saw_limits = false;
             while !saw_limits {
                 let line = match lines.next_line().await {
@@ -755,7 +724,7 @@ mod tests {
         tokio::spawn(async move {
             let (read_half, mut write_half) = tokio::io::split(server);
             let mut lines = BufReader::new(read_half).lines();
-            let _ = lines.next_line().await; // initialize
+            let _ = lines.next_line().await;
             write_half
                 .write_all(br#"{"id":0,"result":{}}"#)
                 .await
@@ -860,7 +829,6 @@ mod tests {
     async fn appserver_protocol_timeout_is_timed_out_outcome() {
         let (client, _server) = duplex(64 * 1024);
         let (client_read, client_write) = tokio::io::split(client);
-        // No server responses → hard timeout.
         let outcome = run_appserver_protocol_outcome(
             client_read,
             client_write,
@@ -879,15 +847,13 @@ mod tests {
         let server_task = tokio::spawn(async move {
             let (read_half, mut write_half) = tokio::io::split(server);
             let mut lines = BufReader::new(read_half).lines();
-            let _ = lines.next_line().await; // initialize
+            let _ = lines.next_line().await;
             write_half
                 .write_all(br#"{"id":0,"result":{}}"#)
                 .await
                 .expect("init");
             write_half.write_all(b"\n").await.expect("nl");
 
-            // Send rate limits (id=2) but never account/read (id=1), so the
-            // client arms grace and then hits hard timeout with limits held.
             let mut saw_limits = false;
             while !saw_limits {
                 let line = match lines.next_line().await {
@@ -904,9 +870,7 @@ mod tests {
                         .expect("limits");
                     write_half.write_all(b"\n").await.expect("nl");
                 }
-                // Deliberately ignore account/read so account_plan stays None.
             }
-            // Hold the stream open past hard timeout.
             tokio::time::sleep(Duration::from_secs(2)).await;
         });
 
@@ -941,7 +905,7 @@ mod tests {
         let server_task = tokio::spawn(async move {
             let (read_half, mut write_half) = tokio::io::split(server);
             let mut lines = BufReader::new(read_half).lines();
-            let _ = lines.next_line().await; // initialize
+            let _ = lines.next_line().await;
             write_half
                 .write_all(br#"{"id":0,"error":{"code":-32000,"message":"init failed"}}"#)
                 .await
@@ -978,8 +942,7 @@ mod tests {
         let server_task = tokio::spawn(async move {
             let (read_half, mut write_half) = tokio::io::split(server);
             let mut lines = BufReader::new(read_half).lines();
-            let _ = lines.next_line().await; // initialize
-                                             // id=0 with neither result nor error → treat as failed.
+            let _ = lines.next_line().await;
             write_half.write_all(br#"{"id":0}"#).await.expect("empty");
             write_half.write_all(b"\n").await.expect("nl");
             tokio::time::sleep(Duration::from_millis(50)).await;

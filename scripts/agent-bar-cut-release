@@ -33,8 +33,6 @@ case "$MAJOR$MINOR$PATCH" in
     exit 1
     ;;
 esac
-# Notes cover everything since the last release tag, which for a deliberate
-# version is not v${CUR}.
 PREV="$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || true)"
 
 if git rev-parse -q --verify "refs/tags/v${CUR}" >/dev/null; then
@@ -87,7 +85,6 @@ fi
 sed -i "0,/^version = \"${CUR}\"/s//version = \"${NEXT}\"/" Cargo.toml
 cargo update --workspace --offline --quiet
 
-# Root manifest carries the released version (single-repo layout).
 sed -i "s/\"version\": \"${CUR}\"/\"version\": \"${NEXT}\"/" manifest.json
 grep -q "\"version\": \"${NEXT}\"" manifest.json || {
   echo "manifest.json version stamp failed" >&2
@@ -96,7 +93,6 @@ grep -q "\"version\": \"${NEXT}\"" manifest.json || {
 
 printf '%s\n' "$NOTES" > "$NOTES_PATH"
 
-# Prepend the matching CHANGELOG section right after the intro block.
 CHANGELOG_ENTRY="$(printf '## [%s] - %s\n\n### Changed\n\n%s\n' \
   "$NEXT" "$TODAY" "$SUBJECTS")"
 awk -v entry="$CHANGELOG_ENTRY" '

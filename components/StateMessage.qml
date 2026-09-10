@@ -2,13 +2,12 @@ import QtQuick
 import qs.Commons
 import qs.Ui
 
-// Provider non-window state body: title, plain-text body, allowlisted actions.
 Column {
   id: root
 
   property string title: ""
   property string body: ""
-  property var actions: [] // [{ kind, label, target }]
+  property var actions: []
   property color foreground: Color.foreground
   property string fontFamily: Style.font.family
   property bool skeleton: false
@@ -30,7 +29,6 @@ Column {
     return targets
   }
 
-  // UX-026 skeleton placeholders (no plugin-authored motion).
   Column {
     visible: root.skeleton
     width: parent.width
@@ -62,7 +60,6 @@ Column {
     spacing: Style.space(8)
 
     Text {
-      // Bind to available width; avoid implicit-width grow that clips left glyphs.
       width: Math.max(0, parent.width)
       text: root.title
       color: root.foreground
@@ -105,7 +102,6 @@ Column {
           fontFamily: root.fontFamily
           bordered: true
           focusable: true
-          // Keep action labels fully inside content (no left clip).
           leftAlign: true
           Accessible.name: text
           function focusActivate() {

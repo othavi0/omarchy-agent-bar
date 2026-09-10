@@ -1,11 +1,6 @@
 import QtQuick
 import qs.Commons
 
-// Header tag (visual design §6): a 1px border at the host corner radius,
-// caption type, uppercase. Plan and severity share this one shape; `urgent`
-// is the severity variant (§7), and Color.urgent is the only severity colour
-// in the product. Uppercasing also normalises plan labels that arrive
-// lowercase from the API, such as Codex's `plus`.
 Rectangle {
   id: root
 

@@ -1,8 +1,5 @@
-//! Terminal-safe English human status formatting (CLI-012).
-
 use super::schema::{DataSource, ProviderState, StatusEnvelope};
 
-/// Format a validated envelope as plain English text for `status format human`.
 pub fn format_human(envelope: &StatusEnvelope) -> String {
     let mut out = String::new();
     out.push_str("Agent Bar status\n");

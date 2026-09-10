@@ -21,8 +21,6 @@ TestCase {
   function createService() {
     var component = Qt.createComponent(serviceUrl)
     if (component.status === Component.Ready) {
-      // testMode must hold before Component.onCompleted: pluginRoot resolves
-      // at construction and would otherwise start the bundled helper.
       service = component.createObject(testCase, { testMode: true, helperPath: "/nonexistent" })
     } else {
       // Arch packages Quickshell's QML plugins into the quickshell executable,
@@ -405,10 +403,6 @@ TestCase {
     compare(s.maintenanceUi.message, "Update started. The shell reloads when it finishes.")
   }
 
-  // Live 10.3.24: the two-minute tick lands on the second 60 s poll, the
-  // check returns before the status run, and the handoff waited for a status
-  // completion that never retried it: polling stopped and Settings stayed
-  // blocked for good.
   function test_handoff_waiting_on_status_starts_when_status_finishes() {
     var s = createService()
     bootstrapSettings(s)

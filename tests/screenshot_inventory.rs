@@ -1,17 +1,5 @@
-//! `tests/qml/TestPalette.js` and `scripts/verify-v10-ui` each hand-copy the
-//! same required-screenshot inventory. Nothing keeps the two lists in sync:
-//! adding a name to one and forgetting the other either leaves a gap in the
-//! QML fixture's own count check or makes the shell script reject the new
-//! PNG as "unexpected evidence" (exactly what happened when `ready-white.png`
-//! was added to the JS list without updating the script). This test keeps
-//! them in lock-step: a screenshot added to one side and forgotten on the
-//! other fails here instead of at whatever point someone next runs the
-//! script.
-
 use std::collections::BTreeSet;
 
-/// Quoted `"name.png"` basenames from `TestPalette.js`'s
-/// `requiredScreenshotNames()` array.
 fn js_required_names(source: &str) -> BTreeSet<String> {
     let mut names = BTreeSet::new();
     for line in source.lines() {
@@ -30,7 +18,6 @@ fn js_required_names(source: &str) -> BTreeSet<String> {
     names
 }
 
-/// Bare `name.png` basenames from `verify-v10-ui`'s `REQUIRED=( ... )` array.
 fn script_required_names(source: &str) -> BTreeSet<String> {
     let mut names = BTreeSet::new();
     let mut in_array = false;

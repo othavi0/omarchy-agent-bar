@@ -1,28 +1,17 @@
 import QtQuick
 import qs.Commons
 
-// One normalized percentage window. The elected lead renders large (label
-// line with the promoted reset -> 2.5x numeral + unit -> track); every other
-// window renders as a compact row that carries its own track (UX-020A
-// extended by the visual design §6). Severity paints numeral and fill in
-// Color.urgent (§7) and always travels with a word — see Accessible.name.
 Item {
   id: root
 
   property string label: ""
   property string percentText: "—"
-  // 0–100 when known; negative when unavailable (hide fill).
   property real percent: -1
-  // Countdown only: the popup shows no absolute clock (§6).
   property string resetCountdown: ""
-  // Lead-only wall-clock suffix, already parenthesised ("(13:31)"); compact
-  // rows leave it empty (§6 amendment 2026-08-03).
   property string resetClock: ""
   property string resetPhrase: ""
   property string unitText: "left"
-  // "critical" | "warning" | "" — computed from usedPercent by CoreView.
   property string severity: ""
-  // The elected lead renders large; every other window renders compact.
   property bool emphasis: true
   property bool dimmed: false
   property color foreground: Color.foreground
@@ -35,19 +24,10 @@ Item {
       : 0
   readonly property bool isCritical: root.severity === "critical"
   readonly property color valueColor: root.isCritical ? Color.urgent : root.foreground
-  // Severity describes the numbers on screen, so it outranks dimming: a
-  // window still shows its reading, and a critical reading is still
-  // critical. valueColor and fillColor must agree on this; they disagreed
-  // once, and the numeral and its own track rendered two different verdicts.
-  // UX-028 (amended) retired the one caller that ever set `dimmed` — stale
-  // no longer dims anything. The property stays because it is the component's
-  // own low-emphasis mode, not a staleness signal; no caller sets it today.
   readonly property color fillColor: root.isCritical
       ? Color.urgent
       : (root.dimmed ? root.foreground : root.accent)
   readonly property real fillOpacity: root.dimmed ? 0.45 : (root.isCritical ? 1.0 : 0.9)
-  // Data surface, not control chrome — no host token covers it. Declared
-  // once here; both layouts tint from the same place.
   readonly property color trackColor: Util.alpha(root.foreground, 0.12)
 
   width: parent ? parent.width : implicitWidth
@@ -55,11 +35,6 @@ Item {
   height: implicitHeight
   opacity: root.dimmed ? 0.6 : 1.0
 
-  // §6: the compact reset column is sized for the widest countdown the
-  // humaniser produces below 24 hours — countdownText() pads no digits, so
-  // two-digit hours plus two-digit minutes is the worst case — and the
-  // value column for a full 100%. Never a hardcoded pixel: both scale with
-  // [font] base-size.
   TextMetrics {
     id: countdownMetrics
     font.family: root.fontFamily
@@ -80,9 +55,6 @@ Item {
     width: parent.width
     spacing: Style.spacing.sm
 
-    // Label line with the reset promoted into it: the label and the lead-in
-    // recede, the countdown itself keeps full ink. Not uppercased — this line
-    // is now a sentence, not a kicker.
     Row {
       width: parent.width
       spacing: Style.spacing.sm
@@ -234,7 +206,6 @@ Item {
     }
   }
 
-  // A11Y-012: severity reaches assistive tech as a word, in both layouts.
   Accessible.name: {
     var parts = [root.label, root.percentText + " " + root.unitText]
     if (root.severity === "critical")

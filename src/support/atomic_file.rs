@@ -1,5 +1,3 @@
-//! Same-filesystem atomic file replacement with restrictive permissions.
-
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -7,7 +5,6 @@ use std::path::{Path, PathBuf};
 #[cfg(unix)]
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 
-/// Failure injection points for atomic replacement tests.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AtomicFailPoint {
     Write,
@@ -16,7 +13,6 @@ pub enum AtomicFailPoint {
     FsyncDir,
 }
 
-/// Mutable filesystem operations used by [`replace_atomically_with`].
 pub trait FileMutator: Send + Sync {
     fn create_temp(&self, dir: &Path) -> io::Result<(PathBuf, File)>;
     fn write_all(&self, file: &mut File, bytes: &[u8]) -> io::Result<()>;
@@ -26,7 +22,6 @@ pub trait FileMutator: Send + Sync {
     fn sync_dir(&self, dir: &Path) -> io::Result<()>;
 }
 
-/// Production mutator backed by `std::fs`.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct StdFileMutator;
 
@@ -39,7 +34,6 @@ impl FileMutator for StdFileMutator {
         {
             opts.mode(0o600);
         }
-        // Unique temp name on the same filesystem as the target directory.
         let name = format!(
             ".agent-bar-{}.tmp",
             std::time::SystemTime::now()
@@ -93,7 +87,6 @@ pub fn replace_atomically(target: &Path, bytes: &[u8], mode: u32) -> io::Result<
     replace_atomically_with(&StdFileMutator, target, bytes, mode)
 }
 
-/// Atomic replacement with an injectable filesystem mutator.
 pub fn replace_atomically_with<M: FileMutator + ?Sized>(
     mutator: &M,
     target: &Path,
@@ -134,7 +127,6 @@ pub fn replace_atomically_with<M: FileMutator + ?Sized>(
     Ok(())
 }
 
-/// Test mutator that fails at a configured step after optionally writing.
 #[cfg(test)]
 #[derive(Debug)]
 pub struct FailingMutator {

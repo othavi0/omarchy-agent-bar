@@ -1,5 +1,3 @@
-//! Single-pass word-based CLI grammar. No filesystem or provider I/O.
-
 use std::path::PathBuf;
 
 use super::command::{
@@ -10,10 +8,6 @@ use super::exit::CliFailure;
 
 const CONFIG_APPLY_USAGE: &str = "config apply requires stdin, file <path>, or json <value>";
 
-/// Parse argv words after the program name into a closed [`Command`].
-///
-/// Grammar failures map to exit code 2. Parsing never touches the filesystem,
-/// network, or provider adapters.
 pub fn parse<I, S>(args: I) -> Result<Command, CliFailure>
 where
     I: IntoIterator<Item = S>,
@@ -162,8 +156,6 @@ fn parse_status(tokens: &[String]) -> Result<Command, CliFailure> {
     Ok(Command::Status(opts))
 }
 
-/// Both status clause errors — no value present, and a value that looks like
-/// a flag — take the same `word` and want the same sentence.
 fn missing_status_value(word: &str) -> CliFailure {
     CliFailure::grammar(format!("missing value for status {word}"))
 }
@@ -215,9 +207,6 @@ fn parse_config(tokens: &[String]) -> Result<Command, CliFailure> {
     }
 }
 
-/// `setup` takes no arguments (git-plugin-distribution Task 4): install is
-/// `omarchy plugin add`/git clone now, so the former `plugins-dir <path>`
-/// injected-install-target form is an ordinary unknown argument.
 fn parse_setup(tokens: &[String]) -> Result<Command, CliFailure> {
     match tokens {
         [] => Ok(Command::Setup),

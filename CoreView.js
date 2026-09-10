@@ -1,4 +1,3 @@
-// Chip + popup presentation and time formatting.
 .pragma library
 .import "CoreService.js" as Kernel
 
@@ -54,8 +53,6 @@ function placeholderProvider(id) {
   }
 }
 
-// Enabled providers in settings order, joined with snapshot data.
-// Without settings, uses snapshot order (helper already filters/orders).
 function visibleProviders(snapshot, settings) {
   var byId = {}
   if (snapshot && Array.isArray(snapshot.providers)) {
@@ -92,11 +89,6 @@ function visibleProviders(snapshot, settings) {
   return out
 }
 
-// UX-002 / UX-032A (amended 2026-08-07, 2026-09-04): the chip renders the
-// elected lead window's used|remaining percent — the same election the popup
-// runs, which pins a session window first — or an em-dash when there is no
-// window. Chip and popup can never disagree on which window a number
-// belongs to.
 function chipPercentText(provider, metric, nowMs) {
   var lines = windowDisplayLines(provider, metric, nowMs)
   var lead = electLeadIndex(lines)
@@ -105,8 +97,6 @@ function chipPercentText(provider, metric, nowMs) {
   return lines[lead].percentText
 }
 
-// Typed error/collection-failure states shared by the chip cue and the
-// tooltip/copy qualifiers (plan 03 §5.1-5.3).
 var ERROR_STATES = {
   "cli_missing": true,
   "unauthenticated": true,
@@ -115,16 +105,9 @@ var ERROR_STATES = {
   "provider_error": true
 }
 
-// Severity thresholds on usedPercent (visual design §7). These duplicate
-// NotificationLevel::from_used_percent (src/notifications/state.rs): the
-// status schema is frozen at v2 and must not gain a field, so the numbers
-// live on both sides and tests/severity_parity.rs fails the build if either
-// side moves alone. Change one, change both.
 var SEVERITY_CRITICAL_USED_PERCENT = 95
 var SEVERITY_WARNING_USED_PERCENT = 90
 
-// "critical" | "warning" | "". Always from usedPercent, never from the
-// displayed metric — switching to `used` must not change what is critical.
 function severityLevel(usedPercent) {
   var v = Number(usedPercent)
   if (!isFinite(v))
@@ -136,8 +119,6 @@ function severityLevel(usedPercent) {
   return ""
 }
 
-// The word the header tag renders. Warning shows as "Low" (§7 table);
-// "warning" stays the internal level name shared with the Rust notifier.
 function severityTagText(level) {
   if (level === "critical")
     return "Critical"
@@ -146,8 +127,6 @@ function severityTagText(level) {
   return ""
 }
 
-// The provider's worst window. A11Y-012: this drives a word, never a colour
-// on its own.
 function providerSeverity(provider) {
   if (!provider || !Kernel.isArrayLike(provider.windows))
     return ""
@@ -165,22 +144,11 @@ function providerSeverity(provider) {
   return worst
 }
 
-// UX-028 (amended): a stale provider holds a real reading that the helper
-// retained through a failed refresh, so the bar renders it exactly like a
-// ready one. `presentsReading` is the single place that decides which states
-// own a number worth showing; everything below asks it instead of testing
-// `=== "ready"` on its own, so the bar can never disagree with itself.
 function presentsReading(state) {
   var s = String(state || "")
   return s === "ready" || s === "stale"
 }
 
-// Severity tints the bar for any provider presenting a reading: the remaining
-// states dim the whole chip and spend the cue on the state itself, so an
-// urgent tint there would mean two things at once. Approved mockup: critical
-// Claude is urgent, disconnected Grok is not. A retained reading keeps its
-// severity — UsageWindow already paints a critical stale window urgent, and
-// suppressing it here would make bar and popup contradict each other.
 function chipSeverityUrgent(provider) {
   if (!provider)
     return false
@@ -188,10 +156,6 @@ function chipSeverityUrgent(provider) {
       && providerSeverity(provider) === "critical"
 }
 
-// UX-012 (amended): text cue beyond color for error states. No leading space
-// — the chip separates cue from numeral with layout spacing (visual design
-// §5). Stale is deliberately absent: it is retained data, not a fault, and
-// marking it made a woken machine look broken for one poll interval.
 function chipStateCue(provider) {
   if (!provider)
     return ""
@@ -203,11 +167,6 @@ function chipStateCue(provider) {
   return ""
 }
 
-// Plan 02 deferred minor: the cue exposed its raw glyph to screen readers.
-// It now carries a word — the severity when severity produced the cue,
-// otherwise the same qualifier the tooltip already speaks. Stale produces no
-// cue, so it contributes no word either (A11Y-012 parity: assistive tech
-// hears what the eye sees, never more).
 function chipCueLabel(provider) {
   if (!provider)
     return ""
@@ -229,9 +188,6 @@ var STATE_QUALIFIERS = {
   "provider_error": "failed"
 }
 
-// Copy design §5.4: lowercase trailing qualifier for the chip tooltip and
-// for the cue's accessible name. It replaced `connectionLabel`, which plan 03
-// deleted together with the meta footer.
 function stateQualifier(state) {
   var s = String(state || "")
   if (s === "ready")
@@ -241,30 +197,18 @@ function stateQualifier(state) {
   return "unknown"
 }
 
-// Numeral box content: loading renders the loading cue in place of the
-// number so the cue is visually distinct from the — no-data glyph (§5).
 function chipNumeralText(provider, metric, nowMs) {
   if (provider && String(provider.state || "") === "loading")
     return "···"
   return chipPercentText(provider, metric, nowMs)
 }
 
-// Dimming means "no number to trust here" — missing CLI (PROD-022/UX-029),
-// the error states, and the loading placeholder. Stale is excluded: it has a
-// number, so it renders at full strength like ready.
 function chipDimmed(provider) {
   if (!provider)
     return true
   return !presentsReading(provider.state)
 }
 
-// UX-011 (superseded 2026-08-06): the chip renders no hover tooltip. The
-// former tooltip's first line survives as the chip's accessible name — the
-// provider, the displayed percentage when one exists, and a plain-language
-// qualifier when the provider presents no reading. The raw enum value never
-// renders (copy design §5.4). Single-line by construction: no window detail,
-// no live clock. A stale chip is visually identical to a ready one, so it
-// reads identically too (A11Y-012).
 function chipAccessibleLabel(provider, metric, nowMs) {
   if (!provider)
     return ""
@@ -282,22 +226,17 @@ function chipAccessibleLabel(provider, metric, nowMs) {
   return parts.join(" · ")
 }
 
-// Visual design §5/§10: per-provider optical scale on the shared 16px
-// canvas. Grok's mark is a thin ring that fills its own box edge to edge.
 function iconOpticalScale(id) {
   if (String(id || "") === "grok")
     return 0.875
   return 1.0
 }
 
-// §10: monochrome brands inherit the theme ink at render time; polychrome
-// brands keep their official color and are never tinted.
 function iconTinted(id) {
   var key = String(id || "")
   return key === "codex" || key === "grok"
 }
 
-// Map mouse button to typed service intention (UX-004..009).
 // button: Qt.LeftButton(1) | RightButton(2) | MiddleButton(4) or string.
 function routeChipClick(button, owner, providerId, popupOwner) {
   var b = button
@@ -326,10 +265,6 @@ function routeChipClick(button, owner, providerId, popupOwner) {
   }
   return { action: "noop" }
 }
-
-// ---------------------------------------------------------------------------
-// Popup / provider presentation (UX-013..032A, JSON-023..028)
-// ---------------------------------------------------------------------------
 
 var ACTION_INTENTS = {
   "retry": true,
@@ -375,7 +310,6 @@ function planBadge(provider) {
   return ""
 }
 
-// Render only the safe English message from the typed error object.
 function errorMessage(provider) {
   if (!provider || !provider.error)
     return ""
@@ -408,8 +342,6 @@ function stateTitle(provider) {
   var s = String(provider.state || "")
   if (s === "loading")
     return ""
-  // Stale walks the ready branch: a retained empty reading still means the
-  // account reports no quota, not that something failed.
   if (presentsReading(s) && (!provider.windows || provider.windows.length === 0))
     return name + " reports no quota"
   if (presentsReading(s))
@@ -436,8 +368,6 @@ function stateBody(provider) {
     return ""
   if (presentsReading(s) && (!provider.windows || provider.windows.length === 0))
     return emptyWindowsMessage()
-  // Reached only by the states with no reading: a stale provider carries a
-  // retryable error in JSON, but the pane must never surface it as a fault.
   if (presentsReading(s))
     return ""
   var err = errorMessage(provider)
@@ -464,17 +394,11 @@ function defaultActionLabel(kind) {
   return String(kind || "")
 }
 
-// Closed action list for the current provider state (JSON-025).
 function stateActions(provider) {
   var out = []
   if (!provider)
     return out
   var state = String(provider.state || "")
-  // UX-028 (amended): a provider presenting a reading offers no recovery
-  // action. Stale still carries `action: retry` in JSON — the helper's
-  // contract — but surfacing it would put a repair button next to a perfectly
-  // good number, which is the fault impression this pane exists to avoid. The
-  // header's refresh control remains available in every state.
   if (presentsReading(state))
     return out
   var seen = {}
@@ -501,8 +425,6 @@ function stateActions(provider) {
   if (state === "unauthenticated" && !seen.login && !seen.view_installation)
     pushAction("login", "Sign in", null)
 
-  // JSON-025 addendum: a typed non-retryable error must never offer Retry,
-  // regardless of which branch above produced it.
   var retryAllowed = !provider || !provider.error
       || provider.error.retryable === undefined
       || provider.error.retryable === true
@@ -518,11 +440,6 @@ function mapActionKind(kind) {
     return null
   return k
 }
-
-// ---------------------------------------------------------------------------
-// Humanized time (UX Fase 2: countdown + absolute local time)
-// ---------------------------------------------------------------------------
-
 
 function parseIsoMs(iso) {
   if (iso === null || iso === undefined)
@@ -546,8 +463,6 @@ function countdownText(diffMs) {
   return minutes + "m"
 }
 
-// §6: the popup renders the countdown alone — no absolute clock, no weekday.
-// "" when there is no usable timestamp, "now" once the reset has passed.
 function resetCountdownText(iso, nowMs) {
   var ms = parseIsoMs(iso)
   if (!isFinite(ms))
@@ -558,11 +473,6 @@ function resetCountdownText(iso, nowMs) {
   return countdownText(diff)
 }
 
-// §6 amended 2026-08-03 (owner decision on live mockups): the lead window
-// appends the reset's wall-clock time after the countdown — "(13:31)" here,
-// "(1:31 PM)" on an en-US machine. The format string is the caller's locale
-// short-time format, never hardcoded; weekday names stay deleted, so compact
-// rows (days away) remain countdown-only.
 function resetClockText(iso, localeTimeFormat) {
   var ms = parseIsoMs(iso)
   if (!isFinite(ms))
@@ -573,8 +483,6 @@ function resetClockText(iso, localeTimeFormat) {
   return "(" + Qt.formatTime(new Date(ms), fmt) + ")"
 }
 
-// The muted lead-in the lead window prints before the countdown:
-// "Session (5h) · resets in 3h 1m" / "Session (5h) · resets now".
 function resetPhrase(countdown) {
   var c = String(countdown || "")
   if (!c.length)
@@ -582,7 +490,6 @@ function resetPhrase(countdown) {
   return c === "now" ? "resets" : "resets in"
 }
 
-// "just now" | "5m ago" | "3h ago" | "2d ago" | "".
 function formatAgoText(iso, nowMs) {
   var ms = parseIsoMs(iso)
   if (!isFinite(ms))
@@ -614,7 +521,6 @@ function windowDisplayLines(provider, metric, nowMs) {
     var pct = mode === "used" ? used : remaining
     var finite = isFinite(pct)
     var rounded = finite ? Math.round(pct) : null
-    // Keep the escaped form the rest of this file already uses.
     var pctText = finite ? (rounded + "%") : "\u2014"
     var countdown = w.resetsAt
         ? resetCountdownText(String(w.resetsAt), effectiveNowMs)
@@ -623,10 +529,7 @@ function windowDisplayLines(provider, metric, nowMs) {
       id: String(w.id || ("w" + i)),
       label: plainText(w.label || w.id || "Window"),
       percentText: pctText,
-      // 0–100 for progress track; -1 when unavailable.
       percent: finite ? Math.max(0, Math.min(100, rounded)) : -1,
-      // Raw percentages drive severity (§7) and election (§8); they never
-      // follow the displayed metric. null when the provider omitted them.
       usedPercent: isFinite(used) ? used : null,
       remainingPercent: isFinite(remaining) ? remaining : null,
       severity: severityLevel(used),
@@ -638,31 +541,16 @@ function windowDisplayLines(provider, metric, nowMs) {
   return lines
 }
 
-// A critical window with no usable remainingPercent sorts last among its
-// peers instead of winning the comparison by accident.
 function remainingRank(line) {
   return line.remainingPercent === null ? Infinity : line.remainingPercent
 }
 
-// UX-020D (amended 2026-09-04, 2026-09-10): the window ids the Rust mappers
-// emit for a provider's short rolling window (Claude/Codex `session`,
-// Antigravity `gemini-5h` and `3p-5h`). Typed schema data, like the `plan-`
-// prefix below — this list only promotes known ids; an id it does not know is
-// never demoted.
 var SESSION_WINDOW_IDS = ["session", "gemini-5h", "3p-5h"]
 
 function isSessionWindowId(id) {
   return SESSION_WINDOW_IDS.indexOf(String(id)) >= 0
 }
 
-// §8: deterministic five-step lead election: session, critical, plan, nearest
-// future reset, then first delivered. This replaces the old id allowlist that
-// silently demoted any window id it did not know. Returns an index into
-// `lines`, or -1 when there is nothing to lead.
-//
-// Delivered order is unique per line, so `<` on the index is already a total
-// tiebreak; the spec's further "then by window id" step is unreachable and is
-// deliberately not written as dead code.
 function electLeadIndex(lines) {
   if (!lines || !lines.length)
     return -1
@@ -670,15 +558,6 @@ function electLeadIndex(lines) {
   var i
   var best = -1
 
-  // 0. UX-020D (amended 2026-09-04): a session window leads whenever one is
-  //    delivered, even after its reset elapsed and even when a weekly window
-  //    is critical — the weekly still tints the chip and shows the "!" cue
-  //    through providerSeverity, it just never takes the number. Without
-  //    this, every morning the elapsed session reset handed the chip to the
-  //    weekly percentage.
-  //    (amended 2026-09-10) Antigravity delivers one session per model
-  //    family; the family in use drains its own, so the lowest remaining
-  //    leads and a tie keeps the delivered order.
   for (i = 0; i < lines.length; i++) {
     if (!isSessionWindowId(lines[i].id))
       continue
@@ -688,7 +567,6 @@ function electLeadIndex(lines) {
   if (best >= 0)
     return best
 
-  // 1. Any critical window leads; among criticals, the lowest remaining.
   for (i = 0; i < lines.length; i++) {
     if (lines[i].severity !== "critical")
       continue
@@ -698,10 +576,6 @@ function electLeadIndex(lines) {
   if (best >= 0)
     return best
 
-  // 2. UX-020D (amended 2026-08-07): a plan window (id prefix "plan-")
-  //    outranks every non-plan window; among plan windows the lowest
-  //    remaining leads. Ids are typed schema data authored by the Rust
-  //    mappers, so the prefix is a contract, not raw-output parsing.
   for (i = 0; i < lines.length; i++) {
     if (lines[i].id.indexOf("plan-") !== 0)
       continue
@@ -711,8 +585,6 @@ function electLeadIndex(lines) {
   if (best >= 0)
     return best
 
-  // 3. Otherwise the nearest reset still in the future. A missing timestamp
-  //    or one that already elapsed ("now") does not compete.
   var bestMs = NaN
   for (i = 0; i < lines.length; i++) {
     if (!lines[i].resetCountdown.length || lines[i].resetCountdown === "now")
@@ -728,12 +600,9 @@ function electLeadIndex(lines) {
   if (best >= 0)
     return best
 
-  // 4. Nothing has a future reset: the first delivered window leads.
   return 0
 }
 
-// §3.4: the popup leads with one window; every other window renders as a
-// compact row, in delivered order.
 function windowLayout(provider, metric, nowMs) {
   var lines = windowDisplayLines(provider, metric, nowMs)
   var leadIndex = electLeadIndex(lines)
@@ -747,8 +616,6 @@ function windowLayout(provider, metric, nowMs) {
   return layout
 }
 
-// Codex rate-limit reset count (JSON-022C). Singular/plural, empty when
-// absent or zero so the popup stays byte-identical for every other provider.
 function rateLimitResetsText(provider) {
   if (!provider)
     return ""
@@ -776,10 +643,6 @@ function headerModel(provider, refreshing) {
   }
 }
 
-// UX-028 (amended): stale shares the ready path — the dedicated
-// "stale_windows" mode is gone, so a retained reading draws the same pane a
-// fresh one would. Its age is the only difference, and ProviderView carries
-// that as one neutral line.
 function contentMode(provider) {
   if (!provider)
     return "skeleton"

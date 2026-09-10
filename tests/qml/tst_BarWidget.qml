@@ -23,7 +23,6 @@ TestCase {
   property string chipUrl: "file://" + repoRoot + "/components/ProviderChip.qml"
   property string coreViewUrl: "file://" + repoRoot + "/CoreView.js"
 
-  // Minimal shell stand-in with Quattro serviceFor API.
   Item {
     id: fakeShell
     property var _services: ({})
@@ -81,7 +80,6 @@ TestCase {
     }
   }
 
-  // Chip logic matching BarWidget.qml agentService resolution (without qs.Ui).
   component AgentChip: Item {
     property var bar: null
     property string moduleName: "othavi0.agent-bar"
@@ -125,8 +123,6 @@ TestCase {
     }
   }
 
-  // ---- Task 8 carry-over ----
-
   function test_two_widgets_resolve_same_service() {
     var svc = Qt.createQmlObject('import QtQuick; Item { property string helperVersion: "10.0.0"; property bool versionReady: true; property bool versionFailed: false }', testCase)
     fakeShell.registerService("othavi0.agent-bar", svc)
@@ -167,10 +163,8 @@ TestCase {
     var src = String(xhr.responseText)
     verify(src.indexOf("serviceFor(moduleName)") >= 0)
     verify(src.indexOf("moduleName: \"othavi0.agent-bar\"") >= 0)
-    verify(src.indexOf("Qt.resolvedUrl") >= 0) // icons only
+    verify(src.indexOf("Qt.resolvedUrl") >= 0)
   }
-
-  // ---- Task 10: chip model ----
 
   function test_visible_providers_settings_order_and_filter() {
     var settings = {
@@ -225,9 +219,6 @@ TestCase {
     compare(Core.displayMetric(null), "remaining")
   }
 
-  // UX-002 (amended 2026-08-07): the chip shows the elected lead window —
-  // for a subscriber that is the subscription bucket, not windows[0]
-  // (Amp Free), even though the free window has the nearer reset.
   function test_chip_shows_elected_lead_for_subscriber() {
     var p = {
       id: "amp",
@@ -264,8 +255,6 @@ TestCase {
     compare(lines[0].percentText, "100%")
   }
 
-  // UX-028 (amended): stale is retained data, not a fault. The bar renders it
-  // exactly as ready — dimming is reserved for states with no usable reading.
   function test_chip_dimmed_reflects_ready_state() {
     verify(!Core.chipDimmed(makeProvider("claude", "stale", 1, 99)))
     verify(!Core.chipDimmed(makeProvider("claude", "ready", 1, 99)))
@@ -278,27 +267,18 @@ TestCase {
     compare(Core.chipStateCue(null), "")
     compare(Core.chipStateCue({ state: "ready" }), "")
     compare(Core.chipStateCue({ state: "loading" }), "")
-    // UX-012 (amended): stale carries no cue; the bar must not mark it.
     compare(Core.chipStateCue({ state: "stale" }), "")
     compare(Core.chipStateCue({ state: "cli_missing" }), "!")
     compare(Core.chipStateCue({ state: "unauthenticated" }), "!")
     compare(Core.chipStateCue({ state: "rate_limited" }), "!")
     compare(Core.chipStateCue({ state: "network_error" }), "!")
     compare(Core.chipStateCue({ state: "provider_error" }), "!")
-    // §7: a ready provider over the critical threshold earns the same cue.
     compare(Core.chipStateCue({ state: "ready", windows: [{ usedPercent: 96 }] }), "!")
     compare(Core.chipStateCue({ state: "ready", windows: [{ usedPercent: 92 }] }), "")
-    // Severity survives staleness: a critical retained reading is still
-    // critical, so the cue comes from severity alone.
     compare(Core.chipStateCue({ state: "stale", windows: [{ usedPercent: 96 }] }), "!")
     compare(Core.chipStateCue({ state: "stale", windows: [{ usedPercent: 92 }] }), "")
   }
 
-  // The urgent tint belongs to severity, never to the error cue — the
-  // approved mockup shows critical Claude urgent and disconnected Grok plain.
-  // Stale joins ready here: UsageWindow already keeps the severity colour on
-  // a stale reading, so suppressing it on the chip would make bar and popup
-  // disagree about the same number.
   function test_chip_severity_urgent_only_when_ready_and_critical() {
     compare(Core.chipSeverityUrgent(null), false)
     compare(Core.chipSeverityUrgent({ state: "ready", windows: [{ usedPercent: 96 }] }), true)
@@ -308,10 +288,8 @@ TestCase {
     compare(Core.chipSeverityUrgent({ state: "network_error", windows: [] }), false)
   }
 
-  // Plan 02 deferred minor: the cue used to expose its raw glyph.
   function test_chip_cue_label_is_a_word() {
     compare(Core.chipCueLabel({ state: "ready", windows: [{ usedPercent: 96 }] }), "critical")
-    // Stale speaks nothing extra: the cue label must match what the eye sees.
     compare(Core.chipCueLabel({ state: "stale", windows: [] }), "")
     compare(Core.chipCueLabel({ state: "stale", windows: [{ usedPercent: 96 }] }), "critical")
     compare(Core.chipCueLabel({ state: "cli_missing", windows: [] }), "no CLI")
@@ -365,19 +343,13 @@ TestCase {
     var loading = { name: "Claude", state: "loading", windows: [] }
     compare(Core.chipAccessibleLabel(loading, "remaining"), "Claude · loading")
 
-    // Parity with the eye (A11Y-012): the bar no longer marks stale, so the
-    // accessible name must not announce it either — same chip, same words.
     var stale = { name: "Claude", state: "stale",
                   windows: [{ usedPercent: 95, remainingPercent: 5 }] }
     compare(Core.chipAccessibleLabel(stale, "remaining"), "Claude · 5%")
 
-    // Mirrors emptyReady above. Only this case distinguishes
-    // presentsReading(state) from state === "ready" in the percentage branch,
-    // so without it that half of the change is untested.
     var staleEmpty = { name: "Claude", state: "stale", windows: [] }
     compare(Core.chipAccessibleLabel(staleEmpty, "remaining"), "Claude · —")
 
-    // Single-line by construction; no provider stays empty.
     compare(Core.chipAccessibleLabel(null, "remaining"), "")
   }
 
@@ -424,8 +396,6 @@ TestCase {
     verify(!Core.iconTinted(""))
   }
 
-  // ---- Task 10: click routing ----
-
   function test_left_click_opens_provider() {
     var owner = {}
     var route = Core.routeChipClick("left", owner, "claude", null)
@@ -471,8 +441,6 @@ TestCase {
     compare(route.action, "noop")
   }
 
-  // ---- Task 10: registration + source guards ----
-
   function test_provider_chip_registers_and_unregisters() {
     fakeBar.clickTargets = []
     var chip = providerChipComp.createObject(testCase, {
@@ -483,7 +451,6 @@ TestCase {
       accessibleLabel: "Claude · 90% · ready"
     })
     verify(chip !== null)
-    // Allow Component.onCompleted to run.
     wait(0)
     verify(fakeBar.clickTargets.indexOf(chip) >= 0)
     verify(typeof chip.triggerPress === "function")
@@ -528,9 +495,7 @@ TestCase {
       xhr.open("GET", files[i], false)
       xhr.send()
       var src = String(xhr.responseText)
-      // Match type usage, not prose (rg -n 'Process|Timer|...' in the plan).
       verify(!/\bProcess\b/.test(src) || src.indexOf("//") >= 0)
-      // Strip line comments then re-check forbidden owners.
       var code = src.replace(/\/\/[^\n]*/g, "")
       verify(code.indexOf("Process") < 0, files[i] + " must not own Process")
       if (files[i] === chipUrl)
@@ -550,23 +515,12 @@ TestCase {
     xhr.open("GET", chipUrl, false)
     xhr.send()
     var chip = String(xhr.responseText)
-    // UX-010: the protocol is inherited from WidgetButton — exactly one
-    // registration, owned by the host component. Our source must not add a
-    // second protocol layer or a second mouse layer.
     verify(chip.indexOf("WidgetButton {") >= 0)
     verify(chip.indexOf("registerClickTarget") < 0)
     verify(chip.indexOf("MouseArea") < 0)
-    // UX-009: wheel stays a no-op — no handler in our source.
     verify(chip.indexOf("onWheel") < 0)
     verify(chip.indexOf("wheelMoved") < 0)
-    // A11Y-013: no plugin-authored motion (tst_Accessibility also guards).
     verify(chip.indexOf("Behavior") < 0)
-    // §5 amended 2026-08-04 (owner picked it on live mockups): the numeral
-    // box is tight — width follows the text, no reserved "100%" box. The
-    // fixed box parked ~2 digits of slack in the inter-chip gap whenever
-    // every numeral was short, which read as disproportionate spacing and
-    // an inflated right edge. Chips may shift on digit-count changes; the
-    // state cues (! / ln) already moved them, so nothing new is lost.
     verify(chip.indexOf("TextMetrics") < 0)
     verify(chip.indexOf('"100%"') < 0)
     verify(chip.indexOf("advanceWidth") < 0)
@@ -588,10 +542,8 @@ TestCase {
     // required props unset → no panel on chip click).
     verify(widget.indexOf("sourceComponent") < 0)
     verify(widget.indexOf("Popup {") >= 0)
-    // UX-003: no product brand chip label
     verify(widget.indexOf("\"AB\"") < 0)
     verify(widget.indexOf("Agent Bar") < 0)
-    // Task 1 functions actually wired:
     verify(widget.indexOf("chipNumeralText") >= 0)
     verify(widget.indexOf("iconTinted") >= 0)
     verify(widget.indexOf("iconOpticalScale") >= 0)
@@ -602,10 +554,6 @@ TestCase {
     verify(widget.indexOf("fontPixelSize:") < 0)
   }
 
-  // Plan 03 replaced the emoji hourglass with a Nerd Font glyph; UX-028
-  // (amended) then retired the glyph itself. The ban outlives both: the
-  // emoji breaks the monospace surface, so no file that renders
-  // provider-facing copy may reintroduce it.
   function test_no_emoji_hourglass_in_assets() {
     var files = [
       "CoreView.js",
@@ -627,9 +575,6 @@ TestCase {
     }
   }
 
-  // §5 amended 2026-08-01 (owner picked it on live mockups): chips sit at
-  // spacing.md (6). The old xxl (12) read as scattered once the numeral
-  // moved beside the icon and its box slack joined the inter-chip gap.
   function test_chip_row_spacing_is_md() {
     var xhr = new XMLHttpRequest()
     xhr.open("GET", widgetUrl, false)

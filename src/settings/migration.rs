@@ -1,5 +1,3 @@
-//! v9 → v10 data migration for settings and shell.json inline keys (MIG-007..016).
-
 use std::collections::{BTreeSet, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -65,7 +63,6 @@ impl MigrationPlan {
         settings_raw: Option<&[u8]>,
         shell_raw: Option<&[u8]>,
     ) -> Result<Self, MigrationError> {
-        // Track whether refresh came from an explicit settings/waybar value.
         let mut refresh_from_settings = false;
         let (mut settings, unknown_keys, already_settings) = match settings_raw {
             None => (Settings::defaults(), Vec::new(), false),
@@ -73,30 +70,17 @@ impl MigrationPlan {
                 (Settings::defaults(), Vec::new(), false)
             }
             Some(raw) => {
-                // Migration is the only path allowed to rewrite a v10 document
-                // that predates a catalog addition; an injection means the file
-                // must be written back, so it is not "already migrated".
-                //
-                // The repair is gated on `carries_original_v10_providers`: a
-                // document whose `providers` array is empty or truncated is not
-                // "v10 minus the providers added later", it is a v9-era or
-                // damaged file, and filling it from the catalog would invent an
-                // enablement set the user never chose. Those fall through to
-                // the v9 path, which derives enablement from the waybar block.
                 if let Some((v10, injected)) = parse_complete_v10(raw) {
                     refresh_from_settings = true;
                     (v10, Vec::new(), !injected)
                 } else {
                     let (s, unk, _) = migrate_v9_settings(raw)?;
-                    // migrate_v9_settings always sets a concrete interval (default 60
-                    // or waybar.interval). Mark explicit when waybar.interval present.
                     refresh_from_settings = waybar_interval_present(raw);
                     (s, unk, false)
                 }
             }
         };
 
-        // MIG-010/015: validate and store shell inline refresh BEFORE strip.
         let inline_refresh = match shell_raw {
             Some(raw) => extract_inline_refresh_seconds(raw)?,
             None => None,
@@ -105,8 +89,6 @@ impl MigrationPlan {
             if !refresh_from_settings {
                 settings.refresh_interval_seconds = n;
             }
-            // If settings already supplied interval, keep it; inline still must
-            // have been valid (extract already aborted on invalid).
         }
 
         settings
@@ -172,7 +154,6 @@ pub fn apply_migration_plan(
     fs::create_dir_all(backup_root.join("settings"))
         .map_err(|e| MigrationError::msg(format!("create settings backup dir: {e}")))?;
 
-    // Preserve exact pre-migration settings bytes when present (MIG-014 report path).
     if settings_path.is_file() {
         let prev = fs::read(settings_path)
             .map_err(|e| MigrationError::msg(format!("read settings for backup: {e}")))?;
@@ -214,7 +195,6 @@ pub fn apply_migration_plan(
         shell_written = true;
     }
 
-    // Lightweight operation record for operators (not a full transaction journal).
     let manifest = serde_json::json!({
         "operation": "v9-settings-migration",
         "settingsWritten": true,
@@ -260,13 +240,6 @@ pub fn migrate_live_paths(
     apply_migration_plan(&plan, settings_path, shell_path, backup_root)
 }
 
-/// Parse `raw` as a v10 document, completing it from the catalog only when it
-/// already lists every original v10 provider (the guard lives in
-/// [`Settings::parse_with_policy`], shared with the read path).
-///
-/// Returns the document plus whether any provider row was filled in (which
-/// obliges the caller to rewrite the file). `None` means "not a v10 document
-/// we may repair" and sends the caller to the v9 migration path.
 fn parse_complete_v10(raw: &[u8]) -> Option<(Settings, bool)> {
     Settings::parse_with_policy(raw, MissingProviders::FillFromCatalog).ok()
 }
@@ -282,7 +255,6 @@ fn waybar_interval_present(raw: &[u8]) -> bool {
         .is_some()
 }
 
-/// Read Agent Bar inline refresh from shell entry; abort if present but invalid.
 fn extract_inline_refresh_seconds(raw: &[u8]) -> Result<Option<u32>, MigrationError> {
     let value: Value = serde_json::from_slice(raw)
         .map_err(|e| MigrationError::msg(format!("invalid shell.json: {e}")))?;
@@ -329,14 +301,6 @@ fn extract_inline_refresh_seconds(raw: &[u8]) -> Result<Option<u32>, MigrationEr
 }
 
 /// The provider IDs a v9 document could name in `waybar.providers`.
-///
-/// v9 shipped exactly these four; Antigravity and anything added later cannot
-/// appear in a v9 file, so no v9 document carries a choice for them.
-///
-/// Identical today to `schema::ORIGINAL_V10_PROVIDERS` and deliberately kept
-/// separate: that one is the gate for repairing a v10 document, this one is a
-/// fact about what v9 shipped. Neither grows when the catalog does, but they
-/// answer different questions and would diverge for different reasons.
 const V9_PROVIDERS: &[ProviderId] = &[
     ProviderId::Claude,
     ProviderId::Codex,
@@ -346,25 +310,14 @@ const V9_PROVIDERS: &[ProviderId] = &[
 
 /// What a migrated document says about which providers the user wanted.
 enum V9Choice {
-    /// `waybar.providers` named them. That list IS the choice.
     Listed(HashSet<ProviderId>),
-    /// A v9 document whose `waybar` block omits `providers`: v9 rendered every
-    /// provider it knew, so the user was seeing all four and never opted out.
     AllV9Providers,
-    /// No `waybar` block at all — not a v9 document, so there is no choice to
-    /// carry over and the fresh-install defaults apply.
     NoV9Block,
 }
 
 /// Whether a migrated row starts enabled.
-///
-/// MIG-009 / PROD-024: migration preserves the user's choice instead of
-/// applying fresh defaults, so a provider that ships opt-in today still comes
-/// across enabled when the v9 install had it on. Only an ID v9 never had, or a
-/// document that was never v9 to begin with, falls back to `default_enabled`.
 fn v9_enabled(id: ProviderId, choice: &V9Choice) -> bool {
     if !V9_PROVIDERS.contains(&id) {
-        // Added after v9: no v9 document carries a choice for it.
         return default_enabled(id);
     }
     match choice {
@@ -382,7 +335,6 @@ fn migrate_v9_settings(raw: &[u8]) -> Result<(Settings, Vec<String>, bool), Migr
         .ok_or_else(|| MigrationError::msg("v9 settings must be a JSON object"))?;
 
     let mut unknown = Vec::new();
-    // Split legacy monetary key so the active-legacy gate does not flag source.
     let legacy_fx = concat!("fx", "Rate");
     let known_top = BTreeSet::from([
         "version",
@@ -396,7 +348,6 @@ fn migrate_v9_settings(raw: &[u8]) -> Result<(Settings, Vec<String>, bool), Migr
         "menu",
         "glyphMode",
         legacy_fx,
-        // accidental v10-ish keys we still treat as unknown for v9 path
         "providers",
         "display",
         "refreshIntervalSeconds",
@@ -408,7 +359,6 @@ fn migrate_v9_settings(raw: &[u8]) -> Result<(Settings, Vec<String>, bool), Migr
         }
     }
 
-    // Prefer waybar block when present (v9 shape).
     let waybar = obj.get("waybar").and_then(|v| v.as_object());
 
     let display_mode = waybar
@@ -470,14 +420,9 @@ fn migrate_v9_settings(raw: &[u8]) -> Result<(Settings, Vec<String>, bool), Migr
         })
         .unwrap_or_else(|| enabled_list.clone());
 
-    // Validate provider ids are known; unknown names abort if listed as "recognized" attempts.
     for name in enabled_list.iter().chain(order_list.iter()) {
-        if ProviderId::parse_word(name).is_none() {
-            // Unknown provider names are treated as unknown keys, not hard abort —
-            // only closed set participates in v10.
-            if !unknown.iter().any(|k| k == name) {
-                unknown.push(format!("provider:{name}"));
-            }
+        if ProviderId::parse_word(name).is_none() && !unknown.iter().any(|k| k == name) {
+            unknown.push(format!("provider:{name}"));
         }
     }
 
@@ -486,9 +431,6 @@ fn migrate_v9_settings(raw: &[u8]) -> Result<(Settings, Vec<String>, bool), Migr
         .filter_map(|s| ProviderId::parse_word(s))
         .collect();
 
-    // `enabled_list` stands in the full catalog when the key is absent so that
-    // ordering and validation still see every ID. Enablement needs the finer
-    // distinction, which only the raw document carries.
     let choice = match waybar {
         None => V9Choice::NoV9Block,
         Some(w) => match w.get("providers").and_then(|v| v.as_array()) {
@@ -497,7 +439,6 @@ fn migrate_v9_settings(raw: &[u8]) -> Result<(Settings, Vec<String>, bool), Migr
         },
     };
 
-    // Build order: first closed IDs from providerOrder, then remaining ALL.
     let mut providers = Vec::new();
     let mut seen: HashSet<ProviderId> = HashSet::new();
     for name in &order_list {
@@ -519,9 +460,6 @@ fn migrate_v9_settings(raw: &[u8]) -> Result<(Settings, Vec<String>, bool), Migr
         }
     }
 
-    // Nothing survived the mapping: the document named zero providers, or only
-    // names this catalog no longer knows. Fall back to the fresh-install
-    // defaults rather than handing the user an empty bar.
     if providers.iter().all(|p| !p.enabled) {
         for p in &mut providers {
             p.enabled = default_enabled(p.id.0);
@@ -546,9 +484,6 @@ fn migrate_v9_settings(raw: &[u8]) -> Result<(Settings, Vec<String>, bool), Migr
     Ok((settings, unknown, false))
 }
 
-/// Remove only Agent Bar-owned inline keys from shell.json entries with our plugin id.
-/// Preserves section, index, formatting-insensitive structure via serde re-serialize
-/// only when a key is stripped; callers keep `shell_before` for exact rollback.
 fn strip_agent_bar_inline_keys(raw: &[u8]) -> Result<Vec<u8>, MigrationError> {
     let mut value: Value = serde_json::from_slice(raw)
         .map_err(|e| MigrationError::msg(format!("invalid shell.json: {e}")))?;
@@ -557,7 +492,6 @@ fn strip_agent_bar_inline_keys(raw: &[u8]) -> Result<Vec<u8>, MigrationError> {
     if !changed {
         return Ok(raw.to_vec());
     }
-    // Stable pretty JSON with trailing newline for readability in tests.
     let mut out = serde_json::to_vec_pretty(&value)
         .map_err(|e| MigrationError::msg(format!("serialize shell.json: {e}")))?;
     if !out.ends_with(b"\n") {
@@ -574,7 +508,6 @@ fn strip_inline_in_value(value: &mut Value, changed: &mut bool) {
             }
         }
         Value::Object(map) => {
-            // Plugin entry objects: { "id": "agent-bar.usage", ...inline }
             let is_entry = map
                 .get("id")
                 .and_then(|v| v.as_str())
@@ -729,10 +662,8 @@ mod tests {
         assert_eq!(plan.settings.refresh_interval_seconds, 120);
         assert_eq!(plan.settings.display.metric, DisplayMetric::Used);
         assert!(!plan.settings.notifications.enabled);
-        // order: codex first
         assert_eq!(plan.settings.providers[0].id.0, ProviderId::Codex);
         assert!(plan.settings.providers[0].enabled);
-        // claude disabled
         let claude = plan
             .settings
             .providers
@@ -744,9 +675,6 @@ mod tests {
 
     #[test]
     fn v9_provider_choice_outranks_the_v10_default() {
-        // MIG-009 / PROD-024: the v9 `waybar.providers` list IS the user's
-        // explicit choice. A provider that ships opt-in in v10 must still come
-        // across enabled when the v9 document asked for it.
         let raw = read_fixture("settings-valid.json");
         let plan = MigrationPlan::from_v9(Some(&raw), None).unwrap();
         for id in [ProviderId::Codex, ProviderId::Amp, ProviderId::Grok] {
@@ -769,11 +697,6 @@ mod tests {
 
     #[test]
     fn a_v9_block_without_a_provider_list_keeps_every_v9_provider() {
-        // v9 rendered all four providers unless the user opted out through
-        // `waybar.providers`. A document that never wrote the key was showing
-        // all four, so migration must not read the absent key as consent to
-        // the v10 opt-in defaults (MIG-009, PROD-024) — the plan is written to
-        // disk, which would make the loss permanent.
         for raw in [
             br#"{"version":3,"waybar":{"displayMode":"remaining","interval":60}}"#.as_slice(),
             br#"{"version":3,"waybar":{"providerOrder":["grok","claude"],"interval":60}}"#
@@ -804,8 +727,6 @@ mod tests {
 
     #[test]
     fn an_empty_v9_provider_list_falls_back_to_the_defaults() {
-        // Naming zero providers leaves nothing to preserve. Rather than an
-        // empty bar, the user gets what a fresh install would give them.
         let raw = br#"{"version":3,"waybar":{"providers":[],"interval":60}}"#;
         let plan = MigrationPlan::from_v9(Some(raw), None).unwrap();
         for row in &plan.settings.providers {
@@ -852,9 +773,6 @@ mod tests {
 
     #[test]
     fn v10_document_missing_a_provider_is_repaired_once() {
-        // A v10 file written before Antigravity joined the catalog: the first
-        // plan must rewrite it (injecting the provider disabled), the second
-        // must be a no-op.
         let dir = tempfile::tempdir().unwrap();
         let settings_path = dir.path().join("settings.json");
         let shell_path = dir.path().join("shell.json");
@@ -892,13 +810,6 @@ mod tests {
 
     #[test]
     fn injected_rows_follow_default_enabled() {
-        // The injected row must be whatever `default_enabled` says, not a
-        // hard-coded false: the catalog is the single source for that. Today
-        // both spellings agree, since antigravity is the only injectable row
-        // and its default is false; the assertion starts biting when a
-        // provider that ships enabled joins the catalog. The four rows the
-        // document already carries are the user's and survive untouched, even
-        // where the fresh-install default now differs.
         let four = br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":true},{"id":"grok","enabled":true}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true}}"#;
         let plan = MigrationPlan::from_v9(Some(four), None).unwrap();
         for id in V9_PROVIDERS {
@@ -921,10 +832,6 @@ mod tests {
 
     #[test]
     fn a_truncated_providers_array_is_not_treated_as_a_v10_document() {
-        // An empty or truncated `providers` array is not "v10 minus the
-        // providers added later" — completing it from the catalog would turn
-        // the whole set off. These take the v9 path, which enables everything
-        // `default_enabled` allows.
         for raw in [
             br#"{"schemaVersion":1,"providers":[],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true}}"#.as_slice(),
             br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true}}"#.as_slice(),
@@ -953,19 +860,15 @@ mod tests {
         let shell = read_fixture("shell-left-index1.json");
         let plan = MigrationPlan::from_v9(None, Some(&shell)).unwrap();
         assert!(plan.shell_changed);
-        // MIG-010: inline 90 stored into settings before strip
         assert_eq!(plan.settings.refresh_interval_seconds, 90);
         let after = plan.shell_after.as_ref().unwrap();
         assert!(remaining_inline_keys(after).unwrap().is_empty());
         let value: Value = serde_json::from_slice(after).unwrap();
-        // Still present once
         assert_eq!(count_plugin_entries(&value), 1);
-        // Section left still has three entries; agent-bar at index 1
         let left = value["bar"]["left"].as_array().unwrap();
         assert_eq!(left.len(), 3);
         assert_eq!(left[1]["id"], LEGACY_PLUGIN_ID);
         assert!(left[1].get("refreshIntervalSec").is_none());
-        // Unrelated plugins untouched
         assert_eq!(left[0]["id"], "omarchy.menu");
     }
 
@@ -981,8 +884,8 @@ mod tests {
 
     #[test]
     fn settings_interval_wins_over_inline() {
-        let settings = read_fixture("settings-valid.json"); // interval 120
-        let shell = read_fixture("shell-left-index1.json"); // inline 90
+        let settings = read_fixture("settings-valid.json");
+        let shell = read_fixture("shell-left-index1.json");
         let plan = MigrationPlan::from_v9(Some(&settings), Some(&shell)).unwrap();
         assert_eq!(plan.settings.refresh_interval_seconds, 120);
         assert!(plan.shell_changed);

@@ -2,7 +2,6 @@ import QtQuick
 import qs.Commons
 import qs.Ui
 
-// Modal confirmation overlay for update / uninstall (UX-043..047).
 Item {
   id: root
 
@@ -16,7 +15,6 @@ Item {
   property color foreground: Color.foreground
   property string fontFamily: Style.font.family
 
-  // Optional extra content slot (e.g. purge checkbox row).
   default property alias extraContent: extraCol.data
 
   signal canceled()
@@ -49,16 +47,13 @@ Item {
     radius: Style.cornerRadius
     color: Color.popups.background
     border.width: 1
-    // Destructive keeps its urgent-tinted border (UX-044: danger actions stay
-    // visually separated); a Style state token would erase that signal, so
-    // only the non-destructive branch moves to the shared token.
     border.color: root.destructive
         ? Util.alpha(Color.urgent, 0.55)
         : Style.normalBorderColor
 
     MouseArea {
       anchors.fill: parent
-      onClicked: {} // swallow
+      onClicked: {}
     }
 
     Column {

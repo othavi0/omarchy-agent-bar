@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Capture and verify the exact CP2/CP4 UI evidence inventory.
 set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
@@ -57,7 +56,6 @@ for name in "${REQUIRED[@]}"; do
   fi
 done
 
-# Reject unexpected PNGs
 shopt -s nullglob
 extras=()
 for path in "${EVIDENCE}"/*.png; do
@@ -82,7 +80,6 @@ if [[ "${missing}" -ne 0 ]]; then
   exit 1
 fi
 
-# Sorted SHA256SUMS of the exact inventory
 (
   cd "${EVIDENCE}"
   # shellcheck disable=SC2086

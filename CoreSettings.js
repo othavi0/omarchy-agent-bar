@@ -1,10 +1,5 @@
-// Settings state machine + draft mutations/validation.
 .pragma library
 .import "CoreService.js" as Kernel
-
-// ---------------------------------------------------------------------------
-// Settings state machine (SET-014..): closed → loading → clean → dirty → saving
-// ---------------------------------------------------------------------------
 
 function settingsClosed() {
   return {
@@ -17,7 +12,6 @@ function settingsClosed() {
   }
 }
 
-// Begin load on open — controls locked until config show completes (SET-014/015).
 function settingsBeginLoad(generation) {
   return {
     phase: "loading",
@@ -29,7 +23,6 @@ function settingsBeginLoad(generation) {
   }
 }
 
-// Successful config show → clean draft/snapshot. Generation must match.
 function settingsFinishLoad(state, generation, doc) {
   if (!state || state.generation !== generation)
     return state
@@ -48,10 +41,6 @@ function settingsFinishLoad(state, generation, doc) {
   }
 }
 
-// Legacy alias used by older harnesses: open directly into clean with a doc.
-// SET-026: a failed dialog load is a visible terminal state, not an endless
-// locked "Loading". Generation must match so a stale read never flips a
-// newer load.
 function settingsFailLoad(state, generation) {
   if (!state || state.generation !== generation)
     return state
@@ -106,7 +95,6 @@ function settingsMarkDirty(state) {
   return next
 }
 
-// SET-016/018: save receives a new generation; payload is immutable capture.
 function settingsBeginSave(state, generation, payload) {
   if (!state || state.phase === "closed" || state.phase === "loading" || state.phase === "load_failed")
     return state
@@ -120,7 +108,6 @@ function settingsBeginSave(state, generation, payload) {
   return next
 }
 
-// Apply only when generation matches and a save is in flight (SET-017 / SET-021).
 function settingsFinishSave(state, generation, ok, canonical) {
   if (!state || state.generation !== generation)
     return state
@@ -153,7 +140,6 @@ function settingsCancel(state) {
   return next
 }
 
-// SET-022: restore defaults mutates draft only.
 function settingsRestoreDefaults(state) {
   if (!state || state.phase === "closed" || state.phase === "loading"
       || state.phase === "load_failed" || state.phase === "saving")
@@ -164,16 +150,11 @@ function settingsRestoreDefaults(state) {
   return next
 }
 
-// Keep settings machine across popup hide while load/save in flight (SET-019/020).
 function settingsShouldRetainOnClose(state) {
   if (!state)
     return false
   return state.phase === "loading" || state.phase === "saving" || !!state.busy
 }
-
-// ---------------------------------------------------------------------------
-// Settings draft mutations + validation
-// ---------------------------------------------------------------------------
 
 function cloneDraft(draft) {
   return JSON.parse(JSON.stringify(draft || Kernel.defaultSettings()))
@@ -274,17 +255,11 @@ function validateSettingsDraft(draft) {
   if (!isFinite(reminder) || reminder !== Math.floor(reminder)
       || reminder < 15 || reminder > 1440)
     return { ok: false, reason: "notifications.reminderMinutes" }
-  // Optional: a helper older than the block omits it (SET-025 skew).
   if (draft.updates !== undefined
       && (!draft.updates || typeof draft.updates.automatic !== "boolean"))
     return { ok: false, reason: "updates.automatic" }
   if (!Array.isArray(draft.providers))
     return { ok: false, reason: "providers length" }
-  // SET-025: every provider this QML knows must be present exactly once. A
-  // row with an id it does not know is tolerated and kept opaque: a helper
-  // newer than the loaded QML (the direction every update produces until
-  // the shell restarts) lists providers the QML has not heard of, and the
-  // row must round-trip to config apply untouched.
   var seen = {}
   for (var i = 0; i < draft.providers.length; i++) {
     var p = draft.providers[i]
@@ -303,11 +278,6 @@ function validateSettingsDraft(draft) {
   return { ok: true, reason: null }
 }
 
-// Startup bootstrap (SET-023): decide what appliedSettings becomes after the
-// boot-time `config show`. A dialog read/save that finished first is newer
-// than the boot read and wins; any failure keeps in-memory defaults (SET-008)
-// and never touches the dialog state machine (SET-014..022 own their own
-// snapshot and generations).
 function settingsBootstrapResult(currentApplied, stdout, exitCode) {
   if (currentApplied)
     return currentApplied
@@ -330,7 +300,6 @@ function settingsCanSave(state, draft) {
     return false
   if (state.busy || state.phase === "saving" || state.phase === "loading")
     return false
-  // Allow save from dirty only (or clean if user re-saves — disable when clean)
   if (state.phase !== "dirty")
     return false
   return validateSettingsDraft(draft).ok

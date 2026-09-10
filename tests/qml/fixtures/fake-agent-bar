@@ -1,12 +1,10 @@
 #!/usr/bin/env bash
-# Test-only private helper. Mimics agent-bar version (and optional slow status).
 set -euo pipefail
 
 cmd="${1:-}"
 
 case "$cmd" in
   version)
-    # Exact package-style semver + newline; no stderr.
     printf '%s\n' "${FAKE_AGENT_BAR_VERSION:-10.0.0}"
     exit 0
     ;;

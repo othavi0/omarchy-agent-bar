@@ -1,4 +1,3 @@
-// Envelope + consts, IPC/probe, pending, lanes, popup ownership.
 .pragma library
 
 var CLOSED_PROVIDERS = {
@@ -25,11 +24,6 @@ var PROVIDER_STATES = {
   "provider_error": true
 }
 
-// ---------------------------------------------------------------------------
-// Plugin tree
-// ---------------------------------------------------------------------------
-
-// Filesystem path of a file:// directory URL (Qt.resolvedUrl(".")); "" otherwise.
 function pluginRootFromUrl(url) {
   var text = String(url || "")
   if (text.indexOf("file://") !== 0)
@@ -39,10 +33,6 @@ function pluginRootFromUrl(url) {
     path = path.slice(0, -1)
   return path
 }
-
-// ---------------------------------------------------------------------------
-// Version / health / IPC refresh
-// ---------------------------------------------------------------------------
 
 function health(versionReady, versionFailed, helperVersion, manifestVersion, expectedVersion, runtimeHealthValue) {
   if (runtimeHealthValue === "stalled")
@@ -135,10 +125,6 @@ function parseVersionStdout(stdout, stderr, exitCode) {
   return m ? m[1] : null
 }
 
-// ---------------------------------------------------------------------------
-// Pending forced targets (CACHE-012): set of provider IDs or all
-// ---------------------------------------------------------------------------
-
 function emptyPending() {
   return { all: false, ids: {} }
 }
@@ -165,7 +151,6 @@ function pendingIsEmpty(pending) {
   return true
 }
 
-// Union request into pending. forceAll dominates. Returns new pending object.
 function unionForced(pending, providerIdOrAll) {
   var next = clonePending(pending)
   if (providerIdOrAll === "all" || providerIdOrAll === true) {
@@ -182,7 +167,6 @@ function unionForced(pending, providerIdOrAll) {
   return next
 }
 
-// Capture and clear pending for a follow-up run.
 function takePending(pending) {
   return {
     captured: clonePending(pending),
@@ -190,9 +174,6 @@ function takePending(pending) {
   }
 }
 
-// Build helper argv for status.
-// force / all → cache bypass; otherwise cache use.
-// notifications always evaluate for the shared service.
 function statusArgv(helperPath, forceOrTargets) {
   var cacheMode = "use"
   if (forceOrTargets === true || forceOrTargets === "all")
@@ -212,7 +193,6 @@ function statusArgv(helperPath, forceOrTargets) {
     "cache", cacheMode,
     "notifications", "evaluate"
   ]
-  // Single-provider force: include provider clause.
   if (forceOrTargets && forceOrTargets.ids && !forceOrTargets.all) {
     var only = null
     var count = 0
@@ -227,10 +207,6 @@ function statusArgv(helperPath, forceOrTargets) {
   }
   return argv
 }
-
-// ---------------------------------------------------------------------------
-// Status envelope validation (before snapshot replace)
-// ---------------------------------------------------------------------------
 
 function isFinitePercent(n) {
   return typeof n === "number" && isFinite(n) && n >= 0 && n <= 100
@@ -252,15 +228,13 @@ function validateProvider(p) {
     if (!isFinitePercent(w.usedPercent) || !isFinitePercent(w.remainingPercent))
       return "invalid window percent"
     if (w.action && w.action.kind && !ACTION_KINDS[w.action.kind])
-      return "invalid window action" // windows shouldn't have action; provider does
+      return "invalid window action"
   }
   if (p.action && p.action.kind && !ACTION_KINDS[p.action.kind])
     return "invalid action kind"
   return null
 }
 
-// Returns { ok: true, envelope } or { ok: false, reason }
-// expectedHelperVersion: when non-empty, must match envelope.helperVersion
 function parseStatusEnvelope(stdout, expectedHelperVersion) {
   var text = String(stdout || "").trim()
   if (!text.length)
@@ -287,17 +261,10 @@ function parseStatusEnvelope(stdout, expectedHelperVersion) {
   return { ok: true, envelope: env }
 }
 
-// Stale-callback rule: accept only if generation still matches.
 function shouldApplyGeneration(activeGeneration, callbackGeneration) {
   return activeGeneration === callbackGeneration
 }
 
-// ---------------------------------------------------------------------------
-// Popup ownership
-// ---------------------------------------------------------------------------
-
-// owner: opaque id (monitor/widget instance). Returns new popup state object.
-// { owner, providerId, view }
 function requestPopup(current, owner, providerId, view) {
   var o = owner
   if (o === null || o === undefined)
@@ -309,7 +276,6 @@ function requestPopup(current, owner, providerId, view) {
   }
 }
 
-// Same-owner close only; cross-owner close is ignored.
 function closePopup(current, owner) {
   if (!current || current.owner === null || current.owner === undefined)
     return null
@@ -318,12 +284,10 @@ function closePopup(current, owner) {
   return null
 }
 
-// Outside-click / foreign-monitor dismiss: clear ownership unconditionally.
 function dismissPopup(_current) {
   return null
 }
 
-// True when this monitor/widget is not the popup owner but a popup is open.
 function foreignPopupOpen(popupOwner, selfOwner) {
   if (!popupOwner || popupOwner.owner === null || popupOwner.owner === undefined)
     return false
@@ -332,12 +296,10 @@ function foreignPopupOpen(popupOwner, selfOwner) {
   return popupOwner.owner !== selfOwner
 }
 
-// Cross-monitor transfer: new owner takes popup (requestPopup always transfers).
 function popupOwnerId(popup) {
   return popup ? popup.owner : null
 }
 
-// Popup open for this owner only (UX-021 / UX-022).
 function popupOpenForOwner(popupOwner, owner) {
   if (!popupOwner || owner === null || owner === undefined)
     return false
@@ -350,21 +312,10 @@ function popupView(popupOwner) {
   return String(popupOwner.view)
 }
 
-// ---------------------------------------------------------------------------
-// Lane guards: never start same-lane exec while running
-// ---------------------------------------------------------------------------
-
 function canStartLane(laneBusy) {
   return !laneBusy
 }
 
-// ---------------------------------------------------------------------------
-// Default settings (shared primitive: consumed by CoreSettings and QML)
-// ---------------------------------------------------------------------------
-
-// Poll timer interval from applied settings. The SET-005 range (30..3600) is
-// enforced by validation before anything reaches appliedSettings; null means
-// no settings applied yet and falls back to the 60 s default.
 function pollIntervalMs(settings) {
   if (settings && settings.refreshIntervalSeconds)
     return Number(settings.refreshIntervalSeconds) * 1000
@@ -388,9 +339,6 @@ function defaultSettings() {
   }
 }
 
-// Automatic updates are on unless the applied settings say otherwise. No
-// settings yet, or a document from a helper that predates the block, means
-// the product default.
 function automaticUpdatesEnabled(settings) {
   if (!settings || !settings.updates || typeof settings.updates.automatic !== "boolean")
     return true

@@ -1,5 +1,3 @@
-//! Status collection coordinator: cache, adapters, optional notifications.
-
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -21,7 +19,6 @@ use crate::status::schema::{
 };
 use crate::support::{Clock, FileSystem, RealFileSystem, SharedMaintenanceGate, SystemClock};
 
-/// Request for a status collection cycle (mirrors CLI status options).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CollectRequest {
     pub format: StatusFormat,
@@ -41,7 +38,6 @@ impl Default for CollectRequest {
     }
 }
 
-/// Dependencies for status collection.
 pub struct StatusCoordinator<C, F, P, H>
 where
     C: Clock,
@@ -62,7 +58,6 @@ where
 }
 
 impl StatusCoordinator<SystemClock, RealFileSystem, TokioProcessRunner, ReqwestHttpClient> {
-    /// Production constructor from XDG paths and process environment.
     pub fn production(gate: SharedMaintenanceGate) -> Result<Self, String> {
         let env = ExecutionEnvironment::from_process();
         let settings_store = SettingsStore::with_paths(
@@ -103,7 +98,6 @@ where
     P: ProcessRunner,
     H: HttpClient,
 {
-    /// Collect provider status into a validated envelope.
     pub async fn collect(
         &self,
         request: CollectRequest,
@@ -145,8 +139,6 @@ where
                     to_collect.push(*id);
                 }
                 CacheMode::Bypass => {
-                    // CACHE-010: accept a live generation only if it started at or
-                    // after this request, and the cache entry matches that generation.
                     if self.cache_coord.bypass_accepts(*id, requested_at) {
                         if let Some(entry) = cache_doc.get(*id) {
                             if entry.started_at >= requested_at {
@@ -173,7 +165,6 @@ where
             let completed = self.clock.now_utc();
             let ttl = descriptor_ttl(id);
             let entry = entry_from_status(status.clone(), started, completed, ttl);
-            // CACHE-019A: live collection must atomically update the cache.
             cache_doc = self
                 .cache_store
                 .merge_provider(id, entry, completed)
@@ -183,7 +174,6 @@ where
             statuses.push(status);
         }
 
-        // Order statuses by settings / request order.
         let mut ordered = Vec::new();
         for id in &targets {
             if let Some(status) = statuses.iter().find(|s| s.id() == *id) {
@@ -238,7 +228,6 @@ where
     }
 }
 
-/// If live result is a temporary failure and prior ready/stale data exists, retain as stale.
 fn apply_stale_retention(
     live: ProviderStatus,
     prior: Option<&ProviderStatus>,
@@ -414,8 +403,6 @@ mod tests {
         }
     }
 
-    /// HTTP seam that rejects every bearer token, the answer a real server
-    /// gives to an expired Grok access token.
     struct RejectingHttp;
     impl HttpClient for RejectingHttp {
         fn get(
@@ -513,10 +500,6 @@ mod tests {
 
     #[tokio::test]
     async fn collect_survives_a_settings_file_predating_a_catalog_addition() {
-        // A settings.json written before Antigravity joined the catalog must
-        // not break `status`: the store completes it from the catalog in
-        // memory, the newcomer stays disabled by default, and the file is left
-        // exactly as it was (SET-007).
         let dir = tempfile::tempdir().unwrap();
         let coord = coord_at(dir.path(), datetime!(2026-07-26 18:42:00 UTC));
         let four = br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":true},{"id":"grok","enabled":true}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true}}"#;
@@ -593,7 +576,6 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let now = datetime!(2026-08-25 11:50:31 UTC);
         let coord = coord_at(dir.path(), now);
-        // A failure row that would still be inside Claude's 300 s success TTL.
         let failed = fallback_provider_error(ProviderId::Claude, "Claude returned no limits.");
         let entry = entry_from_status(failed, now, now, std::time::Duration::from_secs(300));
         coord
@@ -611,10 +593,6 @@ mod tests {
             .await
             .unwrap();
         let row = &envelope.providers()[0];
-        // The primed cache row is ProviderError; coord_at has no Claude
-        // credentials file, so a live collection yields Unauthenticated
-        // instead. Only a real re-collection can produce this state — a
-        // served cache hit would keep ProviderError.
         assert_eq!(
             row.state(),
             ProviderState::Unauthenticated,
@@ -641,8 +619,6 @@ mod tests {
         assert!(doc.is_fresh(ProviderId::Claude, now));
         assert!(!doc.is_fresh(ProviderId::Claude, now + time::Duration::seconds(301)));
 
-        // A Stale row (retained prior windows after a temporary failure) must
-        // stay fresh too, exercising the ProviderState::Stale arm.
         let live = ProviderStatus::network_error(
             ProviderId::Claude,
             "Claude",
@@ -680,7 +656,6 @@ mod tests {
 
     #[tokio::test]
     async fn retryable_auth_failure_retains_prior_ready_as_stale() {
-        // Expired-token style failure (retryable) keeps last good windows.
         let now = datetime!(2026-07-28 18:42:00 UTC);
         let prior = ready_claude(now);
         let live = ProviderStatus::unauthenticated(
@@ -696,19 +671,13 @@ mod tests {
         assert!(out.error().is_some_and(|e| e.retryable));
     }
 
-    /// End to end through the real Grok adapter: an expired `auth.json` with
-    /// no `grok` executable to refresh it keeps the cached reading as stale
-    /// (CACHE-024) instead of overwriting it with `unauthenticated`.
     #[tokio::test]
     async fn expired_grok_token_keeps_cached_reading_as_stale() {
         let dir = tempfile::tempdir().unwrap();
         let now = datetime!(2026-09-04 06:00:00 UTC);
-        // Without the local expiry check the adapter would send the expired
-        // token, get 401, and report a non-retryable rejection.
         let coord = coord_with_http(dir.path(), now, RejectingHttp);
         coord.fs.files.lock().unwrap().insert(
             dir.path().join("home").join(".grok").join("auth.json"),
-            // Synthetic key — not a real credential.
             br#"{"https://auth.x.ai::client":{"key":"SYNTH_GROK_KEY_NOT_REAL","first_name":"Ada","expires_at":"2026-09-04T05:39:31.448014581Z","auth_mode":"oidc"}}"#
                 .to_vec(),
         );
@@ -776,7 +745,6 @@ mod tests {
         let t2 = datetime!(2026-07-26 18:00:02 UTC);
         let coord = coord_at(dir.path(), t2);
 
-        // Generation started before a hypothetical request at t1 must not satisfy it.
         let rev = coord.cache_coord.start_generation(ProviderId::Amp, t0);
         let status = ProviderStatus::ready(
             ProviderId::Amp,
@@ -796,7 +764,6 @@ mod tests {
         coord.cache_coord.complete_generation(rev, t0);
         assert!(!coord.cache_coord.bypass_accepts(ProviderId::Amp, t1));
 
-        // Generation started at t1 satisfies request at t1.
         let rev2 = coord.cache_coord.start_generation(ProviderId::Amp, t1);
         let status2 = ProviderStatus::ready(
             ProviderId::Amp,
@@ -816,7 +783,6 @@ mod tests {
         coord.cache_coord.complete_generation(rev2, t2);
         assert!(coord.cache_coord.bypass_accepts(ProviderId::Amp, t1));
 
-        // Coordinator bypass path should serve without recollecting when generation qualifies.
         let envelope = coord
             .collect(CollectRequest {
                 format: StatusFormat::Json,
@@ -826,8 +792,6 @@ mod tests {
             })
             .await
             .unwrap();
-        // Requested_at is coord clock t2; generation started at t1 < t2 so bypass must recollect.
-        // Recollect with NoopProcess yields non-ready Amp; just assert one row.
         assert_eq!(envelope.providers().len(), 1);
     }
 
@@ -854,7 +818,6 @@ mod tests {
     async fn bypass_serves_qualifying_generation_without_recollect() {
         let dir = tempfile::tempdir().unwrap();
         let t1 = datetime!(2026-07-26 18:00:01 UTC);
-        // Clock stays at t1 so requested_at == generation start.
         let coord = coord_at(dir.path(), t1);
         let rev = coord.cache_coord.start_generation(ProviderId::Amp, t1);
         let status = ProviderStatus::ready(

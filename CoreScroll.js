@@ -1,4 +1,3 @@
-// A11y / scroll: focus, viewport math, keyboard routing.
 .pragma library
 
 function focusNextIndex(current, direction, count) {
@@ -20,13 +19,10 @@ function maxContentY(contentHeight, viewportHeight) {
   return Math.max(0, ch - vh)
 }
 
-// A11Y short-content: Flickable must not accept wheel/drag when no overflow.
 function flickableInteractive(contentHeight, viewportHeight) {
   return maxContentY(contentHeight, viewportHeight) > 0
 }
 
-// Card height from real body (not a large empty floor). minCompact is a
-// small floor for header+one row; maxCap is maxContentHeight.
 function fittedPopupContentHeight(bodyHeight, minCompact, maxCap) {
   var body = Number(bodyHeight)
   var minH = Number(minCompact)
@@ -50,7 +46,6 @@ function clampContentY(y, contentHeight, viewportHeight) {
   return n
 }
 
-// A11Y-023: PageUp/PageDown move by one viewport minus one content line.
 function pageScrollDelta(viewportHeight, lineHeight) {
   var line = Math.max(1, Number(lineHeight) || 1)
   var view = Math.max(line, Number(viewportHeight) || line)
@@ -71,7 +66,6 @@ function scrollEndY(contentHeight, viewportHeight) {
   return maxContentY(contentHeight, viewportHeight)
 }
 
-// Panel shortcuts suspended while a native editor owns focus (A11Y-008).
 function panelShortcutsBlocked(editorActive) {
   return !!editorActive
 }
@@ -111,8 +105,6 @@ function routeProviderDelta(providerIds, selectedId, delta) {
   return ids[next]
 }
 
-// Map item geometry into flickable content and return a contentY that fully
-// reveals the item when possible (A11Y-011).
 function contentYForItem(contentY, viewportHeight, contentHeight, itemY, itemHeight) {
   var y = Number(itemY)
   var h = Math.max(0, Number(itemHeight))

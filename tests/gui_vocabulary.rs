@@ -1,26 +1,11 @@
-//! Copy design §4 rule 2: GUI strings name what the user sees, not what the
-//! code calls it. Twenty-one strings leaked internal vocabulary before the
-//! rewrite; this test is what stops the twenty-second.
-//!
-//! Scope is the GUI only. The CLI is deliberately exempt (§7): its stderr is
-//! read while debugging and Unix convention there is different.
-
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// Copy design §4 rule 2's list, complete. `provider` is deliberately absent
-/// — decision 3 keeps it on screen. `bundle` is the one that was actually
-/// leaking: six GUI strings carried it until the maintenance rewrite.
 const BANNED: &[&str] = &[
     "adapter", "schema", "payload", "envelope", "bundle", "collect", "clause", "snapshot",
 ];
 
-/// The GUI tree now lives at the plugin root: top-level `*.qml`/`*.js` files
-/// plus everything under `components/`. Unlike the old `assets/omarchy`
-/// subtree, the repo root also holds Rust sources, docs, and build output,
-/// so the walk only descends into `components/` from the top level — it
-/// must not wander into `src/`, `target/`, `.git/`, or similar.
 fn gui_files(root: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
     let mut stack = vec![root.to_path_buf()];
@@ -50,14 +35,6 @@ fn gui_files(root: &Path) -> Vec<PathBuf> {
     out
 }
 
-/// Double-quoted string literals, minus comment lines. Every quoted piece
-/// is scanned, including single-token ids, enum values, and glyphs — there
-/// is no length or shape filter. What keeps identifiers like
-/// `schemaVersion` from tripping the guard is exact whole-token matching
-/// against `BANNED`, not a filter on the literal here. Plural forms
-/// (`bundles`) are a known gap: prefix matching would close it, but at the
-/// cost of a false positive on `schemaVersion`, a legitimate JSON field
-/// name in diagnostic strings in `CoreService.js` and `CoreSettings.js`.
 fn user_facing_literals(source: &str) -> Vec<String> {
     let mut out = Vec::new();
     for line in source.lines() {

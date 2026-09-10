@@ -1,9 +1,3 @@
-//! Structural JSON Schema contracts for status v2 and settings v1.
-//!
-//! Cross-field semantic checks (percentage sum, unique IDs, helper version
-//! equality, request ordering) belong to Task 3 and are intentionally out of
-//! scope here.
-
 use std::fs;
 use std::path::{Path, PathBuf};
 

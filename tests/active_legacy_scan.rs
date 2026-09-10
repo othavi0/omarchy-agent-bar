@@ -1,8 +1,4 @@
-//! Active legacy gate (TEST-030 / TEST-031 / TEST-034).
-//!
-//! Closed behavioral set and path inventory from
-//! `docs/specs/v10/07-testing-and-acceptance.md`; the locked deletion map
-//! below is the executable record of the v10 legacy removal.
+//! TEST-030 / TEST-031 / TEST-034
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -12,7 +8,6 @@ fn workspace_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
-/// Locked deletion inventory — every path must be absent after Task 19.
 const LOCKED_DELETION_PATHS: &[&str] = &[
     "src/action_right.rs",
     "src/tui",
@@ -61,7 +56,6 @@ const LOCKED_DELETION_PATHS: &[&str] = &[
     "install.sh",
 ];
 
-/// Forbidden tokens from the closed behavioral set (exact substring match).
 const FORBIDDEN_TOKENS: &[&str] = &[
     "src/tui",
     "src/usage",
@@ -118,14 +112,8 @@ const FORBIDDEN_TOKENS: &[&str] = &[
     "RELEASES_API_URL",
 ];
 
-/// Relative prefixes excluded from content scans (TEST-031 historical cuts).
+/// TEST-031
 fn is_historical_cut(rel: &str) -> bool {
-    // Dated, frozen release-note snapshots describe what a past,
-    // already-published version actually shipped (e.g. `docs/releases/10.0.0.md`
-    // naming that release's real `.tar.zst` asset). Same rationale as the
-    // ADR/CHANGELOG historical-slice exclusions below: never rewritten.
-    // `docs/releases/README.md` is the live index for the current pipeline
-    // (Task 8), not a dated cut, so it is deliberately NOT covered here.
     if rel.starts_with("docs/releases/") && rel != "docs/releases/README.md" {
         return true;
     }
@@ -138,7 +126,6 @@ fn is_historical_cut(rel: &str) -> bool {
     false
 }
 
-/// Fixture / contract paths allowed to mention otherwise-forbidden tokens.
 fn is_allowlisted_path(rel: &str) -> bool {
     if rel.starts_with("tests/fixtures/migration/") {
         return true;
@@ -154,7 +141,6 @@ fn is_allowlisted_path(rel: &str) -> bool {
     )
 }
 
-/// Active documentation may state negative-removal policy; only those lines pass.
 fn is_negative_removal_line(line: &str) -> bool {
     let lower = line.to_ascii_lowercase();
     lower.contains("removed")
@@ -197,11 +183,8 @@ fn collect_active_files(root: &Path) -> Vec<PathBuf> {
         for entry in entries.flatten() {
             let path = entry.path();
             let name = entry.file_name().to_string_lossy().into_owned();
-            if name.starts_with('.') && name != ".github" {
-                // Still walk .github; skip other dot dirs.
-                if path.is_dir() && name != ".github" {
-                    continue;
-                }
+            if name.starts_with('.') && name != ".github" && path.is_dir() {
+                continue;
             }
             if path.is_dir() {
                 if skip_dir_name(&name) {
@@ -239,7 +222,6 @@ fn is_scannable_file(rel: &str) -> bool {
     {
         return false;
     }
-    // Always scan sources, tests, docs, manifests, workflows, packaging, scripts.
     rel.starts_with("src/")
         || rel.starts_with("tests/")
         || rel.starts_with("assets/")
@@ -262,7 +244,6 @@ fn is_scannable_file(rel: &str) -> bool {
         )
 }
 
-/// CHANGELOG: only Unreleased is active; release sections 9.0.0 and older are cuts.
 fn changelog_active_slice(content: &str) -> String {
     let mut active = String::new();
     let mut in_unreleased = false;
@@ -273,18 +254,16 @@ fn changelog_active_slice(content: &str) -> String {
             active.push('\n');
             continue;
         }
-        if line.starts_with("## [") || (line.starts_with("## ") && !line.starts_with("###")) {
-            // Leaving Unreleased into a version section ends the active region.
-            if in_unreleased {
-                break;
-            }
+        if in_unreleased
+            && (line.starts_with("## [") || (line.starts_with("## ") && !line.starts_with("###")))
+        {
+            break;
         }
         if in_unreleased {
             active.push_str(line);
             active.push('\n');
         }
     }
-    // If no Unreleased header, treat whole file as active (fail closed for Task 20).
     if active.is_empty() {
         content.to_owned()
     } else {
@@ -303,7 +282,6 @@ fn scan_content_for_tokens(rel: &str, content: &str, violations: &mut Vec<String
         content.to_owned()
     };
 
-    // Self-scan of this gate file documents the forbidden set; skip token hits here.
     if rel == "tests/active_legacy_scan.rs" {
         return;
     }
@@ -320,7 +298,6 @@ fn scan_content_for_tokens(rel: &str, content: &str, violations: &mut Vec<String
                     | "CHANGELOG.md"
             ));
 
-    // Specs under docs/specs/v10 describe the removal contract; allow tokens there.
     if rel.starts_with("docs/specs/v10/") {
         return;
     }
@@ -345,7 +322,7 @@ fn scan_content_for_tokens(rel: &str, content: &str, violations: &mut Vec<String
     }
 }
 
-/// Direct Cargo dependencies and their required v10 owners (TEST-034).
+/// TEST-034
 fn required_dependency_owners() -> BTreeMap<&'static str, &'static str> {
     BTreeMap::from([
         ("serde", "status/settings/cache/plugin JSON contracts"),
@@ -369,7 +346,6 @@ fn required_dependency_owners() -> BTreeMap<&'static str, &'static str> {
     ])
 }
 
-/// Parse direct dependency names declared under a single `[section]` header.
 fn parse_direct_deps_of_section(cargo_toml: &str, wanted_section: &str) -> BTreeSet<String> {
     let mut deps = BTreeSet::new();
     let mut section = "";
@@ -404,7 +380,6 @@ fn parse_direct_deps(cargo_toml: &str) -> BTreeSet<String> {
     deps
 }
 
-/// Recursively collect `.rs` files under `root/rel_dir`.
 fn walkdir_rs_files(root: &Path, rel_dir: &str) -> Vec<PathBuf> {
     let mut out = Vec::new();
     let mut stack = vec![root.join(rel_dir)];
@@ -524,10 +499,7 @@ fn active_legacy_scan_cargo_and_install_contract() {
     );
 }
 
-/// TEST-034 hardening: a documented owner is not proof of real use — every
-/// `[dependencies]` entry must actually appear (as a Rust identifier) in src/.
-/// `[dev-dependencies]` are intentionally excluded: they are expected to be
-/// referenced only from tests/.
+/// TEST-034
 #[test]
 fn dependencies_are_actually_used_in_src() {
     let root = workspace_root();

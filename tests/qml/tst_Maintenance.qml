@@ -24,8 +24,6 @@ TestCase {
     return String(xhr.responseText || "")
   }
 
-  // ---- Login argv ----
-
   function test_login_detached_argv() {
     var argv = Core.loginDetachedArgv("/home/u/.config/omarchy/plugins/othavi0.agent-bar", "claude")
     compare(argv.length, 3)
@@ -53,8 +51,6 @@ TestCase {
     compare(argv[6], "amp")
   }
 
-  // ---- Update / uninstall argv + confirmation ----
-
   function test_update_and_uninstall_argv() {
     var check = Core.updateCheckArgv("/bin/agent-bar")
     compare(check.join(" "), "/bin/agent-bar update check")
@@ -74,11 +70,6 @@ TestCase {
     compare(purge.purgeSettingsAndBackups, true)
   }
 
-  // The check payloads are the shared fixtures pinned byte-exactly to the
-  // Rust serializer by tests/update_check_parity.rs. Never inline a payload
-  // here: the previous inline documents used a key set the helper never
-  // emitted, and the suite stayed green while the product said
-  // "Update check failed." on every successful check.
   function checkFixture(name) {
     return read("tests/fixtures/update-check/" + name)
   }
@@ -94,7 +85,6 @@ TestCase {
   }
 
   function test_update_check_up_to_date() {
-    // A stale target from an earlier check must not survive the new answer.
     var ui = Core.maintenanceUiIdle("")
     ui.targetVersion = "10.4.0"
     ui.releaseNotesUrl = "https://github.com/othavi0/omarchy-agent-bar/releases/tag/v10.4.0"
@@ -103,15 +93,10 @@ TestCase {
     compare(ui.installedVersion, "10.4.0")
     compare(ui.targetVersion, "")
     compare(ui.releaseNotesUrl, "")
-    // latestCompatible is null when no release fits this target/contract;
-    // there is still nothing to offer, so the UI answer is the same.
     var none = Core.maintenanceUiFromCheck(Core.maintenanceUiIdle("10.3.1"), checkFixture("no-compatible.json"), 0, "10.3.1")
     compare(none.phase, "up_to_date")
   }
 
-  // reinstallRequired short-circuits before the available/up-to-date branches
-  // even though this fixture's `available` is false — the git-less install
-  // sentinel takes priority over the ordinary "nothing to offer" answer.
   function test_update_check_reinstall_required() {
     var ui = Core.maintenanceUiIdle("10.3.1")
     ui.targetVersion = "10.4.0"
@@ -124,8 +109,6 @@ TestCase {
     verify(ui.message.indexOf("omarchy plugin add https://github.com/othavi0/omarchy-agent-bar.git") >= 0)
   }
 
-  // BUNDLE-021: a successful check always writes exactly the JSON document,
-  // so exit 0 with anything else is a failed check, not an implied answer.
   function test_update_check_rejects_unusable_stdout() {
     compare(Core.maintenanceUiFromCheck(Core.maintenanceUiIdle("1.0.0"), "", 1, "1.0.0").phase, "error")
     compare(Core.maintenanceUiFromCheck(Core.maintenanceUiIdle("1.0.0"), "", 0, "1.0.0").phase, "error")
@@ -140,7 +123,6 @@ TestCase {
     var msg = Core.updateConfirmMessage(ui)
     compare(msg, "Updates 10.0.0 → 10.2.0. Settings stay. "
         + "Fast-forwards to the latest release; a failed validation rolls back.")
-    // §5.6 shortened it; the old sentence must not come back.
     verify(msg.indexOf("This replaces the plugin bundle") < 0)
     verify(msg.indexOf("Rolls back if it fails") < 0)
   }
@@ -150,8 +132,6 @@ TestCase {
     verify(src.indexOf("Update check returned an unusable response.") < 0)
     var first = src.indexOf("Update check failed.")
     verify(first >= 0)
-    // One failure exit, one string: a second occurrence means a second
-    // failure branch grew its own copy.
     verify(src.indexOf("Update check failed.", first + 1) < 0,
            "every failure path must share the single string")
   }
@@ -177,10 +157,6 @@ TestCase {
     compare(ui.uninstallArmed, false)
   }
 
-  // The dialog binds its own message from uninstallArmed/purgeSettings, and
-  // the only reader of ui.message sits behind the dialog's scrim, so this
-  // string was set and never seen. The second click is communicated by the
-  // confirm button flipping to "Uninstall now".
   function test_arming_sets_no_unseen_message() {
     var src = read("CoreMaintenance.js")
     verify(src.indexOf("Click Uninstall again") < 0)
@@ -200,8 +176,6 @@ TestCase {
     compare(un.purge, true)
     compare(un.payload.purgeSettingsAndBackups, true)
   }
-
-  // ---- Source contracts ----
 
   function test_service_login_uses_exec_detached() {
     var src = read("Service.qml")
@@ -254,12 +228,9 @@ TestCase {
     verify(src.indexOf("ConfirmDialog") >= 0)
     verify(src.indexOf("Release notes") >= 0)
     verify(src.indexOf("Text.RichText") < 0)
-    // §5.6: the package name is `agent-bar`; every surface says `Agent Bar`.
     verify(src.indexOf("Uninstall agent-bar") < 0)
-    // The installation-type row is gone — it only ever had one value.
     verify(src.indexOf("Installation type") < 0)
     verify(src.indexOf("Plugin bundle") < 0)
-    // Ceremony removed: no "Final confirmation:", no "Click Uninstall again."
     verify(src.indexOf("Final confirmation") < 0)
     verify(src.indexOf("Deletes Agent Bar, your settings and every backup.") >= 0)
     verify(src.indexOf("Deletes Agent Bar. Your settings stay.") >= 0)
@@ -268,7 +239,6 @@ TestCase {
 
   function test_install_type_is_gone_from_the_model() {
     var src = read("CoreMaintenance.js")
-    // Dead the moment the row was deleted; the contract forbids keeping it.
     verify(src.indexOf("installType") < 0)
   }
 
@@ -282,8 +252,6 @@ TestCase {
     var ok = { automatic: true, settingsLoaded: true, versionReady: true,
                blocked: false, checkBusy: false, popupOpen: false }
     compare(Core.automaticUpdateCheckAllowed(ok), true)
-    // settingsLoaded: a failed boot read must not turn an opt-out into an
-    // update (the default is "on", so unknown settings fail closed here).
     var keys = ["automatic", "settingsLoaded", "versionReady"]
     for (var i = 0; i < keys.length; i++) {
       var off = JSON.parse(JSON.stringify(ok))

@@ -26,8 +26,6 @@ TestCase {
     return String(xhr.responseText || "")
   }
 
-  // ---- Pure draft / validation ----
-
   function test_default_settings_valid() {
     var d = Service.defaultSettings()
     var v = Core.validateSettingsDraft(d)
@@ -35,9 +33,6 @@ TestCase {
   }
 
   function test_default_settings_enable_only_claude_and_codex() {
-    // SET-027: a first run shows only the two providers nearly every user has
-    // a CLI for. This table must stay identical to `default_enabled` on the
-    // Rust side, which tests/servicecore_contract.rs enforces.
     var expected = {
       claude: true,
       codex: true,
@@ -62,12 +57,11 @@ TestCase {
     compare(d.providers[1].id, "codex")
     compare(d.providers[1].enabled, false)
 
-    d = Core.moveProvider(d, "grok", -1) // amp, grok swap near end
-    // default: claude, codex, amp, grok, antigravity → move grok up → claude, codex, grok, amp, antigravity
+    d = Core.moveProvider(d, "grok", -1)
     compare(d.providers[2].id, "grok")
     compare(d.providers[3].id, "amp")
 
-    d = Core.moveProvider(d, "claude", -1) // already top — no-op
+    d = Core.moveProvider(d, "claude", -1)
     compare(d.providers[0].id, "claude")
   }
 
@@ -115,8 +109,6 @@ TestCase {
     compare(Service.automaticUpdatesEnabled(d), false)
     compare(Core.validateSettingsDraft(d).ok, true)
 
-    // A document from a helper that predates the block, or no settings at
-    // all yet, means the product default: automatic.
     var legacy = Service.defaultSettings()
     delete legacy.updates
     compare(Core.validateSettingsDraft(legacy).ok, true)
@@ -143,7 +135,6 @@ TestCase {
     state = Core.settingsRestoreDefaults(state)
     compare(state.phase, "dirty")
     compare(state.draft.providers[0].enabled, true)
-    // Snapshot untouched
     compare(state.snapshot.providers[0].enabled, true)
   }
 
@@ -174,10 +165,10 @@ TestCase {
 
   function test_invalid_save_disabled() {
     var state = Core.settingsOpen(null, Service.defaultSettings(), 3)
-    compare(Core.settingsCanSave(state, state.draft), false) // clean
+    compare(Core.settingsCanSave(state, state.draft), false)
     state = Core.settingsMarkDirty(state)
     state.draft = Core.setRefreshInterval(state.draft, 5)
-    compare(Core.settingsCanSave(state, state.draft), false) // invalid
+    compare(Core.settingsCanSave(state, state.draft), false)
     state.draft = Core.setRefreshInterval(state.draft, 60)
     compare(Core.settingsCanSave(state, state.draft), true)
   }
@@ -203,8 +194,6 @@ TestCase {
     compare(state.pendingPayload.display.metric, "used")
   }
 
-  // ---- Source / UI contracts ----
-
   function test_settings_view_source_contracts() {
     var src = read("SettingsView.qml")
     verify(src.indexOf("Restore defaults") >= 0)
@@ -215,7 +204,6 @@ TestCase {
     verify(src.indexOf("Remaining") >= 0)
     verify(src.indexOf("Used") >= 0)
     verify(src.indexOf("MaintenanceView") >= 0)
-    // SET-026: the failed-load copy is rendered by the view itself.
     verify(src.indexOf("Settings could not be loaded") >= 0)
     verify(src.indexOf("load_failed") >= 0)
     verify(src.indexOf('text: "Restart shell"') >= 0)
@@ -226,14 +214,11 @@ TestCase {
     verify(src.indexOf("return root.loadFailed ? [restartShellButton] : []") >= 0)
     verify(src.indexOf("Keys.onReturnPressed") < 0,
            "Settings must rely on the host Button key mapping")
-    // No credentials / money / theme / cache editor
     verify(src.indexOf("credential") < 0 || src.toLowerCase().indexOf("no credential") >= 0)
     verify(src.indexOf("password") < 0)
     verify(src.indexOf("apiKey") < 0)
     verify(!View.containsMoneyCopy(src))
     verify(src.indexOf("Text.RichText") < 0)
-    // Copy design §5.7. The old labels are banned by name so a revert fails
-    // here rather than silently shipping.
     verify(src.indexOf("Bar shows") >= 0)
     verify(src.indexOf("Chip number") < 0)
     verify(src.indexOf("Refresh every") >= 0)
@@ -293,7 +278,6 @@ TestCase {
     var writeAt = body.indexOf("write(")
     var closeAt = body.indexOf("stdinEnabled = false", writeAt)
     verify(closeAt > writeAt, "stdinEnabled=false must follow write for EOF")
-    // Re-arm before each start so consecutive saves keep a writable stdin.
     var kick = src.indexOf("function kickSettingsWrite")
     verify(kick >= 0)
     var kickEnd = src.indexOf("function applySettingsWriteResult", kick)
@@ -308,13 +292,6 @@ TestCase {
     verify(src.indexOf("SettingsView") >= 0)
     verify(src.indexOf("settingsStub") < 0)
   }
-
-  // ---- Startup bootstrap (SET-023) ----
-  // settings.json is the only product settings source (SET-001), yet the
-  // service used to read it only when the Settings popup opened: every shell
-  // restart rendered defaultSettings() while the disk held the user's
-  // choices. The payloads here are the schema-pinned fixtures in
-  // tests/fixtures/settings-v1/ — never inline a settings document.
 
   function test_bootstrap_applies_persisted_settings() {
     var stdout = read("tests/fixtures/settings-v1/valid-used-metric.json")
@@ -335,10 +312,6 @@ TestCase {
     compare(Core.settingsBootstrapResult(null, invalid, 0), null)
   }
 
-  // SET-025: a helper newer than the loaded QML may list a provider the
-  // QML does not know. That row must validate, survive in the draft, and
-  // round-trip to config apply untouched — otherwise every catalog addition
-  // wedges Settings in "Loading" until the shell is restarted.
   function test_unknown_provider_from_newer_helper_validates_and_round_trips() {
     var doc = Service.defaultSettings()
     doc.providers.push({ id: "future-provider", enabled: true })
@@ -367,8 +340,6 @@ TestCase {
     compare(Core.validateSettingsDraft(doc).reason, "missing provider")
   }
 
-  // SET-026: a failed dialog load is a visible terminal state, not an
-  // endless locked "Loading".
   function test_failed_load_is_visible_and_locked() {
     var state = Core.settingsBeginLoad(4)
     state = Core.settingsFailLoad(state, 4)
@@ -376,15 +347,12 @@ TestCase {
     compare(state.busy, false)
     compare(Core.settingsControlsLocked(state), true)
     compare(Core.settingsCanSave(state, state.draft), false)
-    // A stale generation never flips a newer load.
     var newer = Core.settingsBeginLoad(5)
     compare(Core.settingsFailLoad(newer, 4).phase, "loading")
-    // Cancel has no snapshot to fall back to and must not fabricate one.
     compare(Core.settingsCancel(state).phase, "load_failed")
   }
 
   function test_bootstrap_never_clobbers_dialog_result() {
-    // A dialog read/save that finished first is newer than the boot read.
     var winner = { schemaVersion: 1 }
     var stdout = read("tests/fixtures/settings-v1/valid-used-metric.json")
     compare(Core.settingsBootstrapResult(winner, stdout, 0), winner)

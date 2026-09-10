@@ -7,8 +7,6 @@ import "CoreView.js" as Core
 import "CoreService.js" as Service
 import "components"
 
-// Monitor-local provider chips. Resolves the shared service via shell.serviceFor.
-// Presentation only — Service owns I/O and polling (ARCH-023).
 BarWidget {
   id: root
   moduleName: "othavi0.agent-bar"
@@ -42,7 +40,6 @@ BarWidget {
     onTriggered: root.nowMs = Date.now()
   }
 
-  // Popup is open on another monitor → this instance hosts dismiss-only overlay.
   readonly property bool foreignDismissActive: Service.foreignPopupOpen(
     agentService ? agentService.popupOwner : null,
     root
@@ -119,8 +116,6 @@ BarWidget {
     }
   }
 
-  // Monitor-local popup; only the owning bar instance opens (UX-021/022).
-  // Direct child + property initializers (model-usage / media pattern).
   // Do not wrap in Loader+Component: under Quattro that path leaves
   // KeyboardPanel required anchorItem/bar unset (Loader Error, no panel).
   Popup {
@@ -130,10 +125,6 @@ BarWidget {
     agentService: root.agentService
   }
 
-  // Cross-monitor outside-click: KeyboardPanel only maps on the owner
-  // monitor. Non-owner bars host a transparent full-screen dismiss layer so
-  // a click on the other desktop always closes (design D1). Bar strip
-  // forwards to clickTargets so chips can still transfer (D2/D3).
   PanelWindow {
     id: foreignDismiss
     property var anchorWindow: root.QsWindow ? root.QsWindow.window : null

@@ -2,10 +2,6 @@ import QtQuick
 import qs.Commons
 import qs.Ui
 
-// Provider content header — name, plan tag, severity tag, refresh only
-// (Fase 2 slim-down). Connection state is implied structurally (UX-017);
-// last-success age appears in the pane's own age caption, not here.
-// UX-016: deliberately no provider icon here (icon lives only on the rail).
 Item {
   id: root
 
@@ -30,7 +26,6 @@ Item {
 
     Text {
       id: nameLabel
-      // Cap name so the row never forces content wider than the pane.
       width: Math.min(implicitWidth, Math.max(Style.space(48), parent.width * 0.42))
       text: root.name
       color: root.foreground
@@ -63,9 +58,6 @@ Item {
     }
 
     Item {
-      // Flexible spacer; never negative. Pushes the refresh glyph right.
-      // Subtracts what is actually rendered — an invisible tag takes no
-      // room in the Row, so it must take none here either.
       width: Math.max(Style.space(4),
           parent.width
           - nameLabel.width
@@ -76,7 +68,6 @@ Item {
       height: 1
     }
 
-    // UX-051 refresh glyph
     PanelActionButton {
       size: Style.space(22)
       iconText: "󰑐"

@@ -1,5 +1,3 @@
-//! Status collection domain: schema-v2 types, mapping, and human formatting.
-
 pub mod collect;
 pub mod coordinator;
 pub mod human;

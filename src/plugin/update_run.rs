@@ -161,7 +161,6 @@ mod tests {
                 .borrow()
                 .iter()
                 .map(|c| {
-                    // `timeout` wraps the real program: report what it runs.
                     if c[0] == "/usr/bin/timeout" {
                         c.iter()
                             .skip(1)
@@ -315,7 +314,6 @@ mod tests {
 
     #[test]
     fn a_refused_restart_is_retried_until_the_session_unlocks() {
-        // omarchy-restart-shell exits 1 while the session is locked.
         let runner = FakeRunner::new(&["aaa", "bbb"], 0, &[1, 1, 0]);
         let (outcome, sleeps) = run(&runner, false, 5);
         assert_eq!(outcome, UpdateRunOutcome::Updated);

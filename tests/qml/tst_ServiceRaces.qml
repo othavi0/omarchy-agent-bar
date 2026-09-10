@@ -46,7 +46,6 @@ TestCase {
     property var lastForced: null
 
     function kickSettingsRead() {
-      // ARCH-024: handoff rejects new writes/polling; reads may still start.
       if (!Core.canStartLane(settingsReadBusy))
         return false
       settingsReadBusy = true
@@ -105,12 +104,10 @@ TestCase {
     reset()
     compare(h.kickStatus(false), true)
     compare(h.statusStartCount, 1)
-    // Overlapping forces while busy → union, no second start.
     h.pendingForcedTargets = Core.unionForced(h.pendingForcedTargets, "claude")
     h.pendingForcedTargets = Core.unionForced(h.pendingForcedTargets, "amp")
     compare(h.kickStatus(false), false)
     compare(h.statusStartCount, 1)
-    // Complete → follow-up with unioned targets.
     h.finishStatus(h.activeStatusGeneration, true)
     compare(h.statusStartCount, 2)
     verify(h.lastForced.ids["claude"] === true)
@@ -133,12 +130,10 @@ TestCase {
     compare(h.kickSettingsRead(), true)
     compare(h.kickSettingsWrite(), true)
     compare(h.kickMaintenanceCheck(), true)
-    // Same-lane re-entry blocked.
     compare(h.kickStatus(false), false)
     compare(h.kickSettingsRead(), false)
     compare(h.kickSettingsWrite(), false)
     compare(h.kickMaintenanceCheck(), false)
-    // Counts: one each.
     compare(h.statusStartCount, 1)
     compare(h.settingsReadStartCount, 1)
     compare(h.settingsWriteStartCount, 1)
@@ -150,7 +145,6 @@ TestCase {
     h.maintenanceState = Maintenance.maintenanceBeginHandoff(h.maintenanceState)
     compare(h.kickStatus(false), false)
     compare(h.kickSettingsWrite(), false)
-    // Read/check may still be allowed by policy; write/status blocked.
     compare(h.kickSettingsRead(), true)
   }
 
@@ -175,8 +169,6 @@ TestCase {
     var gen2 = h.activeStatusGeneration
     verify(gen2 > gen1)
     h.finishStatus(gen1, true)
-    // Stale gen1 must not set snapshot when gen2 is active.
-    // finishStatus checks generation — snapshot stays null until gen2 applies.
     compare(h.snapshot, null)
     h.finishStatus(gen2, true)
     verify(h.snapshot !== null)

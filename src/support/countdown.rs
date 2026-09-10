@@ -74,8 +74,6 @@ mod tests {
 
     #[test]
     fn seconds_never_round_the_minute_up() {
-        // 59 seconds short of an hour is 59m, not 1h — the popup would
-        // otherwise promise a reset that has not arrived.
         let now = datetime!(2026-07-28 15:00:00 UTC);
         assert_eq!(
             reset_countdown(now, datetime!(2026-07-28 15:59:59 UTC)),

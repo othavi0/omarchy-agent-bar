@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Confirm Cargo.toml version equals optional release tag and (when present)
-# the staged plugin manifest / bundle receipt.
 # Usage: scripts/check-version [vX.Y.Z] [plugin-dir]
 set -euo pipefail
 

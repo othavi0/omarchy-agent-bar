@@ -1,8 +1,3 @@
-//! Binary-level grammar checks for `agent-bar-bundle` (monorepo migration
-//! Task 2). `stamp` is the binary's only verb; the tarball `release`
-//! packaging command was removed with the rest of the tarball machinery,
-//! and `assemble`/`output` went with the separate-tree assembly step.
-
 use std::process::Command;
 
 fn bin() -> &'static str {

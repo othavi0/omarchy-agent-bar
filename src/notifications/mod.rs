@@ -1,5 +1,3 @@
-//! Usage threshold notifications (at-least-once, notify-send backend).
-
 pub mod state;
 
 pub use state::{
@@ -16,27 +14,20 @@ use crate::settings::schema::{DisplayMetric, Settings as SettingsDocument};
 use crate::status::schema::{DataSource, ProviderState, StatusEnvelope};
 use crate::support::redact::strip_ansi_and_controls;
 
-/// Planned notification before dispatch.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PendingNotification {
     pub provider_id: ProviderId,
     pub provider_name: String,
     pub window_id: String,
     pub window_label: String,
-    /// What fired the notification. Always the trigger, never the sentence.
     pub used_percent: f64,
     pub remaining_percent: f64,
-    /// The unit the user chose in Settings (copy design §6.2).
     pub metric: DisplayMetric,
     pub reset_at: Option<time::OffsetDateTime>,
-    /// Humanised countdown at evaluation time; `None` when the window carries
-    /// no reset timestamp. Precomputed by the evaluator, which owns the clock,
-    /// so `build_spec` stays a pure function of this struct.
     pub reset_in: Option<String>,
     pub level: NotificationLevel,
 }
 
-/// Dispatch backend (production uses `notify-send`).
 pub trait NotificationDispatcher: Send + Sync {
     fn dispatch(
         &self,
@@ -44,7 +35,6 @@ pub trait NotificationDispatcher: Send + Sync {
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>> + Send + '_>>;
 }
 
-/// `notify-send` argv builder and runner.
 #[derive(Debug, Clone)]
 pub struct NotifySendDispatcher<R: ProcessRunner> {
     pub runner: R,
@@ -64,8 +54,6 @@ impl<R: ProcessRunner> NotifySendDispatcher<R> {
             NotificationLevel::Warning => "normal",
             NotificationLevel::Critical => "critical",
         };
-        // Copy design §5.5: the title names what is running out. The old
-        // "{Name} usage warning" said the category, not the thing.
         let title = match pending.level {
             NotificationLevel::Warning => format!(
                 "{} {} is running low",
@@ -76,18 +64,14 @@ impl<R: ProcessRunner> NotifySendDispatcher<R> {
                 pending.provider_name, pending.window_label
             ),
         };
-        // §6.2: one unit across the product. The threshold that fired this is
-        // always usedPercent; the sentence follows the user's chosen metric.
         let (value, unit) = match pending.metric {
             DisplayMetric::Used => (pending.used_percent, "used"),
             DisplayMetric::Remaining => (pending.remaining_percent, "left"),
         };
         let value = value.round() as i64;
         let body = match pending.reset_in.as_deref() {
-            // "Resets in now." is not English; the popup avoids it the same way.
             Some("now") => format!("{value}% {unit}. Resets now."),
             Some(countdown) => format!("{value}% {unit}. Resets in {countdown}."),
-            // §5.5: with no timestamp the clause is omitted, not filled in.
             None => format!("{value}% {unit}."),
         };
         let title = strip_ansi_and_controls(&title);
@@ -131,13 +115,10 @@ impl<R: ProcessRunner + 'static> NotificationDispatcher for NotifySendDispatcher
     }
 }
 
-/// Evaluate envelope windows, dispatch escalations, persist per success.
 pub struct NotificationEvaluator<'a, D: NotificationDispatcher> {
     pub store: &'a NotificationStateStore,
     pub dispatcher: &'a D,
     pub settings: &'a SettingsDocument,
-    /// Supplied by the caller that already read the clock for this collect
-    /// cycle, so the countdown agrees with the rest of the envelope.
     pub now: time::OffsetDateTime,
 }
 
@@ -152,23 +133,15 @@ impl<'a, D: NotificationDispatcher> NotificationEvaluator<'a, D> {
         let mut state = self.store.load().map_err(|err| err.to_string())?;
         let order: Vec<ProviderId> = self.settings.providers.iter().map(|p| p.id.0).collect();
 
-        // Collect candidates in settings provider order, then window order.
         let mut pending: Vec<PendingNotification> = Vec::new();
         for id in order {
             let Some(provider) = envelope.providers().iter().find(|p| p.id() == id) else {
                 continue;
             };
             if provider.state() != ProviderState::Ready {
-                // NOTIFY-006: stale/failures do not trigger.
                 continue;
             }
 
-            // Pruning runs before the window loop, so the rearms, upserts and
-            // de-escalations below are never undone by it. The elapsed-reset
-            // branch needs a live reading: a Ready provider can be replayed
-            // from cache for up to its TTL while still reporting the
-            // pre-reset timestamp, and treating that as proof the window
-            // restarted would fire an alert about a window that already reset.
             let live_reading = provider.source() == Some(DataSource::Live);
             let live: Vec<&str> = provider.windows().iter().map(|w| w.id()).collect();
             state.prune_ready_provider(id, &live, self.now, live_reading);
@@ -177,24 +150,15 @@ impl<'a, D: NotificationDispatcher> NotificationEvaluator<'a, D> {
                 let used = window.used_percent();
                 let observed = window.resets_at();
                 let Some(level) = NotificationLevel::from_used_percent(used) else {
-                    // Recovery below the warning threshold rearms.
                     state.remove_key(id, window.id());
                     continue;
                 };
                 let saved = state.entry_for(id, window.id()).cloned();
                 let should_emit = match saved.as_ref() {
-                    // Never spoken for this window.
                     None => true,
-                    // The window advanced; a genuinely new quota period.
                     Some(prev) if !NotificationState::same_window(prev.reset_at, observed) => true,
-                    // NOTIFY-002: severity only ever escalates.
                     Some(prev) if level > prev.level => true,
-                    // Same severity: the reminder decides, not the poll.
                     Some(prev) if level == prev.level => self.now - prev.notified_at >= reminder,
-                    // De-escalation inside the same window. NOTIFY-002 forbids
-                    // speaking, but the tracked severity must follow the window
-                    // down or the reminder can never match again, silencing a
-                    // window that is still above its threshold.
                     Some(prev) => {
                         state.upsert(NotificationEntry {
                             provider_id: id.as_str().to_owned(),
@@ -224,7 +188,6 @@ impl<'a, D: NotificationDispatcher> NotificationEvaluator<'a, D> {
             }
         }
 
-        // Persist silent rearms and de-escalations first.
         self.store.save(&state).map_err(|err| err.to_string())?;
 
         for item in pending {
@@ -237,10 +200,7 @@ impl<'a, D: NotificationDispatcher> NotificationEvaluator<'a, D> {
                         level: item.level,
                         notified_at: self.now,
                     });
-                    // Persist after each success (at-least-once algorithm).
                     if let Err(err) = self.store.save(&state) {
-                        // The incident this replaces ran for days behind a bare
-                        // stderr line nobody reads.
                         log::warn!(
                             "notification state save failed for {}/{}: {err}",
                             item.provider_id.as_str(),
@@ -250,7 +210,6 @@ impl<'a, D: NotificationDispatcher> NotificationEvaluator<'a, D> {
                     }
                 }
                 Err(err) => {
-                    // Leave the row unadvanced; stop later notifications.
                     return Err(err);
                 }
             }
@@ -333,8 +292,6 @@ mod tests {
         .unwrap()
     }
 
-    /// Sibling of `envelope_with_used` for tests that need a window with a
-    /// real `resets_at`, since `envelope_with_used` hardcodes `None`.
     fn envelope_with_reset(used: f64, resets_at: time::OffsetDateTime) -> StatusEnvelope {
         let window =
             UsageWindow::try_new("session", "Session", used, 100.0 - used, Some(resets_at))
@@ -372,9 +329,6 @@ mod tests {
 
     #[tokio::test]
     async fn sub_second_reset_jitter_does_not_renotify() {
-        // The incident, end to end: three consecutive collections of the same
-        // Claude window, each carrying a different microsecond reset. Before
-        // this task that dispatched three times and persisted nothing.
         let dir = tempfile::tempdir().unwrap();
         let store = store_in(&dir);
         let runner = ScriptedNotify {
@@ -454,7 +408,7 @@ mod tests {
             now: datetime!(2026-07-26 18:42:00 UTC),
         };
         eval.evaluate(&envelope_with_used(90.0)).await.unwrap();
-        eval.evaluate(&envelope_with_used(90.0)).await.unwrap(); // no second warning
+        eval.evaluate(&envelope_with_used(90.0)).await.unwrap();
         eval.evaluate(&envelope_with_used(96.0)).await.unwrap();
         let specs = dispatcher.runner.specs.lock().unwrap();
         assert_eq!(specs.len(), 2);
@@ -520,13 +474,6 @@ mod tests {
 
     #[tokio::test]
     async fn evaluate_threads_its_own_clock_into_the_dispatched_countdown() {
-        // Every other evaluate()-driven test above uses envelope_with_used(),
-        // whose window carries resets_at: None, so the reset_in closure in
-        // the pending push (`reset_countdown(self.now, ts)`) never runs.
-        // This test gives the window a real reset timestamp and asserts the
-        // exact dispatched body, so it fails if the arguments to
-        // reset_countdown were ever swapped, or if self.now were ever
-        // replaced by a fresh OffsetDateTime::now_utc() call.
         let dir = tempfile::tempdir().unwrap();
         let store = NotificationStateStore::new(
             NotificationPaths {
@@ -541,12 +488,8 @@ mod tests {
         };
         let dispatcher = NotifySendDispatcher::new(runner);
         let settings = SettingsDocument::defaults();
-        // Fixed instants, both already years behind the real wall clock this
-        // suite runs under, so a stray OffsetDateTime::now_utc() would land
-        // the reset far in the past and read "now", not "3h 1m" — it cannot
-        // coincidentally reproduce the expected string.
         let now = datetime!(2026-07-26 18:42:00 UTC);
-        let resets_at = datetime!(2026-07-26 21:43:00 UTC); // now + 3h 1m
+        let resets_at = datetime!(2026-07-26 21:43:00 UTC);
         let eval = NotificationEvaluator {
             store: &store,
             dispatcher: &dispatcher,
@@ -558,7 +501,6 @@ mod tests {
             .unwrap();
         let specs = dispatcher.runner.specs.lock().unwrap();
         assert_eq!(specs.len(), 1);
-        // Default display metric is Remaining: 100 - 92 = 8% left.
         assert_eq!(specs[0].args[3], "8% left. Resets in 3h 1m.");
     }
 
@@ -586,8 +528,6 @@ mod tests {
 
     #[test]
     fn notification_body_follows_the_display_metric() {
-        // The trigger is always usedPercent, but the sentence is not: the
-        // notification must not be the one surface speaking a different unit.
         let mut pending = PendingNotification {
             provider_id: ProviderId::Claude,
             provider_name: "Claude".into(),
@@ -603,8 +543,6 @@ mod tests {
         let spec = NotifySendDispatcher::<ScriptedNotify>::build_spec(&pending);
         assert_eq!(spec.args[1], "--urgency=critical");
         assert_eq!(spec.args[2], "Claude Session (5h) is almost out");
-        // No timestamp: the reset clause is omitted entirely, not filled with
-        // a placeholder.
         assert_eq!(spec.args[3], "4% left.");
 
         pending.metric = DisplayMetric::Used;
@@ -658,12 +596,11 @@ mod tests {
             fail: false,
         };
         let dispatcher = NotifySendDispatcher::new(runner);
-        let settings = SettingsDocument::defaults(); // reminderMinutes == 120
+        let settings = SettingsDocument::defaults();
         let reset = datetime!(2026-08-21 22:00:00 UTC);
         let first = datetime!(2026-08-21 10:00:00 UTC);
         let envelope = envelope_with_reset(96.0, reset);
 
-        // A fresh evaluator per instant: `now` is a field, not an argument.
         NotificationEvaluator {
             store: &store,
             dispatcher: &dispatcher,
@@ -703,10 +640,6 @@ mod tests {
 
     #[tokio::test]
     async fn de_escalation_lowers_the_tracked_level_without_notifying() {
-        // Critical -> Warning while still above 90 must not dispatch
-        // (NOTIFY-002), but the stored level has to follow the window down.
-        // If it stays Critical, the reminder arm never matches again and the
-        // user stops hearing about a window that is still at 92 percent.
         let dir = tempfile::tempdir().unwrap();
         let store = store_in(&dir);
         let runner = ScriptedNotify {
@@ -745,7 +678,6 @@ mod tests {
         let state = store.load().unwrap();
         assert_eq!(state.entries[0].level, NotificationLevel::Warning);
 
-        // The reminder now fires at the level the window is actually at.
         NotificationEvaluator {
             store: &store,
             dispatcher: &dispatcher,
@@ -797,10 +729,6 @@ mod tests {
 
     #[tokio::test]
     async fn evaluate_keeps_rows_for_providers_absent_from_the_envelope() {
-        // Pruning is Ready-only. A provider missing from this envelope has
-        // confirmed nothing, so its dedupe must survive or it notifies again
-        // the moment it recovers. The sibling case — present but not Ready —
-        // is covered by evaluate_keeps_rows_for_a_stale_provider below.
         let dir = tempfile::tempdir().unwrap();
         let store = store_in(&dir);
         let mut seeded = NotificationState::empty();
@@ -834,10 +762,6 @@ mod tests {
 
     #[tokio::test]
     async fn evaluate_keeps_rows_for_a_stale_provider() {
-        // Present in the envelope but not Ready: the provider confirmed
-        // nothing this cycle, so neither pruning nor rearming may touch it
-        // (NOTIFY-006). No pre-existing test covered this — the guard was
-        // only a comment.
         use crate::status::schema::{ErrorCode, ProviderAction, ProviderError};
 
         let dir = tempfile::tempdir().unwrap();

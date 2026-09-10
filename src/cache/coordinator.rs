@@ -1,5 +1,3 @@
-//! In-process generation tracking for cache-use / cache-bypass coordination.
-
 use std::sync::Mutex;
 
 use time::OffsetDateTime;

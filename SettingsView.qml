@@ -4,7 +4,6 @@ import qs.Ui
 import "CoreView.js" as Core
 import "components"
 
-// Race-safe Settings UI (SET-014..022, UX-033..039). Mutations go through Service.
 Item {
   id: root
 
@@ -12,7 +11,6 @@ Item {
   property color foreground: Color.foreground
   property string fontFamily: Style.font.family
   property url iconBase: Qt.resolvedUrl("icons/")
-  // A11Y-008: true while NumberField (or other editor) owns focus.
   property bool editorOwnsFocus: (intervalField && intervalField.field
         ? !!intervalField.field.activeFocus
         : false)
@@ -107,8 +105,6 @@ Item {
       textFormat: Text.PlainText
     }
 
-    // SET-026: a failed load names the recovery step instead of locking the
-    // dialog behind "Loading" forever. Plain fixed copy; no helper output.
     Text {
       visible: root.loadFailed
       width: parent.width
@@ -149,7 +145,6 @@ Item {
       textFormat: Text.PlainText
     }
 
-    // Providers
     Column {
       width: parent.width
       spacing: Style.space(4)
@@ -202,7 +197,6 @@ Item {
       foreground: root.foreground
     }
 
-    // Display metric
     Column {
       width: parent.width
       spacing: Style.space(6)
@@ -251,7 +245,6 @@ Item {
       }
     }
 
-    // Refresh interval — native NumberField (UX-035)
     Column {
       width: parent.width
       spacing: Style.space(4)
@@ -296,7 +289,6 @@ Item {
       }
     }
 
-    // Notifications
     Column {
       width: parent.width
       spacing: Style.space(4)
@@ -349,7 +341,6 @@ Item {
       }
     }
 
-    // Updates
     Toggle {
       opacity: root.locked ? 0.55 : 1.0
       enabled: !root.locked
@@ -369,7 +360,6 @@ Item {
       foreground: root.foreground
     }
 
-    // Actions — English text labels (UX-036..038)
     Flow {
       width: parent.width
       spacing: Style.space(8)

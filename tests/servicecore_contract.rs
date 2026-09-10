@@ -1,7 +1,3 @@
-//! CoreService.js hand-copies closed enums from the Rust schema. This test
-//! keeps them in lock-step: a new state/action/provider added on one side
-//! fails here instead of silently freezing the popup at runtime.
-
 use std::collections::BTreeSet;
 
 fn extract_keys(source: &str, var_name: &str) -> BTreeSet<String> {
@@ -13,8 +9,6 @@ fn extract_keys(source: &str, var_name: &str) -> BTreeSet<String> {
     let body = &rest[..end];
     let mut keys = BTreeSet::new();
     for cap in body.split('"').skip(1).step_by(2) {
-        // split('"') alternates outside/inside quotes; skip(1).step_by(2)
-        // yields the quoted keys only ("ready", "stale", ...).
         if !cap.is_empty() && cap.chars().all(|c| c.is_ascii_lowercase() || c == '_') {
             keys.insert(cap.to_owned());
         }
@@ -65,7 +59,6 @@ fn servicecore_enums_match_schema() {
     );
 }
 
-/// `providers` rows of `defaultSettings()` in CoreService.js, in file order.
 fn default_settings_providers(js: &str) -> Vec<(String, bool)> {
     let start = js
         .find("function defaultSettings()")
@@ -92,10 +85,6 @@ fn default_settings_providers(js: &str) -> Vec<(String, bool)> {
         .collect()
 }
 
-/// The QML fallback document is a hand-copy of `Settings::defaults()`. A
-/// disagreement here ships a bar whose default enablement differs from what
-/// the helper writes on first run, which is invisible until a user without a
-/// settings.json opens the popup.
 #[test]
 fn servicecore_default_settings_match_rust_defaults() {
     let js = std::fs::read_to_string("CoreService.js").expect("read CoreService.js");

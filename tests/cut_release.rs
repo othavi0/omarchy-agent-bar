@@ -1,7 +1,3 @@
-//! `scripts/agent-bar-cut-release` version contract (docs/dev/releasing.md,
-//! "Manual boundary"): a version already carrying a tag bumps the patch; a
-//! version set deliberately and not yet tagged is released as set.
-
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -50,7 +46,6 @@ fn write_version(repo: &Path, version: &str) {
     .unwrap();
 }
 
-/// A repository whose last release is `v10.3.27`, then one feature commit.
 fn released_repo(tmp: &Path) -> PathBuf {
     let repo = tmp.join("repo");
     fs::create_dir_all(repo.join("docs/releases")).unwrap();
@@ -106,7 +101,6 @@ fn untagged_version_is_released_as_set() {
     git(&repo, &["commit", "-q", "-am", "chore: set version 10.4.0"]);
     let out = dry_run(&repo);
     assert!(out.contains("next-version: 10.4.0\n"), "{out}");
-    // Notes still cover everything since the last release tag.
     assert!(out.contains("Changes since 10.3.27:"), "{out}");
     assert!(out.contains("- feat: something new"), "{out}");
     assert!(out.contains("- chore: set version 10.4.0"), "{out}");

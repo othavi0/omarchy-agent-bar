@@ -1,9 +1,3 @@
-//! Update check, uninstall confirmation, and executable-path resolution.
-//! `update apply` and `uninstall` both delegate their live mutation to the
-//! omarchy CLI (git-plugin-distribution Tasks 2-3) — this module no longer
-//! runs a worker over a copied helper binary, stages a tarball, or polls a
-//! rescan for health.
-
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -57,10 +51,6 @@ impl MaintenanceError {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Update check document
-// ---------------------------------------------------------------------------
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UpdateCurrent {
@@ -110,7 +100,6 @@ impl UpdateCheckDocument {
                 "update check schemaVersion must be 1",
             ));
         }
-        // RFC3339 checkedAt
         OffsetDateTime::parse(&self.checked_at, &Rfc3339)
             .map_err(|e| MaintenanceError::msg(format!("checkedAt is not RFC3339: {e}")))?;
         if self.current.target != OFFICIAL_TARGET {
@@ -121,8 +110,6 @@ impl UpdateCheckDocument {
         if self.current.omarchy_contract != OMARCHY_CONTRACT {
             return Err(MaintenanceError::msg("current.omarchyContract must be 1"));
         }
-        // A reinstall-required document cannot also offer an update: the QML
-        // side (later task) shows only the reinstall message in that phase.
         if self.reinstall_required && (self.available || self.latest_compatible.is_some()) {
             return Err(MaintenanceError::msg(
                 "reinstallRequired documents must have available:false and latestCompatible:null",
@@ -166,10 +153,6 @@ impl UpdateCheckDocument {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Injectable HTTP for releases
-// ---------------------------------------------------------------------------
-
 #[derive(Debug, Clone)]
 pub struct ReleaseHttpResponse {
     pub status: u16,
@@ -211,7 +194,6 @@ impl ReleaseHttp for ReqwestReleaseHttp {
         url: &str,
         headers: &[(&str, &str)],
     ) -> Result<ReleaseHttpResponse, MaintenanceError> {
-        // Never attach Authorization / Cookie.
         for (k, _) in headers {
             let lower = k.to_ascii_lowercase();
             if lower == "authorization" || lower == "cookie" || lower == "proxy-authorization" {
@@ -309,10 +291,6 @@ impl ReleaseHttp for ScriptedReleaseHttp {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Update check
-// ---------------------------------------------------------------------------
-
 #[derive(Debug, Clone)]
 pub struct UpdateCheckProbe {
     pub current_version: String,
@@ -332,9 +310,6 @@ impl Default for UpdateCheckProbe {
     }
 }
 
-/// Distribution repo `bundle.json` receipt shape (BUNDLE-012 producer, this
-/// task's consumer). Unknown fields (`sourceCommit`, `files`, ...) are
-/// intentionally tolerated — `update check` only needs discovery fields.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DistReceipt {
@@ -423,7 +398,6 @@ impl UpdateCheck {
                 }),
             )
         } else {
-            // Locally incompatible — not an error, just nothing to offer.
             (false, None)
         };
 
@@ -450,10 +424,6 @@ impl UpdateCheck {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Uninstall confirmation
-// ---------------------------------------------------------------------------
-
 /// Non-TTY structured uninstall confirmation (CLI-036 / BUNDLE-036).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -479,13 +449,8 @@ impl UninstallConfirmation {
         let text = std::str::from_utf8(bytes)
             .map_err(|_| MaintenanceError::msg("uninstall confirmation is not valid UTF-8"))?;
         let trimmed = text.trim();
-        // Reject concatenated second values / trailing garbage by requiring the
-        // entire trimmed buffer to be exactly one JSON value.
         let doc: Self = serde_json::from_str(trimmed)
             .map_err(|e| MaintenanceError::msg(format!("malformed uninstall confirmation: {e}")))?;
-        // `from_str` tolerates trailing whitespace only; re-check by round-trip
-        // stream: if a second value exists, Value::deserialize from remaining fails
-        // the "exactly one object" rule via trailing non-ws after first value.
         let mut stream =
             serde_json::Deserializer::from_str(trimmed).into_iter::<serde_json::Value>();
         let first = stream
@@ -544,11 +509,6 @@ pub const UNINSTALL_TTY_PHRASE: &str = "uninstall agent-bar";
 /// TTY prompt text written to stderr (no trailing newline required by contract).
 pub const UNINSTALL_TTY_PROMPT: &str = "Type uninstall agent-bar to continue:";
 
-// ---------------------------------------------------------------------------
-// Executable resolution
-// ---------------------------------------------------------------------------
-
-/// Locate `cmd` on `$PATH` (first regular file hit).
 fn which_in_path(cmd: &str) -> Option<PathBuf> {
     let path = std::env::var_os("PATH")?;
     std::env::split_paths(&path)
@@ -596,10 +556,6 @@ pub fn require_absolute_executable(path: &str) -> Result<(), MaintenanceError> {
     Ok(())
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -628,9 +584,6 @@ mod tests {
         }
     }
 
-    /// A `bundle.json`-shaped dist receipt (BUNDLE-012 producer shape,
-    /// including fields `update check` does not read) so parsing coverage
-    /// matches what `BundleBuilder` actually emits.
     fn receipt_json(version: &str, minimum_quickshell_version: &str) -> Vec<u8> {
         serde_json::to_vec(&serde_json::json!({
             "schemaVersion": 1,
@@ -667,7 +620,6 @@ mod tests {
         assert!(json.contains("\"reinstallRequired\":false"));
         let parsed = UpdateCheckDocument::parse_json(json.trim_end().as_bytes()).unwrap();
         assert!(parsed.available);
-        // Unknown fields rejected.
         let mut v = serde_json::to_value(&doc).unwrap();
         v.as_object_mut()
             .unwrap()
@@ -756,7 +708,6 @@ mod tests {
             "https://github.com/othavi0/omarchy-agent-bar/releases/tag/v10.1.0"
         );
 
-        // Exactly one GET, to the dist receipt URL with the expected headers.
         let calls = http.calls.lock().unwrap();
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].0, DIST_RECEIPT_URL);
@@ -799,7 +750,6 @@ mod tests {
             quickshell_version: "0.3.0".into(),
             ..UpdateCheckProbe::default()
         };
-        // Locally incompatible is not an error — just nothing to offer.
         let doc = UpdateCheck::run(&http, &clock, &probe, false).unwrap();
         assert!(!doc.available);
         assert!(doc.latest_compatible.is_none());
@@ -807,8 +757,6 @@ mod tests {
 
     #[test]
     fn update_check_reinstall_required_forces_null_offer() {
-        // Even a genuinely newer, compatible receipt must not surface as an
-        // offer when the live plugin root is not a git checkout.
         let http = ScriptedReleaseHttp::with_responses(vec![Ok(ReleaseHttpResponse {
             status: 200,
             headers: vec![],
@@ -993,7 +941,6 @@ mod tests {
 
     #[test]
     fn no_global_executable_in_bundle_layout() {
-        // Product is plugin-only: helper lives at bin/agent-bar inside the plugin.
         let dir = tempdir().unwrap();
         let root = dir.path().join("othavi0.agent-bar");
         write_min_plugin(&root, "10.0.0");
@@ -1009,20 +956,9 @@ mod tests {
         let bin = fake_abs_bin(dir.path(), "tool");
         require_absolute_executable(&bin).unwrap();
         assert!(require_absolute_executable("tool").is_err());
-        // Absolute path that exists is accepted by resolve.
         let again = resolve_absolute_executable(&bin).unwrap();
         assert_eq!(again, bin);
     }
-
-    // -----------------------------------------------------------------------
-    // Uninstall confirmation (Task 18 / BUNDLE-036). The quarantine/rollback
-    // fault matrix that used to live here tested the worker chain deleted in
-    // git-plugin-distribution Task 3 — `uninstall` no longer runs a worker at
-    // all, so there is nothing left to fault-inject. `worker_holds_exclusive_
-    // maintenance_gate`, which exercised `MaintenanceGate` through the same
-    // dead journal/payload ceremony, is likewise gone — the primitive's own
-    // exclusive-lock coverage lives in `support::maintenance_gate`'s tests.
-    // -----------------------------------------------------------------------
 
     #[test]
     fn uninstall_confirmation_accepts_exact_document() {
@@ -1039,7 +975,6 @@ mod tests {
 
     #[test]
     fn uninstall_confirmation_rejects_false_mismatch_extra_and_malformed() {
-        // confirmed: false
         let err = UninstallConfirmation::parse_strict(
             br#"{"schemaVersion":1,"operation":"uninstall","confirmed":false,"purgeSettingsAndBackups":false}"#,
             false,
@@ -1047,7 +982,6 @@ mod tests {
         .unwrap_err();
         assert!(err.to_string().contains("confirmed"));
 
-        // purge mismatch
         let err = UninstallConfirmation::parse_strict(
             br#"{"schemaVersion":1,"operation":"uninstall","confirmed":true,"purgeSettingsAndBackups":true}"#,
             false,
@@ -1055,7 +989,6 @@ mod tests {
         .unwrap_err();
         assert!(err.to_string().contains("purge"));
 
-        // trailing non-whitespace
         let err = UninstallConfirmation::parse_strict(
             br#"{"schemaVersion":1,"operation":"uninstall","confirmed":true,"purgeSettingsAndBackups":false} extra"#,
             false,
@@ -1063,7 +996,6 @@ mod tests {
         .unwrap_err();
         assert!(err.to_string().contains("trailing") || err.to_string().contains("malformed"));
 
-        // unknown field
         let err = UninstallConfirmation::parse_strict(
             br#"{"schemaVersion":1,"operation":"uninstall","confirmed":true,"purgeSettingsAndBackups":false,"extra":1}"#,
             false,
@@ -1071,7 +1003,6 @@ mod tests {
         .unwrap_err();
         assert!(err.to_string().contains("malformed") || err.to_string().contains("unknown"));
 
-        // wrong operation
         let err = UninstallConfirmation::parse_strict(
             br#"{"schemaVersion":1,"operation":"update","confirmed":true,"purgeSettingsAndBackups":false}"#,
             false,

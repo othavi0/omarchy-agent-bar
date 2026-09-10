@@ -5,7 +5,6 @@ import "../../CoreView.js" as Core
 TestCase {
   name: "AgentBarFormat"
 
-  // 2026-07-28T15:00:00Z as fixed "now".
   readonly property double nowMs: Date.parse("2026-07-28T15:00:00Z")
 
   property string repoRoot: {
@@ -47,8 +46,6 @@ TestCase {
     compare(Core.resetCountdownText(null, nowMs), "")
   }
 
-  // The lead window's label line reads "Session (5h) \u00b7 resets in 3h 1m", and
-  // "resets in now" is not English.
   function test_reset_phrase_follows_the_countdown() {
     compare(Core.resetPhrase("3h 1m"), "resets in")
     compare(Core.resetPhrase("now"), "resets")
@@ -63,8 +60,6 @@ TestCase {
     compare(Core.formatAgoText("nope", nowMs), "")
   }
 
-  // The other half of the Rust seam: same table, same expectations, read from
-  // the same file. See tests/countdown_parity.rs.
   function test_countdown_matches_the_shared_table() {
     var rows = JSON.parse(read("tests/fixtures/countdown-table.json"))
     verify(rows.length >= 12, "the shared table must not shrink")
