@@ -1042,11 +1042,15 @@ fn uninstall_purge_fails_closed_without_touching_state_when_omarchy_missing() {
     {
         use std::io::Write as _;
         let mut stdin = child.stdin.take().unwrap();
-        stdin
-            .write_all(
-                br#"{"schemaVersion":1,"operation":"uninstall","confirmed":true,"purgeSettingsAndBackups":true}"#,
-            )
-            .unwrap();
+        if let Err(err) = stdin.write_all(
+            br#"{"schemaVersion":1,"operation":"uninstall","confirmed":true,"purgeSettingsAndBackups":true}"#,
+        ) {
+            assert_eq!(
+                err.kind(),
+                std::io::ErrorKind::BrokenPipe,
+                "only an early preflight exit may close stdin"
+            );
+        }
     }
     let output = child.wait_with_output().unwrap();
 
