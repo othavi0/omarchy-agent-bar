@@ -181,13 +181,20 @@ KeyboardPanel {
     focusController.setTargets(list)
   }
 
-  onViewChanged: {
-    if (contentFlick)
-      contentFlick.contentY = 0
+  // Deferred so the rail and the Loader finish building first. The popup
+  // can be destroyed before the call runs (#83), so check the method is
+  // still there instead of throwing from a dead object.
+  function scheduleFocusRebuild() {
     Qt.callLater(function () {
       if (typeof root.rebuildFocusTargets === "function")
         root.rebuildFocusTargets()
     })
+  }
+
+  onViewChanged: {
+    if (contentFlick)
+      contentFlick.contentY = 0
+    scheduleFocusRebuild()
   }
   onSelectedIdChanged: Qt.callLater(function () {
     // FocusController may not be ready on the first selectedId emission.
@@ -196,9 +203,7 @@ KeyboardPanel {
     if (typeof root.rebuildFocusTargets === "function")
       root.rebuildFocusTargets()
   })
-  onAgentServiceChanged: Qt.callLater(function () {
-    root.rebuildFocusTargets()
-  })
+  onAgentServiceChanged: scheduleFocusRebuild()
 
   PanelKeyCatcher {
     id: keyCatcher
@@ -333,17 +338,14 @@ KeyboardPanel {
                 if (kind === "restart_shell" && root.agentService)
                   root.agentService.restartShell()
               }
-              onVisibleChanged: Qt.callLater(root.rebuildFocusTargets)
+              onVisibleChanged: root.scheduleFocusRebuild()
             }
 
             Loader {
               id: contentLoader
               width: parent.width
               sourceComponent: root.view === "settings" ? settingsContent : providerContent
-              onLoaded: Qt.callLater(function () {
-                if (typeof root.rebuildFocusTargets === "function")
-                  root.rebuildFocusTargets()
-              })
+              onLoaded: root.scheduleFocusRebuild()
             }
           }
         }

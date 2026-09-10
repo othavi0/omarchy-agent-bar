@@ -65,6 +65,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- fix: closing the popup no longer logs
+  `TypeError: Property 'rebuildFocusTargets' ... is not a function`. Two of
+  the deferred focus rebuilds ran unguarded after the popup was destroyed;
+  every deferred rebuild now goes through one guarded helper
+  ([#83](https://github.com/othavi0/omarchy-agent-bar/issues/83), reported
+  and first fixed in #84 by @alinuxfan).
 - fix: an automatic update no longer freezes the bar. On 10.3.24 the
   two-minute update check lands on the second 60 s poll; the handoff then
   waited for that status run and nothing retried it, so polling stopped,
