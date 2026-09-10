@@ -29,12 +29,11 @@ Item {
   readonly property int minStackHeight: {
     var n = providers && providers.length ? providers.length : 0
     var slots = n + 1
-    var gaps = n + 2
+    var gaps = n + 1
     return Style.spacing.popupPadding * 2
         + slots * slotSize
         + gaps * stackGap
         + spacerMin
-        + 1
   }
 
   implicitWidth: railWidth
@@ -191,13 +190,6 @@ Item {
       Layout.fillHeight: true
       Layout.minimumHeight: root.spacerMin
       Layout.preferredWidth: 1
-    }
-
-    PanelSeparator {
-      Layout.fillWidth: true
-      Layout.leftMargin: Style.space(6)
-      Layout.rightMargin: Style.space(6)
-      foreground: root.foreground
     }
 
     Item {

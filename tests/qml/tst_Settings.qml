@@ -418,6 +418,8 @@ TestCase {
     verify(rail.indexOf("Core.chipStateCue(") >= 0)
     var tooltips = rail.split("PanelToolTip {").length - 1
     compare(tooltips, 2, "every rail slot, provider and Settings, carries a tooltip")
+    verify(rail.indexOf("PanelSeparator") < 0,
+           "the owner dropped the rule above the Settings slot; the rail edge rule lives in Popup")
     var popup = read("Popup.qml")
     verify(popup.indexOf('settingsActive: root.view === "settings"') >= 0)
   }

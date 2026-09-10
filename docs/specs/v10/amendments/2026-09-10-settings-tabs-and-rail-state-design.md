@@ -30,8 +30,8 @@ through tooltips.
 3. A provider slot shows the chip's `!` cue in its corner under the same
    rule as the bar chip: every error state, and a ready provider with a
    critical window. The critical cue uses the urgent theme colour.
-4. A hairline separates the rail from the content, and another sits above
-   the Settings slot.
+4. A hairline separates the rail from the content. The Settings slot has no
+   rule above it.
 5. Settings splits into three tabs, `Providers`, `General`, and `About`,
    switched by a row of native `Button`s with `PageTab` roles. A tab whose
    fields differ from the saved settings shows `•` after its label.

@@ -59,7 +59,7 @@ not literal UI.
   read like the chip's accessible label, with `critical` appended when a
   critical window drives severity, and the slot shows the chip's `!` cue in
   its corner under the same rule as the bar chip (`UX-020C`). A hairline
-  separates the rail from the content and another sits above Settings. See
+  separates the rail from the content. See
   `docs/specs/v10/amendments/2026-09-10-settings-tabs-and-rail-state-design.md`.
 - `UX-015`: Settings is the last control in the rail stack (the stack shares
   the popup content inset top and bottom; not overlaid with
