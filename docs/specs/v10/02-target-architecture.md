@@ -212,7 +212,7 @@ Locked collection policy:
 | `codex` | resolved `codex app-server` JSON-RPC `rateLimits/read`, then newest valid rate-limit event below `$HOME/.codex/sessions` | `session`, `weekly`, then `other:<duration-minutes>:<ordinal>` | 90 s | 10 s | one app-server timeout retry before filesystem fallback |
 | `amp` | resolved `amp usage` with `NO_COLOR=1`, `TERM=dumb` | `daily`, or no windows when the account exposes no percentage | 90 s | 10 s | one timeout/process-I/O retry |
 | `grok` | `$GROK_HOME/auth.json` (when its `expires_at` is at most 60 s in the future and the `grok` executable was discovered, one argv-only `grok models` run with the catalog timeout, `NO_COLOR=1`, `TERM=dumb`, output ignored, then `auth.json` re-read; a token still expired is a retryable `unauthenticated` so the prior reading is retained as `stale`; a file the CLI cleared is a non-retryable `unauthenticated`; a torn document is retryable; a file that cannot be read is a non-retryable `provider_error`), then authenticated GET `https://cli-chat-proxy.grok.com/v1/billing?format=credits` (literal; headers Authorization Bearer + x-grok-client-mode); when that payload has no `creditUsagePercent`, one GET `https://cli-chat-proxy.grok.com/v1/billing` (same headers) whose `used / monthlyLimit` ratio becomes `monthly` (amounts discarded); its HTTP failures are the same typed results as the first request so stale retention applies, and a 2xx body without a ratio keeps the credits reading | `weekly` (credits) or `monthly` (limit ratio), or no windows when the plan publishes neither | 90 s | 10 s | one network/timeout retry per request |
-| `antigravity` | resolved `agy --version` (requires 1.1.11 or newer, because older builds send `/usage` to the model as a prompt) then `agy --print /usage --output-format json` with `NO_COLOR=1`, `TERM=dumb`; windows come from the `gemini-weekly` and `gemini-5h` bucket ids, the `Claude and GPT models` group is ignored | `gemini-weekly`, `gemini-5h` | 90 s | 10 s | none |
+| `antigravity` | resolved `agy --version` (requires 1.1.11 or newer, because older builds send `/usage` to the model as a prompt) then `agy --print /usage --output-format json` with `NO_COLOR=1`, `TERM=dumb`; windows come from the `gemini-weekly`, `gemini-5h`, `3p-weekly`, and `3p-5h` bucket ids in that order, labelled with their family and duration (`Gemini · 7d`, `Claude/GPT · 5h`); a bucket with a remaining fraction of 1 or more carries no reset, because no window is running | `gemini-weekly`, `gemini-5h`, `3p-weekly`, `3p-5h` | 90 s | 10 s | none |
 
 Antigravity was removed once (see `CHANGELOG.md`) when it read credentials and
 plan data out of a `~/.gemini` layout that no longer matches current installs.
@@ -242,7 +242,8 @@ not counted as a retry.
 
 Provider labels are fixed English copy: Claude `Session`/`Weekly`, Codex
 `Session`/`Weekly`, Amp `Daily`, Grok `Weekly (7d)`/`Monthly`, and Antigravity
-`Session (5h)`/`Weekly (7d)`. Dynamic model labels are
+`Gemini · 7d`/`Gemini · 5h`/`Claude/GPT · 7d`/`Claude/GPT · 5h`. Dynamic model
+labels are
 sanitized plain text. A dynamic Claude model ID is lowercased, limited to
 ASCII letters/digits/hyphens, and prefixed with `weekly-model:`; collisions
 receive the deterministic source-order suffix `:2`, `:3`, and so on. Monetary

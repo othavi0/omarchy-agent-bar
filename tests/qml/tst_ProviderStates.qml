@@ -462,12 +462,49 @@ TestCase {
   // Antigravity's five-hour bucket is the same kind of window under its own id.
   function test_gemini_5h_window_leads_like_session() {
     var layout = layoutOf([
-      { id: "gemini-weekly", label: "Weekly (7d)", usedPercent: 40, remainingPercent: 60,
-        resetsAt: "2026-09-05T12:00:00Z" },
-      { id: "gemini-5h", label: "Session (5h)", usedPercent: 12, remainingPercent: 88,
-        resetsAt: null }
+      { id: "gemini-weekly", label: "Gemini · 7d", usedPercent: 40,
+        remainingPercent: 60, resetsAt: "2026-09-05T12:00:00Z" },
+      { id: "gemini-5h", label: "Gemini · 5h", usedPercent: 12,
+        remainingPercent: 88, resetsAt: null }
     ], "2026-09-04T11:00:00Z")
     compare(layout.lead.id, "gemini-5h")
+  }
+
+  // Antigravity meters Gemini and Claude/GPT on separate quotas. The family in
+  // use is the one draining its five-hour window, so the lowest remaining
+  // session leads; an idle family sits at 100 % and only wins a tie.
+  function antigravityWindows(geminiSession, thirdPartySession) {
+    return [
+      { id: "gemini-weekly", label: "Gemini · 7d", usedPercent: 20,
+        remainingPercent: 80, resetsAt: "2026-09-10T12:00:00Z" },
+      { id: "gemini-5h", label: "Gemini · 5h",
+        usedPercent: 100 - geminiSession, remainingPercent: geminiSession,
+        resetsAt: geminiSession < 100 ? "2026-09-04T16:00:00Z" : null },
+      { id: "3p-weekly", label: "Claude/GPT · 7d", usedPercent: 30,
+        remainingPercent: 70, resetsAt: "2026-09-10T12:00:00Z" },
+      { id: "3p-5h", label: "Claude/GPT · 5h",
+        usedPercent: 100 - thirdPartySession, remainingPercent: thirdPartySession,
+        resetsAt: thirdPartySession < 100 ? "2026-09-04T15:00:00Z" : null }
+    ]
+  }
+
+  function test_antigravity_third_party_session_leads_when_in_use() {
+    var layout = layoutOf(antigravityWindows(100, 40), "2026-09-04T11:00:00Z")
+    compare(layout.lead.id, "3p-5h")
+    compare(Core.chipPercentText(readyWith(antigravityWindows(100, 40)), "remaining",
+                                 Date.parse("2026-09-04T11:00:00Z")), "40%")
+  }
+
+  function test_antigravity_gemini_session_leads_when_lower() {
+    compare(layoutOf(antigravityWindows(35, 60), "2026-09-04T11:00:00Z").lead.id,
+            "gemini-5h")
+  }
+
+  function test_antigravity_session_tie_keeps_delivered_order() {
+    compare(layoutOf(antigravityWindows(100, 100), "2026-09-04T11:00:00Z").lead.id,
+            "gemini-5h")
+    compare(layoutOf(antigravityWindows(75, 75), "2026-09-04T11:00:00Z").lead.id,
+            "gemini-5h")
   }
 
   function test_lines_carry_raw_percentages_and_countdown() {

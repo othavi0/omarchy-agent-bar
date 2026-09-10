@@ -68,7 +68,8 @@ application, an AUR product, or a cargo-binstall product.
    [2026-08-25 login-state visibility](amendments/2026-08-25-login-state-visibility-design.md),
    [2026-09-04 session window leads](amendments/2026-09-04-session-window-leads-design.md),
    [2026-09-10 plugin root from Service URL](amendments/2026-09-10-plugin-root-from-service-url-design.md),
-   [2026-09-10 automatic updates](amendments/2026-09-10-automatic-updates-design.md).
+   [2026-09-10 automatic updates](amendments/2026-09-10-automatic-updates-design.md),
+   [2026-09-10 Antigravity third-party windows](amendments/2026-09-10-antigravity-third-party-windows-design.md).
 
 When two statements conflict, the earlier contract in this reading order wins
 unless a later file explicitly identifies the requirement ID it refines.

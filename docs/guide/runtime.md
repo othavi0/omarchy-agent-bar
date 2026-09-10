@@ -110,8 +110,11 @@ provider's TTL instead.
   previous reading, when the cache holds one, stays on the bar as `stale`;
   a first collection with an expired token reports the session expired.
 - Antigravity uses its official `agy --print /usage --output-format json`
-  command, reads the `gemini-weekly` and `gemini-5h` buckets by id, and reads
-  no credential files. It requires `agy` 1.1.11 or newer; older builds send
+  command, reads the Gemini (`gemini-weekly`, `gemini-5h`) and Claude/GPT
+  (`3p-weekly`, `3p-5h`) buckets by id, and reads no credential files. The
+  two families have separate quotas; the lower of the two session windows
+  leads the chip. A full bucket shows no reset, because its window
+  only starts on first use. It requires `agy` 1.1.11 or newer; older builds send
   `/usage` to the model as a prompt instead of printing usage data.
 
 Collection discovery is separate from interactive login-CLI discovery.
