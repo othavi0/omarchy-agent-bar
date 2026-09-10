@@ -309,11 +309,12 @@ Amended by git-plugin-distribution (2026-08-05):
 plugin directory in-process; each resolves `omarchy` and `systemd-run` to
 absolute paths, then detaches unconditionally to the Omarchy CLI as a
 transient `systemd-run --user` unit and returns once the handoff is
-accepted. `update apply` also requires `omarchy-restart-shell`, and its
-unit runs `update run`: the fast-forward, then a toast and a shell restart
-only when the plugin `HEAD` moved (`MIG-020`). `update run` prints one line,
-`{"schemaVersion":1,"operation":"updateRun","outcome":"<upToDate|updated|updateFailed|restartGaveUp>"}`,
-and exits non-zero for the last two.
+accepted. `update apply` also requires `omarchy-restart-shell`, `git`, and
+`timeout`, and its unit runs `update run`: the fast-forward, then a toast
+and a shell restart only when the plugin `HEAD` moved (`MIG-020`).
+`update run` prints one line,
+`{"schemaVersion":1,"operation":"updateRun","outcome":"<upToDate|updated|updateFailed|restartGaveUp|alreadyRunning>"}`,
+and exits non-zero for `updateFailed` and `restartGaveUp`.
 
 - `CLI-024`: `doctor scan` is read-only.
 - `CLI-025`: `doctor clean` removes only confirmed owned legacy artifacts after

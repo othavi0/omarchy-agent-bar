@@ -518,10 +518,10 @@ fn dispatch_update_apply() -> Result<(), CliFailure> {
         .map_err(|e| CliFailure::plugin(format!("exclusive maintenance lock: {e}")))?;
 
     // Fail closed here, where QML sees the error, rather than inside the
-    // detached unit where nobody would.
-    resolve_absolute_executable("omarchy").map_err(|e| CliFailure::plugin(e.to_string()))?;
-    resolve_absolute_executable("omarchy-restart-shell")
-        .map_err(|e| CliFailure::plugin(e.to_string()))?;
+    // detached unit where nobody would: every tool `update run` requires.
+    for tool in ["omarchy", "omarchy-restart-shell", "git", "timeout"] {
+        resolve_absolute_executable(tool).map_err(|e| CliFailure::plugin(e.to_string()))?;
+    }
     let systemd_run = resolve_absolute_executable("systemd-run")
         .map_err(|e| CliFailure::plugin(e.to_string()))?;
     let helper = std::env::current_exe()
@@ -580,6 +580,17 @@ struct UpdateRunReport {
     outcome: &'static str,
 }
 
+fn print_update_run_report(outcome: &'static str) -> Result<(), CliFailure> {
+    let doc = UpdateRunReport {
+        schema_version: 1,
+        operation: "updateRun",
+        outcome,
+    };
+    let json = serde_json::to_string(&doc).map_err(|e| CliFailure::plugin(e.to_string()))?;
+    println!("{json}");
+    Ok(())
+}
+
 /// `update run`: the detached unit's body (see `plugin::update_run`).
 ///
 /// A second run while one is still retrying a restart exits 0 at once: the
@@ -606,7 +617,7 @@ fn dispatch_update_run() -> Result<(), CliFailure> {
         .map_err(|e| CliFailure::plugin(format!("update run lock: {e}")))?
     else {
         eprintln!("agent-bar: another update run is in progress");
-        return Ok(());
+        return print_update_run_report("alreadyRunning");
     };
 
     let resolve = |name: &str| {
@@ -635,13 +646,7 @@ fn dispatch_update_run() -> Result<(), CliFailure> {
         UpdateRunOutcome::UpdateFailed(_) => "updateFailed",
         UpdateRunOutcome::RestartGaveUp => "restartGaveUp",
     };
-    let doc = UpdateRunReport {
-        schema_version: 1,
-        operation: "updateRun",
-        outcome: label,
-    };
-    let json = serde_json::to_string(&doc).map_err(|e| CliFailure::plugin(e.to_string()))?;
-    println!("{json}");
+    print_update_run_report(label)?;
     match outcome {
         UpdateRunOutcome::UpToDate | UpdateRunOutcome::Updated => Ok(()),
         UpdateRunOutcome::UpdateFailed(code) => Err(CliFailure::plugin(format!(

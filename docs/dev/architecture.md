@@ -134,8 +134,8 @@ CLI rather than staging, exchanging, or rolling back the plugin directory
 themselves:
 
 1. resolve `omarchy` and `systemd-run` (and, for update,
-   `omarchy-restart-shell`) to absolute executable paths, failing closed
-   before anything destructive if one is missing;
+   `omarchy-restart-shell`, `git`, and `timeout`) to absolute executable
+   paths, failing closed before anything destructive if one is missing;
 2. `uninstall purge` removes Agent Bar's own XDG state here, before the
    handoff;
 3. start a detached transient `systemd-run --user` unit: `omarchy plugin

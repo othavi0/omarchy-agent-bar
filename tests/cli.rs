@@ -763,6 +763,25 @@ fn update_run_in(root: &Path, before: &str, after: &str) -> (std::process::Outpu
 }
 
 #[test]
+fn update_run_reports_and_skips_while_another_run_holds_the_lock() {
+    let dir = tempdir().unwrap();
+    let state = dir.path().join("home/state/agent-bar");
+    std::fs::create_dir_all(&state).unwrap();
+    let gate =
+        agent_bar::support::maintenance_gate::MaintenanceGate::open(state.join("update-run.lock"))
+            .unwrap();
+    let _held = gate.try_lock_exclusive().unwrap().expect("lock is free");
+
+    let (output, restarted) = update_run_in(dir.path(), "aaa", "bbb");
+    assert!(output.status.success());
+    let doc: serde_json::Value =
+        serde_json::from_str(String::from_utf8_lossy(&output.stdout).trim()).unwrap();
+    assert_eq!(doc["outcome"], "alreadyRunning");
+    assert!(!restarted.exists());
+    assert!(!dir.path().join("git-calls").exists(), "nothing may run");
+}
+
+#[test]
 fn update_run_restarts_the_shell_only_when_the_tree_moved() {
     let dir = tempdir().unwrap();
     let (output, restarted) = update_run_in(dir.path(), "aaa", "bbb");
