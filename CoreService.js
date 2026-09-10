@@ -26,6 +26,21 @@ var PROVIDER_STATES = {
 }
 
 // ---------------------------------------------------------------------------
+// Plugin tree
+// ---------------------------------------------------------------------------
+
+// Filesystem path of a file:// directory URL (Qt.resolvedUrl(".")); "" otherwise.
+function pluginRootFromUrl(url) {
+  var text = String(url || "")
+  if (text.indexOf("file://") !== 0)
+    return ""
+  var path = decodeURIComponent(text.slice("file://".length))
+  while (path.length > 1 && path.charAt(path.length - 1) === "/")
+    path = path.slice(0, -1)
+  return path
+}
+
+// ---------------------------------------------------------------------------
 // Version / health / IPC refresh
 // ---------------------------------------------------------------------------
 

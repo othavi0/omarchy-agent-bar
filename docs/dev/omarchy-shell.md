@@ -63,7 +63,10 @@ property var barWidgetRegistry: null
 property var pluginRegistry: null
 ```
 
-The absolute discovered plugin root is `manifest.__sourceDir`.
+The absolute plugin root is the directory of `Service.qml` itself,
+`Qt.resolvedUrl(".")` converted to a path. The injected `manifest` is a public
+copy: since Omarchy 4.0.3 the host strips `__sourceDir` and other host-only
+fields from third-party manifests, so the plugin never reads them.
 
 ## Widget injection
 
@@ -132,7 +135,7 @@ it can reset placement.
 ## Interactive login
 
 QML invokes the bundled Bash launcher with an argv array. The launcher resolves
-the private helper from `manifest.__sourceDir`, delegates the configured
+the private helper from its own location in the plugin tree, delegates the configured
 terminal choice to `xdg-terminal-exec`, and runs the helper by bundle path. It
 does not assume a global executable, construct a shell string, or maintain its
 own terminal-emulator fallback list.
