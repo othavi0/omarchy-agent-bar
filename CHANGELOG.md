@@ -109,6 +109,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `This plan does not publish a usage percentage.` (PROD-031 / UX-032A
   amended).
 
+## [10.3.26] - 2026-09-10
+
+### Changed
+
+- fix: guard every deferred focus rebuild
+- docs: tell stuck installs how to update
+
 ## [10.3.25] - 2026-09-10
 
 ### Changed
