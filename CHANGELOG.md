@@ -118,6 +118,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `This plan does not publish a usage percentage.` (PROD-031 / UX-032A
   amended).
 
+## [10.5.0] - 2026-09-10
+
+### Changed
+
+- chore: set version 10.5.0
+- style: drop the rule above the rail gear
+- fix: keep the Settings tab binding alive
+- docs: record Settings focus and order rules
+- fix: release focus on hidden Settings tabs
+- docs: amend spec for Settings tabs and rail
+- feat: tabbed Settings and view-aware rail
+- refactor: drop comments that restate the code
+- test: tolerate early exit in purge preflight test
+- test: anchor Service splice on code, not comments
+- docs: sync stale guides and spec with code
+
 ## [10.4.0] - 2026-09-10
 
 ### Changed
