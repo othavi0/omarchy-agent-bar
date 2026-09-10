@@ -95,6 +95,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `This plan does not publish a usage percentage.` (PROD-031 / UX-032A
   amended).
 
+## [10.3.24] - 2026-09-10
+
+### Changed
+
+- fix: preflight update run tools, report lock skip
+- fix: restart via update run, not ExecStartPost
+- feat: automatic updates with a settings toggle
+- fix: restart the shell after update apply
+
 ## [10.3.23] - 2026-09-10
 
 ### Changed
