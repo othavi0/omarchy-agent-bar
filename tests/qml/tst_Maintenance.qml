@@ -279,9 +279,12 @@ TestCase {
   }
 
   function test_automatic_update_check_gate() {
-    var ok = { automatic: true, versionReady: true, blocked: false, checkBusy: false, popupOpen: false }
+    var ok = { automatic: true, settingsLoaded: true, versionReady: true,
+               blocked: false, checkBusy: false, popupOpen: false }
     compare(Core.automaticUpdateCheckAllowed(ok), true)
-    var keys = ["automatic", "versionReady"]
+    // settingsLoaded: a failed boot read must not turn an opt-out into an
+    // update (the default is "on", so unknown settings fail closed here).
+    var keys = ["automatic", "settingsLoaded", "versionReady"]
     for (var i = 0; i < keys.length; i++) {
       var off = JSON.parse(JSON.stringify(ok))
       off[keys[i]] = false

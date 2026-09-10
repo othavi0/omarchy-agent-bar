@@ -89,7 +89,8 @@ pub fn help_text(topic: Option<HelpTopic>) -> String {
         }
         Some(HelpTopic::Update) => "update — print usage; no interactive flow\n\
              update check — report whether a newer release exists\n\
-             update apply — delegate to 'omarchy plugin update othavi0.agent-bar'\n"
+             update apply — start 'update run' in a detached unit and return\n\
+             update run — 'omarchy plugin update othavi0.agent-bar', then restart the shell if it changed\n"
             .to_owned(),
         Some(HelpTopic::Uninstall) => {
             "uninstall — remove the plugin (keeps settings and backups)\n\
@@ -124,6 +125,7 @@ pub fn dispatch(command: Command) -> Result<(), CliFailure> {
         Command::Update(UpdateCommand::Interactive) => dispatch_update_interactive(),
         Command::Update(UpdateCommand::Check) => dispatch_update_check(),
         Command::Update(UpdateCommand::Apply) => dispatch_update_apply(),
+        Command::Update(UpdateCommand::Run) => dispatch_update_run(),
         Command::Config(config) => dispatch_config(config),
         Command::Login(provider) => dispatch_login(provider),
         Command::Status(opts) => dispatch_status(opts),
@@ -515,56 +517,37 @@ fn dispatch_update_apply() -> Result<(), CliFailure> {
         .lock_exclusive()
         .map_err(|e| CliFailure::plugin(format!("exclusive maintenance lock: {e}")))?;
 
-    let omarchy_bin =
-        resolve_absolute_executable("omarchy").map_err(|e| CliFailure::plugin(e.to_string()))?;
+    // Fail closed here, where QML sees the error, rather than inside the
+    // detached unit where nobody would.
+    resolve_absolute_executable("omarchy").map_err(|e| CliFailure::plugin(e.to_string()))?;
+    resolve_absolute_executable("omarchy-restart-shell")
+        .map_err(|e| CliFailure::plugin(e.to_string()))?;
     let systemd_run = resolve_absolute_executable("systemd-run")
         .map_err(|e| CliFailure::plugin(e.to_string()))?;
-
-    // `omarchy plugin update` only rescans plugins, and a rescan does not
-    // reload a running Service.qml: without a shell restart the old QML keeps
-    // running against the new tree. The restart runs from the unit, outside
-    // the shell process it replaces. A missing notifier never blocks it.
-    let restart_shell = unit_command_path(
-        resolve_absolute_executable("omarchy-restart-shell")
-            .map_err(|e| CliFailure::plugin(e.to_string()))?,
-    )?;
-    let notify = match resolve_absolute_executable("notify-send") {
-        Ok(path) => Some(unit_command_path(path)?),
-        Err(_) => None,
-    };
+    let helper = std::env::current_exe()
+        .map_err(|e| CliFailure::plugin(format!("cannot locate the helper: {e}")))?;
+    let helper = unit_argv_path(helper.to_string_lossy().into_owned())?;
 
     let clock = SystemClock;
     let txid = txid_from_bytes(format!("update-apply:{}", Clock::now_utc(&clock)).as_bytes());
     let unit = format!("agent-bar-update-{txid}.service");
     let unit_flag = format!("--unit={unit}");
 
-    // Oneshot: ExecStartPost runs only after `omarchy plugin update` exits 0,
-    // so a failed or rolled-back update never restarts the shell.
-    let mut argv: Vec<String> = vec![
-        "--user".to_string(),
-        "--collect".to_string(),
-        unit_flag,
-        "--service-type=oneshot".to_string(),
+    // The unit runs `update run`, which owns the fast-forward and the shell
+    // restart. `--no-block` returns once systemd queued it, so this process
+    // and its maintenance lock never wait on a `git fetch`; RuntimeMaxSec
+    // bounds the unit, including a day of retries behind a locked session.
+    let argv: [&str; 9] = [
+        "--user",
+        "--collect",
+        "--no-block",
+        unit_flag.as_str(),
+        "--property=RuntimeMaxSec=25h",
+        "--",
+        helper.as_str(),
+        "update",
+        "run",
     ];
-    if let Some(notify) = notify {
-        argv.push(format!(
-            "--property=ExecStartPost={notify} --app-name=\"Agent Bar\" \
-             \"Agent Bar updated\" \"The shell is reloading to finish the update.\""
-        ));
-    }
-    argv.push(format!("--property=ExecStartPost={restart_shell}"));
-    argv.extend(
-        [
-            "--",
-            omarchy_bin.as_str(),
-            "plugin",
-            "update",
-            "othavi0.agent-bar",
-            "--yes",
-        ]
-        .map(str::to_string),
-    );
-    let argv: Vec<&str> = argv.iter().map(String::as_str).collect();
 
     let runner = ProcessCommandRunner;
     let out = runner
@@ -588,19 +571,97 @@ fn dispatch_update_apply() -> Result<(), CliFailure> {
     Ok(())
 }
 
-/// An absolute executable path that is safe to embed in a systemd unit
-/// command line. systemd splits `ExecStartPost=` on whitespace and expands
-/// `%` specifiers and `$` variables, so any other character fails closed.
-fn unit_command_path(path: String) -> Result<String, CliFailure> {
-    let safe = path.starts_with('/')
-        && path
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '/' | '.' | '_' | '-' | '+'));
-    if safe {
+/// `update run` stdout document: one line for the unit's journal.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateRunReport {
+    schema_version: u32,
+    operation: &'static str,
+    outcome: &'static str,
+}
+
+/// `update run`: the detached unit's body (see `plugin::update_run`).
+///
+/// A second run while one is still retrying a restart exits 0 at once: the
+/// run lock, separate from the maintenance lock, is never waited on, so
+/// status and settings keep working during a long fetch or a locked session.
+fn dispatch_update_run() -> Result<(), CliFailure> {
+    use crate::plugin::update_run::{
+        run_update, UpdateRunLimits, UpdateRunOutcome, UpdateRunTools,
+    };
+    use crate::plugin::{resolve_absolute_executable, PluginPaths, ProcessCommandRunner};
+    use crate::support::maintenance_gate::MaintenanceGate;
+
+    let home = std::env::var_os("HOME")
+        .ok_or_else(|| CliFailure::plugin("HOME is required for update run".to_string()))?;
+    let xdg_state = std::env::var_os("XDG_STATE_HOME").map(PathBuf::from);
+    let paths = PluginPaths::production(PathBuf::from(home), xdg_state);
+
+    std::fs::create_dir_all(&paths.xdg_state)
+        .map_err(|e| CliFailure::plugin(format!("create state directory: {e}")))?;
+    let gate = MaintenanceGate::open(paths.xdg_state.join("update-run.lock"))
+        .map_err(|e| CliFailure::plugin(format!("open update run lock: {e}")))?;
+    let Some(_run) = gate
+        .try_lock_exclusive()
+        .map_err(|e| CliFailure::plugin(format!("update run lock: {e}")))?
+    else {
+        eprintln!("agent-bar: another update run is in progress");
+        return Ok(());
+    };
+
+    let resolve = |name: &str| {
+        resolve_absolute_executable(name).map_err(|e| CliFailure::plugin(e.to_string()))
+    };
+    let tools = UpdateRunTools {
+        git: resolve("git")?,
+        timeout: resolve("timeout")?,
+        omarchy: resolve("omarchy")?,
+        restart_shell: resolve("omarchy-restart-shell")?,
+        notify: resolve_absolute_executable("notify-send").ok(),
+    };
+
+    let outcome = run_update(
+        &ProcessCommandRunner,
+        &std::thread::sleep,
+        &tools,
+        &paths.plugin_root,
+        &UpdateRunLimits::default(),
+    )
+    .map_err(|e| CliFailure::plugin(e.to_string()))?;
+
+    let label = match outcome {
+        UpdateRunOutcome::UpToDate => "upToDate",
+        UpdateRunOutcome::Updated => "updated",
+        UpdateRunOutcome::UpdateFailed(_) => "updateFailed",
+        UpdateRunOutcome::RestartGaveUp => "restartGaveUp",
+    };
+    let doc = UpdateRunReport {
+        schema_version: 1,
+        operation: "updateRun",
+        outcome: label,
+    };
+    let json = serde_json::to_string(&doc).map_err(|e| CliFailure::plugin(e.to_string()))?;
+    println!("{json}");
+    match outcome {
+        UpdateRunOutcome::UpToDate | UpdateRunOutcome::Updated => Ok(()),
+        UpdateRunOutcome::UpdateFailed(code) => Err(CliFailure::plugin(format!(
+            "omarchy plugin update exited {code}"
+        ))),
+        UpdateRunOutcome::RestartGaveUp => Err(CliFailure::plugin(
+            "the shell refused every restart; restart it to load the update".to_string(),
+        )),
+    }
+}
+
+/// An absolute path that systemd-run passes to the unit unchanged. The argv
+/// travels over D-Bus without word splitting, but systemd-run expands `$`
+/// variables and `%` specifiers, so a path carrying either fails closed.
+fn unit_argv_path(path: String) -> Result<String, CliFailure> {
+    if path.starts_with('/') && !path.contains(['$', '%']) {
         Ok(path)
     } else {
         Err(CliFailure::plugin(format!(
-            "executable path cannot be used in a unit command line: {path}"
+            "helper path cannot be passed to systemd-run: {path}"
         )))
     }
 }
@@ -837,21 +898,16 @@ mod tests {
     }
 
     #[test]
-    fn unit_command_path_rejects_what_systemd_would_split_or_expand() {
-        assert_eq!(
-            unit_command_path("/usr/bin/omarchy-restart-shell".to_string()).unwrap(),
-            "/usr/bin/omarchy-restart-shell"
-        );
-        for unsafe_path in [
-            "omarchy-restart-shell",
-            "/home/a b/bin/notify-send",
-            "/opt/%h/notify-send",
-            "/opt/$HOME/notify-send",
-            "/opt/\"q\"/notify-send",
-            "/opt/a\\b/notify-send",
+    fn unit_argv_path_rejects_what_systemd_run_would_expand() {
+        for safe in [
+            "/home/u/.config/omarchy/plugins/othavi0.agent-bar/bin/agent-bar",
+            "/home/a b/plugins/othavi0.agent-bar/bin/agent-bar",
         ] {
+            assert_eq!(unit_argv_path(safe.to_string()).unwrap(), safe);
+        }
+        for unsafe_path in ["bin/agent-bar", "/opt/%h/agent-bar", "/opt/$HOME/agent-bar"] {
             assert!(
-                unit_command_path(unsafe_path.to_string()).is_err(),
+                unit_argv_path(unsafe_path.to_string()).is_err(),
                 "{unsafe_path}"
             );
         }

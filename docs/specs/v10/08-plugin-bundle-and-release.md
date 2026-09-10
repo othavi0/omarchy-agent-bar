@@ -372,10 +372,11 @@ What replaces it:
   each start one `systemd-run --user --collect
   --unit=agent-bar-<update|remove>-<32-lowercase-hex-txid>.service -- <omarchy>
   plugin <update|remove> othavi0.agent-bar --yes` and return once systemd has
-  accepted it, so the operation survives the initiating QML service being
-  torn down by the rescan it triggers. The update unit adds
-  `--service-type=oneshot` and `ExecStartPost=` steps for a toast and
-  `omarchy-restart-shell`. `MIG-020`–`MIG-026` are the current contract.
+  accepted it, so the operation outlives the shell process that started it.
+  The update unit is `--no-block` and runs the helper's `update run`, which
+  restarts the shell only when the fast-forward moved `HEAD`: the rescan
+  `omarchy plugin update` triggers does not reload a running `Service.qml`.
+  `MIG-020`–`MIG-026` are the current contract.
 
 ## UI uninstall
 

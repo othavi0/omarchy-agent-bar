@@ -83,31 +83,30 @@ absolute executable paths, then hands its live mutation to the Omarchy CLI
 as a detached transient unit:
 
 ```text
-systemd-run --user --collect --unit=agent-bar-update-<txid>.service \
-  --service-type=oneshot \
-  '--property=ExecStartPost=<notify-send> --app-name="Agent Bar" "Agent Bar updated" "..."' \
-  --property=ExecStartPost=<omarchy-restart-shell> \
-  -- <omarchy> plugin update othavi0.agent-bar --yes
+systemd-run --user --collect --no-block --unit=agent-bar-update-<txid>.service \
+  --property=RuntimeMaxSec=25h -- <plugin>/bin/agent-bar update run
 
 systemd-run --user --collect --unit=agent-bar-remove-<txid>.service \
   -- <omarchy> plugin remove othavi0.agent-bar --yes
 ```
 
 Detachment lets the helper return as soon as systemd accepts the unit,
-without depending on the QML service that may be torn down by the rescan
-the update or removal triggers. `omarchy plugin update` owns the git
-fast-forward and its own validation rollback; `omarchy plugin remove` owns
-disabling the bar entry, deleting (or backing up) the plugin directory, and
-rescanning. Both commands hold the shared exclusive maintenance lock only
-for the purge/preflight/handoff step, not for the delegated mutation
-itself.
+without depending on the shell process that started it. `update run` wraps
+`omarchy plugin update othavi0.agent-bar --yes` (ten-minute timeout), which
+owns the git fast-forward and its own validation rollback; `omarchy plugin
+remove` owns disabling the bar entry, deleting (or backing up) the plugin
+directory, and rescanning. Both commands hold the shared exclusive
+maintenance lock only for the purge/preflight/handoff step, not for the
+delegated mutation itself; `update run` uses its own lock so two runs never
+overlap.
 
-A rescan does not reload a running `Service.qml`, so the update unit is
-`oneshot` and restarts the shell in `ExecStartPost=` once
-`omarchy plugin update` exits 0. A failed or rolled-back update leaves the
-shell alone. With `updates.automatic` on, the service runs this same path by
-itself: a check two minutes after start and every six hours, applied only
-while the popup is closed.
+The rescan `omarchy plugin update` triggers does not reload a running
+`Service.qml`. `update run` therefore compares the plugin `HEAD` before and
+after: when it moved, it shows a toast and runs `omarchy-restart-shell`,
+retrying every minute while a locked session refuses it; when it did not,
+or the update failed, the shell is left alone. With `updates.automatic` on,
+the service starts this same path by itself: a check two minutes after start
+and every six hours, applied only while the popup is closed.
 
 ## Ownership
 

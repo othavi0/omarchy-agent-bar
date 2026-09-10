@@ -25,32 +25,41 @@ Settings switch to turn them off.
 
 ## Decision
 
-1. `update apply` starts its transient unit as `--service-type=oneshot` with
-   two `ExecStartPost=` steps: a `notify-send` toast, then
-   `omarchy-restart-shell`. Oneshot runs `ExecStartPost=` only after
-   `omarchy plugin update` exits 0, so a failed or rolled-back update never
-   restarts the shell. A missing `notify-send` drops the toast; a missing
-   `omarchy-restart-shell` fails closed like `omarchy` and `systemd-run`.
-   Both paths are embedded in unit command lines, so any path with
-   whitespace, quotes, `%`, `$`, or `\` fails closed.
-2. `Service.qml` checks for updates two minutes after the helper answers and
+1. `update apply` queues a transient unit with `systemd-run --user --collect
+   --no-block --property=RuntimeMaxSec=25h` whose command is the helper's
+   own `update run`, and returns at once. It still fails closed, before any
+   unit starts, when `omarchy`, `omarchy-restart-shell`, or `systemd-run` is
+   missing.
+2. `update run` is the unit's body. It reads the plugin `HEAD`, runs
+   `omarchy plugin update othavi0.agent-bar --yes` under a ten-minute
+   `timeout`, and reads `HEAD` again. An unchanged `HEAD` ends the run with
+   no toast and no restart, which covers "is up to date" exits and installs
+   whose `origin` lags the official release. A moved `HEAD` sends a
+   `notify-send` toast when available (its failure is ignored) and then runs
+   `omarchy-restart-shell`. That command refuses while the session is
+   locked, so the restart is retried every minute for up to a day. A second
+   `update run` while one holds `$XDG_STATE_HOME/agent-bar/update-run.lock`
+   exits at once. The run never takes the maintenance lock, so status and
+   settings keep working during a long fetch.
+3. `Service.qml` checks for updates two minutes after the helper answers and
    every six hours after that. When the check reports a plain available
    update, it applies it through the same handoff the Settings button uses.
-   It does not check or apply while the popup is open, while maintenance is
-   in flight, or when the setting is off. It never applies
-   `reinstall_required`. A failed automatic check paints nothing and waits
-   for the next tick.
-3. `settings.json` gains an optional `updates.automatic` boolean. Absent
+   It does not check or apply until the boot settings read succeeded, while
+   the popup is open, while maintenance is in flight, or when the setting is
+   off. It never applies `reinstall_required`. A failed automatic check
+   paints nothing and waits for the next tick. A click on `Check for
+   updates` during a silent automatic check adopts it as a manual check.
+4. `settings.json` gains an optional `updates.automatic` boolean. Absent
    means `true`, so every existing document keeps parsing and gets automatic
    updates. Settings shows it as the "Update automatically" toggle.
 
 ## Contract changes
 
-- `UX-041` becomes: `Check for updates` performs an explicit network request;
-  `UX-041A` adds the automatic check and apply above.
+- `UX-041A` adds the automatic check and apply; `UX-041` is unchanged.
 - `SET-028` defines `updates.automatic`.
-- `MIG-020` and the unit description in `03`, `06`, and `08` gain the
-  oneshot `ExecStartPost=` steps.
+- `MIG-020` and the unit description in `03`, `06`, and `08` describe the
+  `update run` unit.
+- `CLI` grammar gains `update run`.
 
 ## Consequences
 

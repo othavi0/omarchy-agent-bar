@@ -215,6 +215,18 @@ fn setup_rejects_any_argument() {
 }
 
 #[test]
+fn update_run_parses_and_takes_no_argument() {
+    // `update run` is what the detached update unit executes; QML never
+    // calls it directly.
+    assert_eq!(
+        parse(words(&["update", "run"])).unwrap(),
+        Command::Update(UpdateCommand::Run)
+    );
+    let err = parse(words(&["update", "run", "now"])).unwrap_err();
+    assert_eq!(err.exit_code, GRAMMAR);
+}
+
+#[test]
 fn update_apply_rejects_trailing_arguments() {
     // `update apply` takes no argument (git-plugin-distribution Task 2): it
     // delegates unconditionally instead of applying a specific version.
@@ -601,17 +613,21 @@ fn read_nul_argv(path: &Path) -> Vec<String> {
 
 #[test]
 fn update_apply_emits_delegation_document() {
-    // omarchy and systemd-run resolved via fake PATH shims in a tempdir that
-    // record argv (git-plugin-distribution Task 2): `update apply` never
-    // downloads/stages/exchanges anymore, it hands off to
-    // `systemd-run --user --collect --unit=... -- <omarchy> plugin update
-    // othavi0.agent-bar --yes` and prints the delegation document.
+    // omarchy, omarchy-restart-shell and systemd-run resolved via fake PATH
+    // shims in a tempdir that record argv (git-plugin-distribution Task 2):
+    // `update apply` never downloads/stages/exchanges anymore, it queues
+    // `systemd-run --user --collect --no-block --unit=... -- <helper> update
+    // run` and prints the delegation document.
     let dir = tempdir().unwrap();
     let home = dir.path().join("home");
     std::fs::create_dir_all(&home).unwrap();
 
     let path_dir = dir.path().join("pathbin");
     write_executable(&path_dir.join("omarchy"), "#!/usr/bin/env bash\nexit 0\n");
+    write_executable(
+        &path_dir.join("omarchy-restart-shell"),
+        "#!/usr/bin/env bash\nexit 0\n",
+    );
 
     let systemd_run_argv = dir.path().join("systemd-run-argv.bin");
     write_executable(
@@ -656,115 +672,118 @@ fn update_apply_emits_delegation_document() {
     );
 
     let argv = read_nul_argv(&systemd_run_argv);
+    // The unit runs this very helper: `update run` owns the fast-forward and
+    // the shell restart, so a rescan that keeps the old QML is not the end.
+    let helper = std::fs::canonicalize(&bin).unwrap();
     assert!(
         argv.ends_with(&[
-            "plugin".to_string(),
+            helper.display().to_string(),
             "update".to_string(),
-            "othavi0.agent-bar".to_string(),
-            "--yes".to_string(),
+            "run".to_string(),
         ]),
         "argv={argv:?}"
     );
     assert_eq!(argv.first().map(String::as_str), Some("--user"));
     assert!(argv.contains(&"--collect".to_string()));
+    // Queued, not awaited: the helper and its maintenance lock never wait on
+    // a git fetch or a locked session.
+    assert!(argv.contains(&"--no-block".to_string()));
+    assert!(argv.contains(&"--property=RuntimeMaxSec=25h".to_string()));
     assert!(argv.iter().any(|a| a == &format!("--unit={unit}")));
     assert!(argv.contains(&"--".to_string()));
+    assert!(!argv.iter().any(|a| a.contains("ExecStartPost")));
 }
 
-/// Runs `update apply` with PATH limited to `path_dir` (plus a `bash` link
-/// for the shims) and returns the recorded systemd-run argv.
-fn update_apply_argv_with_path_dir(root: &Path, path_dir: &Path) -> Vec<String> {
-    let home = root.join("home");
+#[test]
+fn update_apply_fails_closed_without_omarchy_restart_shell() {
+    let dir = tempdir().unwrap();
+    let home = dir.path().join("home");
     std::fs::create_dir_all(&home).unwrap();
+    let path_dir = dir.path().join("pathbin");
     write_executable(&path_dir.join("omarchy"), "#!/usr/bin/env bash\nexit 0\n");
-    write_executable(
-        &path_dir.join("omarchy-restart-shell"),
-        "#!/usr/bin/env bash\nexit 0\n",
-    );
-    #[cfg(unix)]
-    std::os::unix::fs::symlink("/bin/bash", path_dir.join("bash")).unwrap();
-    let systemd_run_argv = root.join("systemd-run-argv.bin");
+    let systemd_run_argv = dir.path().join("systemd-run-argv.bin");
     write_executable(
         &path_dir.join("systemd-run"),
         &recording_shim_body(&systemd_run_argv),
     );
+    #[cfg(unix)]
+    std::os::unix::fs::symlink("/bin/bash", path_dir.join("bash")).unwrap();
 
-    let bin = assert_cmd::cargo::cargo_bin("agent-bar");
-    let output = StdCommand::new(&bin)
+    let output = StdCommand::new(assert_cmd::cargo::cargo_bin("agent-bar"))
         .args(["update", "apply"])
         .env("HOME", &home)
         .env("XDG_STATE_HOME", home.join("state"))
-        .env("XDG_CACHE_HOME", home.join("cache"))
-        .env("XDG_CONFIG_HOME", home.join("config"))
-        .env("PATH", path_dir)
+        .env("PATH", &path_dir)
         .output()
         .unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("omarchy-restart-shell"));
+    assert!(!systemd_run_argv.exists(), "no unit may start");
+}
+
+/// Shims for `update run`: a git that answers `before` then `after` for
+/// `rev-parse HEAD`, an omarchy that succeeds, and a restart that records it
+/// ran. PATH is limited to the shim directory plus `bash` and `timeout`.
+fn update_run_in(root: &Path, before: &str, after: &str) -> (std::process::Output, PathBuf) {
+    let home = root.join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let path_dir = root.join("pathbin");
+    let counter = root.join("git-calls");
+    write_executable(
+        &path_dir.join("git"),
+        &format!(
+            "#!/usr/bin/env bash\nn=0\n[ -f \"{c}\" ] && n=$(<\"{c}\")\necho $((n+1)) > \"{c}\"\n\
+             if [ \"$n\" = 0 ]; then echo {before}; else echo {after}; fi\n",
+            c = counter.display()
+        ),
+    );
+    write_executable(&path_dir.join("omarchy"), "#!/usr/bin/env bash\nexit 0\n");
+    let restarted = root.join("restarted");
+    write_executable(
+        &path_dir.join("omarchy-restart-shell"),
+        &format!("#!/usr/bin/env bash\n: > \"{}\"\n", restarted.display()),
+    );
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink("/bin/bash", path_dir.join("bash")).unwrap();
+        let timeout = ["/usr/bin/timeout", "/bin/timeout"]
+            .into_iter()
+            .find(|p| Path::new(p).exists())
+            .expect("coreutils timeout");
+        std::os::unix::fs::symlink(timeout, path_dir.join("timeout")).unwrap();
+    }
+    let output = StdCommand::new(assert_cmd::cargo::cargo_bin("agent-bar"))
+        .args(["update", "run"])
+        .env("HOME", &home)
+        .env("XDG_STATE_HOME", home.join("state"))
+        .env("PATH", &path_dir)
+        .output()
+        .unwrap();
+    (output, restarted)
+}
+
+#[test]
+fn update_run_restarts_the_shell_only_when_the_tree_moved() {
+    let dir = tempdir().unwrap();
+    let (output, restarted) = update_run_in(dir.path(), "aaa", "bbb");
     assert!(
         output.status.success(),
-        "stderr={} stdout={}",
-        String::from_utf8_lossy(&output.stderr),
-        String::from_utf8_lossy(&output.stdout)
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
     );
-    read_nul_argv(&systemd_run_argv)
-}
+    let doc: serde_json::Value =
+        serde_json::from_str(String::from_utf8_lossy(&output.stdout).trim()).unwrap();
+    assert_eq!(doc["operation"], "updateRun");
+    assert_eq!(doc["outcome"], "updated");
+    assert!(restarted.exists());
 
-#[test]
-fn update_apply_restarts_shell_after_a_successful_update() {
-    // `omarchy plugin update` only rescans plugins, which does not reload a
-    // running Service.qml. The unit is oneshot so ExecStartPost runs only
-    // after the fast-forward succeeded: notify first, then restart the shell.
     let dir = tempdir().unwrap();
-    let path_dir = dir.path().join("pathbin");
-    write_executable(
-        &path_dir.join("notify-send"),
-        "#!/usr/bin/env bash\nexit 0\n",
-    );
-    let argv = update_apply_argv_with_path_dir(dir.path(), &path_dir);
-
-    let separator = argv.iter().position(|a| a == "--").expect("argv has --");
-    let oneshot = argv
-        .iter()
-        .position(|a| a == "--service-type=oneshot")
-        .expect("unit is oneshot");
-    let notify_prefix = format!(
-        "--property=ExecStartPost={}/notify-send ",
-        path_dir.display()
-    );
-    let notify = argv
-        .iter()
-        .position(|a| a.starts_with(&notify_prefix))
-        .unwrap_or_else(|| panic!("notify step missing: {argv:?}"));
-    let restart = argv
-        .iter()
-        .position(|a| {
-            a == &format!(
-                "--property=ExecStartPost={}/omarchy-restart-shell",
-                path_dir.display()
-            )
-        })
-        .unwrap_or_else(|| panic!("restart step missing: {argv:?}"));
-    assert!(oneshot < separator && notify < restart && restart < separator);
-    assert!(argv.ends_with(&[
-        "plugin".to_string(),
-        "update".to_string(),
-        "othavi0.agent-bar".to_string(),
-        "--yes".to_string(),
-    ]));
-}
-
-#[test]
-fn update_apply_without_notify_send_still_restarts_the_shell() {
-    let dir = tempdir().unwrap();
-    let path_dir = dir.path().join("pathbin");
-    let argv = update_apply_argv_with_path_dir(dir.path(), &path_dir);
-    assert!(
-        !argv.iter().any(|a| a.contains("notify-send")),
-        "argv={argv:?}"
-    );
-    assert!(argv.contains(&format!(
-        "--property=ExecStartPost={}/omarchy-restart-shell",
-        path_dir.display()
-    )));
+    let (output, restarted) = update_run_in(dir.path(), "aaa", "aaa");
+    assert!(output.status.success());
+    let doc: serde_json::Value =
+        serde_json::from_str(String::from_utf8_lossy(&output.stdout).trim()).unwrap();
+    assert_eq!(doc["outcome"], "upToDate");
+    assert!(!restarted.exists(), "an up-to-date tree must not restart");
 }
 
 /// Fixture for the two `uninstall` delegation tests: isolated XDG roots with

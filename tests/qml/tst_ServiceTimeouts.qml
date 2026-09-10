@@ -360,9 +360,53 @@ TestCase {
     compare(s.autoUpdateIntervalMs, 21600000)
   }
 
-  function test_automatic_update_checks_then_applies_without_a_click() {
+  function bootstrapSettings(s) {
+    s.applySettingsBootstrapResult(s.activeSettingsBootstrapGeneration, JSON.stringify(validSettings()), 0)
+    verify(s.appliedSettings !== null)
+  }
+
+  function test_automatic_update_skips_until_settings_load() {
     var s = createService()
     s.applySettingsBootstrapResult(s.activeSettingsBootstrapGeneration, "", 1)
+    compare(s.appliedSettings, null)
+    compare(s.automaticUpdateTick(), false)
+    compare(s.maintenanceCheckBusy, false)
+  }
+
+  function test_manual_click_takes_over_an_automatic_check() {
+    var s = createService()
+    bootstrapSettings(s)
+    verify(s.automaticUpdateTick())
+    s.checkForUpdates()
+    compare(s.maintenanceUi.phase, "checking")
+    s.applyUpdateCheckResult(s.activeMaintenanceCheckGeneration, "", 1)
+    compare(s.maintenanceUi.phase, "error")
+  }
+
+  function test_automatic_result_never_overwrites_a_handoff() {
+    var s = createService()
+    bootstrapSettings(s)
+    verify(s.automaticUpdateTick())
+    s.pendingMaintenanceIntention = ({ kind: "update_apply", version: "10.3.18" })
+    s.beginMaintenanceHandoff()
+    var before = s.maintenanceUi.phase
+    s.applyUpdateCheckResult(s.activeMaintenanceCheckGeneration, availableCheck(), 0)
+    compare(s.maintenanceUi.phase, before)
+  }
+
+  function test_started_update_says_the_shell_reloads_later() {
+    var s = createService()
+    bootstrapSettings(s)
+    s.checkForUpdates()
+    s.applyUpdateCheckResult(s.activeMaintenanceCheckGeneration, availableCheck(), 0)
+    verify(s.confirmUpdateApply())
+    s.applyMaintenanceHandoffDone(s.activeMaintenanceHandoffGeneration, 0)
+    compare(s.maintenanceUi.message, "Update started. The shell reloads when it finishes.")
+  }
+
+  function test_automatic_update_checks_then_applies_without_a_click() {
+    var s = createService()
+    bootstrapSettings(s)
     compare(s.automaticUpdateTick(), true)
     compare(s.maintenanceCheckBusy, true)
     compare(s.maintenanceUi.phase, "idle")
@@ -390,7 +434,7 @@ TestCase {
 
   function test_automatic_update_waits_while_the_popup_is_open() {
     var s = createService()
-    s.applySettingsBootstrapResult(s.activeSettingsBootstrapGeneration, "", 1)
+    bootstrapSettings(s)
     s.popupOwner = ({ owner: "monitor-a", providerId: "", view: "provider" })
     compare(s.automaticUpdateTick(), false)
     compare(s.maintenanceCheckBusy, false)
@@ -398,7 +442,7 @@ TestCase {
 
   function test_automatic_check_failure_stays_silent() {
     var s = createService()
-    s.applySettingsBootstrapResult(s.activeSettingsBootstrapGeneration, "", 1)
+    bootstrapSettings(s)
     verify(s.automaticUpdateTick())
     s.applyUpdateCheckResult(s.activeMaintenanceCheckGeneration, "", 1)
     compare(s.maintenanceUi.phase, "idle")

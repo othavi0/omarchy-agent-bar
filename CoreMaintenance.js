@@ -229,13 +229,15 @@ function maintenanceUiArmOrConfirmUninstall(ui) {
   return { ui: next, confirmed: true }
 }
 
-// Automatic update check gate: the setting is on, the helper answered, no
-// maintenance or check is in flight, and the popup is closed so the shell
-// restart that follows an update never lands under the user's pointer.
+// Automatic update check gate: settings loaded and the setting is on (the
+// default is on, so an unread settings file must not count as consent), the
+// helper answered, no maintenance or check is in flight, and the popup is
+// closed when the update starts.
 function automaticUpdateCheckAllowed(context) {
   if (!context)
     return false
   return context.automatic === true
+      && context.settingsLoaded === true
       && context.versionReady === true
       && context.blocked !== true
       && context.checkBusy !== true

@@ -34,8 +34,8 @@ contract in `02-target-architecture.md` and Omarchy contract `1` in
 `08-plugin-bundle-and-release.md`:
 [docs/specs/v10/amendments/2026-09-10-plugin-root-from-service-url-design.md](amendments/2026-09-10-plugin-root-from-service-url-design.md).
 
-The automatic-updates design, approved 2026-09-10, adds `UX-041A` and
-`SET-028` and amends `MIG-020`:
+The automatic-updates design, approved 2026-09-10, adds `UX-041A`,
+`SET-028`, and `CLI-029A` and amends `CLI-029` and `MIG-020`:
 [docs/specs/v10/amendments/2026-09-10-automatic-updates-design.md](amendments/2026-09-10-automatic-updates-design.md).
 
 ## Product statement

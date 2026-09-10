@@ -402,6 +402,7 @@ Item {
     autoUpdateTimer.restart()
     if (!Maintenance.automaticUpdateCheckAllowed({
           automatic: Core.automaticUpdatesEnabled(appliedSettings),
+          settingsLoaded: appliedSettings !== null,
           versionReady: versionReady,
           blocked: maintenanceState.blocked,
           checkBusy: maintenanceCheckBusy,
@@ -414,6 +415,13 @@ Item {
   function startUpdateCheck(automatic) {
     if (maintenanceState.blocked)
       return false
+    // A click during a silent automatic check adopts it: the result will be
+    // painted like any manual check, and never applied without a click.
+    if (!automatic && maintenanceCheckBusy && automaticCheck) {
+      automaticCheck = false
+      maintenanceUi = Maintenance.maintenanceUiChecking(maintenanceUi)
+      return true
+    }
     if (!Core.canStartLane(maintenanceCheckBusy))
       return false
     syncMaintenanceVersion()
@@ -462,8 +470,8 @@ Item {
       return
     }
     // A failed automatic check retries on the next tick without painting an
-    // error nobody asked for.
-    if (next.phase === "error")
+    // error nobody asked for, and never repaints an update already handed off.
+    if (next.phase === "error" || maintenanceState.blocked)
       return
     maintenanceUi = next
     // Re-check the gate: the popup may have opened while the check ran.
@@ -903,7 +911,9 @@ Item {
     if (intention && intention.kind === "update_apply") {
       if (exitCode === 0) {
         maintenanceUi = Maintenance.maintenanceUiIdle(helperVersion || intention.version)
-        maintenanceUi.message = "Update applied."
+        // `update apply` returns once the unit is queued; the unit restarts
+        // the shell when the new tree is in place.
+        maintenanceUi.message = "Update started. The shell reloads when it finishes."
       } else {
         maintenanceUi = Maintenance.cloneMaintenanceUi(maintenanceUi)
         maintenanceUi.phase = "error"
