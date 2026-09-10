@@ -14,15 +14,15 @@ Item {
   property color foreground: Color.foreground
   property string fontFamily: Style.font.family
 
-  readonly property var state: agentService ? agentService.settingsState : null
-  readonly property string phase: state && state.phase ? String(state.phase) : "closed"
+  readonly property var settingsState: agentService ? agentService.settingsState : null
+  readonly property string phase: settingsState && settingsState.phase ? String(settingsState.phase) : "closed"
   readonly property bool shown: active
       && (phase === "clean" || phase === "dirty" || phase === "saving")
   readonly property bool locked: agentService ? agentService.settingsLocked() : true
   readonly property bool saving: phase === "saving"
   readonly property bool canSave: agentService ? agentService.canSaveSettings() : false
   readonly property int changeCount: Settings.settingsChanges(
-    state ? state.snapshot : null,
+    settingsState ? settingsState.snapshot : null,
     agentService ? agentService.settingsDraft : null
   ).count
 
@@ -39,6 +39,10 @@ Item {
   visible: shown
   implicitHeight: shown ? body.implicitHeight : 0
 
+  function collectFocusTargets() {
+    return shown ? [restoreButton, cancelButton, saveButton] : []
+  }
+
   Column {
     id: body
     width: parent.width
@@ -54,16 +58,19 @@ Item {
       spacing: Style.space(8)
 
       Button {
+        id: restoreButton
         text: "Restore defaults"
         focusable: true
         enabled: !root.locked
         foreground: root.foreground
         fontFamily: root.fontFamily
         Accessible.name: "Restore defaults"
-        onClicked: {
+        function focusActivate() {
           if (root.agentService)
             root.agentService.restoreSettingsDefaults()
         }
+        Accessible.onPressAction: focusActivate()
+        onClicked: focusActivate()
       }
 
       Text {
@@ -80,32 +87,39 @@ Item {
       }
 
       Button {
+        id: cancelButton
         text: "Cancel"
         bordered: true
         focusable: true
-        enabled: !root.locked && root.phase === "dirty"
+        enabled: !root.locked && root.phase === "dirty" && root.changeCount > 0
         foreground: root.foreground
         fontFamily: root.fontFamily
         Accessible.name: "Cancel"
-        onClicked: {
+        function focusActivate() {
           if (root.agentService)
             root.agentService.cancelSettings()
         }
+        Accessible.onPressAction: focusActivate()
+        onClicked: focusActivate()
       }
 
       Button {
+        id: saveButton
+        readonly property bool ready: root.canSave && root.changeCount > 0
         text: root.saving ? "Saving\u2026" : "Save changes"
         bordered: true
-        selected: root.canSave
+        selected: ready
         focusable: true
-        enabled: root.canSave
+        enabled: ready
         foreground: root.foreground
         fontFamily: root.fontFamily
         Accessible.name: "Save changes"
-        onClicked: {
+        function focusActivate() {
           if (root.agentService)
             root.agentService.saveSettings()
         }
+        Accessible.onPressAction: focusActivate()
+        onClicked: focusActivate()
       }
     }
   }

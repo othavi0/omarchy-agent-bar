@@ -39,6 +39,7 @@ KeyboardPanel {
   )
 
   readonly property string displayMetric: Core.displayMetric(appliedSettings)
+  property string settingsTab: "providers"
 
   readonly property string selectedId: {
     if (!agentService)
@@ -175,6 +176,8 @@ KeyboardPanel {
       list = list.concat(stalledMessage.collectFocusTargets())
     if (contentLoader.item && typeof contentLoader.item.collectFocusTargets === "function")
       list = list.concat(contentLoader.item.collectFocusTargets())
+    if (settingsFooter.shown)
+      list = list.concat(settingsFooter.collectFocusTargets())
     focusController.setTargets(list)
   }
 
@@ -200,6 +203,10 @@ KeyboardPanel {
       root.rebuildFocusTargets()
   })
   onAgentServiceChanged: scheduleFocusRebuild()
+  onIsOpenChanged: {
+    if (isOpen)
+      settingsTab = "providers"
+  }
 
   PanelKeyCatcher {
     id: keyCatcher
@@ -261,6 +268,7 @@ KeyboardPanel {
         selectedProviderId: root.selectedId
         settingsActive: root.view === "settings"
         displayMetric: root.displayMetric
+        nowMs: root.owner && root.owner.nowMs !== undefined ? root.owner.nowMs : Date.now()
         foreground: Color.foreground
         fontFamily: Style.font.family
         iconBase: Qt.resolvedUrl("icons/")
@@ -363,6 +371,7 @@ KeyboardPanel {
           agentService: root.agentService
           foreground: Color.foreground
           fontFamily: Style.font.family
+          onShownChanged: root.scheduleFocusRebuild()
         }
       }
     }
@@ -387,6 +396,8 @@ KeyboardPanel {
   property Component settingsContent: Component {
     SettingsView {
       width: contentColumn.width
+      tab: root.settingsTab
+      onTabChanged: root.settingsTab = tab
       agentService: root.agentService
       foreground: Color.foreground
       fontFamily: Style.font.family

@@ -63,22 +63,29 @@ Item {
       textFormat: Text.PlainText
     }
 
+    // The host switch has no focus handling of its own; the row supplies
+    // the Tab stop, the keys, and the cursor ring through hasCursor.
     ToggleSwitch {
+      id: enableSwitch
       Layout.alignment: Qt.AlignVCenter
       checked: root.enabled
       interactive: !root.locked
+      hasCursor: activeFocus
+      activeFocusOnTab: !root.locked
       foreground: root.foreground
-      onToggled: {
+      function focusActivate() {
         if (!root.locked)
           root.enableToggled()
       }
+      onToggled: focusActivate()
+      Keys.onSpacePressed: focusActivate()
+      Keys.onReturnPressed: focusActivate()
+      Keys.onEnterPressed: focusActivate()
       Accessible.role: Accessible.CheckBox
       Accessible.name: root.displayName + " on the bar"
       Accessible.checked: root.enabled
-      Accessible.onToggleAction: {
-        if (!root.locked)
-          root.enableToggled()
-      }
+      Accessible.onPressAction: focusActivate()
+      Accessible.onToggleAction: focusActivate()
     }
 
     PanelActionButton {

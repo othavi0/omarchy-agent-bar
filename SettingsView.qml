@@ -34,17 +34,6 @@ Item {
   readonly property var sections: Settings.providerSections(draft)
   readonly property var changes: Settings.settingsChanges(state ? state.snapshot : null, draft)
 
-  readonly property var tabOptions: {
-    var out = []
-    for (var i = 0; i < Settings.SETTINGS_TABS.length; i++) {
-      var t = Settings.SETTINGS_TABS[i]
-      out.push({
-        value: t.id,
-        label: t.label + (root.changes.tabs[t.id] > 0 ? " •" : "")
-      })
-    }
-    return out
-  }
 
   readonly property string metric: {
     if (draft && draft.display && draft.display.metric === "used")
@@ -101,7 +90,12 @@ Item {
   }
 
   function collectFocusTargets() {
-    return root.loadFailed ? [restartShellButton] : []
+    var out = []
+    for (var i = 0; i < tabRepeater.count; i++)
+      out.push(tabRepeater.itemAt(i))
+    if (root.loadFailed)
+      out.push(restartShellButton)
+    return out
   }
 
   Column {
@@ -123,12 +117,32 @@ Item {
         Accessible.role: Accessible.Heading
       }
 
-      ButtonGroup {
-        options: root.tabOptions
-        value: root.tab
-        foreground: root.foreground
-        fontFamily: root.fontFamily
-        onChanged: function (value) { root.tab = value }
+      Row {
+        spacing: Style.spacing.md
+
+        Repeater {
+          id: tabRepeater
+          model: Settings.SETTINGS_TABS
+
+          Button {
+            required property var modelData
+            readonly property bool pending: root.changes.tabs[modelData.id] > 0
+            text: modelData.label + (pending ? " •" : "")
+            selected: root.tab === modelData.id
+            bordered: true
+            focusable: true
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            Accessible.role: Accessible.PageTab
+            Accessible.name: modelData.label
+            Accessible.description: pending ? "Unsaved changes" : ""
+            function focusActivate() {
+              root.tab = modelData.id
+            }
+            Accessible.onPressAction: focusActivate()
+            onClicked: focusActivate()
+          }
+        }
       }
 
       Text {
@@ -172,12 +186,14 @@ Item {
       }
     }
 
+    // A hidden tab is disabled too: Qt keeps focus on an invisible item, and
+    // a spin box left focused on another tab would take the arrow keys.
     Column {
       visible: root.tab === "providers"
       width: parent.width
       spacing: Style.spacing.huge
       opacity: root.locked ? 0.55 : 1.0
-      enabled: !root.locked
+      enabled: !root.locked && visible
 
       Column {
         width: parent.width
@@ -272,7 +288,7 @@ Item {
       width: parent.width
       spacing: Style.spacing.huge
       opacity: root.locked ? 0.55 : 1.0
-      enabled: !root.locked
+      enabled: !root.locked && visible
 
       Column {
         width: parent.width
@@ -464,6 +480,7 @@ Item {
 
     MaintenanceView {
       visible: root.tab === "about"
+      enabled: visible
       width: parent.width
       agentService: root.agentService
       settingsLocked: root.locked

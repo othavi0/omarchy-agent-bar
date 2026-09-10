@@ -165,7 +165,8 @@ Item {
 
       SectionHeader {
         text: "Danger zone"
-        foreground: Color.urgent
+        danger: true
+        foreground: root.foreground
         fontFamily: root.fontFamily
       }
 

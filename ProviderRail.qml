@@ -11,6 +11,7 @@ Item {
   property string selectedProviderId: ""
   property bool settingsActive: false
   property string displayMetric: "remaining"
+  property double nowMs: Date.now()
   property color foreground: Color.foreground
   property string fontFamily: Style.font.family
   property url iconBase: Qt.resolvedUrl("icons/")
@@ -112,7 +113,7 @@ Item {
         )
         readonly property bool dimmed: entry ? Core.chipDimmed(entry) : true
         readonly property string label: entry
-            ? Core.railTooltipText(entry, root.displayMetric)
+            ? Core.railTooltipText(entry, root.displayMetric, root.nowMs)
             : Core.providerDisplayName(railItem.pid)
         readonly property string cue: entry ? Core.chipStateCue(entry) : ""
 

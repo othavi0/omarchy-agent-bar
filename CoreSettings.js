@@ -160,17 +160,32 @@ function cloneDraft(draft) {
   return JSON.parse(JSON.stringify(draft || Kernel.defaultSettings()))
 }
 
+// A provider switched on joins the end of the bar, the way Settings lists it.
 function setProviderEnabled(draft, providerId, enabled) {
   var next = cloneDraft(draft)
   var id = String(providerId || "")
   if (!Array.isArray(next.providers))
     next.providers = Kernel.defaultSettings().providers
+  var idx = -1
   for (var i = 0; i < next.providers.length; i++) {
     if (String(next.providers[i].id) === id) {
-      next.providers[i].enabled = !!enabled
+      idx = i
       break
     }
   }
+  if (idx < 0)
+    return next
+  var wasEnabled = !!next.providers[idx].enabled
+  next.providers[idx].enabled = !!enabled
+  if (!enabled || wasEnabled)
+    return next
+  var row = next.providers.splice(idx, 1)[0]
+  var lastOn = -1
+  for (var j = 0; j < next.providers.length; j++) {
+    if (next.providers[j].enabled)
+      lastOn = j
+  }
+  next.providers.splice(lastOn + 1, 0, row)
   return next
 }
 
@@ -238,11 +253,13 @@ var FIELD_TABS = [
   { tab: "about", read: function (d) { return Kernel.automaticUpdatesEnabled(d) } }
 ]
 
-function providerOrderKey(d) {
+function barOrderKey(d) {
   var rows = Array.isArray(d.providers) ? d.providers : []
   var ids = []
-  for (var i = 0; i < rows.length; i++)
-    ids.push(rows[i] ? String(rows[i].id) : "")
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i] && rows[i].enabled)
+      ids.push(String(rows[i].id))
+  }
   return ids.join(",")
 }
 
@@ -257,8 +274,9 @@ function providerEnabledById(d) {
 }
 
 // Unsaved changes between the persisted snapshot and the draft, counted per
-// Settings tab: each provider whose visibility changed, one for any order
-// change, and one per other field.
+// Settings tab: each provider whose visibility changed, one for a new bar
+// order, and one per other field. The order of hidden providers is invisible,
+// so it never counts.
 function settingsChanges(snapshot, draft) {
   var tabs = { providers: 0, general: 0, about: 0 }
   if (!snapshot || !draft)
@@ -269,7 +287,7 @@ function settingsChanges(snapshot, draft) {
     if (before[id] !== after[id])
       tabs.providers++
   }
-  if (providerOrderKey(snapshot) !== providerOrderKey(draft))
+  if (barOrderKey(snapshot) !== barOrderKey(draft))
     tabs.providers++
   for (var i = 0; i < FIELD_TABS.length; i++) {
     if (FIELD_TABS[i].read(snapshot) !== FIELD_TABS[i].read(draft))
