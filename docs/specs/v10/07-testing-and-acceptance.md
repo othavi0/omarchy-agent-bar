@@ -113,7 +113,7 @@ hash file.
 - `TEST-031`: The token scan excludes changelog release sections 9.0.0 and
   older, ADR bodies 0001–0003, dated release notes under `docs/releases/`
   (not its README), and `docs/specs/v10/**`, which describes the removal
-  contract. It scans Unreleased, the ADR index, and ADR 0004.
+  contract. It scans Unreleased, the ADR index, and ADR 0004 and later.
 - `TEST-032`: Every active command example is exercised by CLI parser tests.
 - `TEST-033`: Every active JSON example validates against the checked-in
   schema.
@@ -123,7 +123,7 @@ hash file.
 Legitimate v1 contracts are exact and individually allowlisted:
 
 ```text
-assets/omarchy/manifest.json             Quattro manifest schema 1
+manifest.json                            Quattro manifest schema 1
 settings.json                            Agent Bar settings schema 1
 bundle.json                              Agent Bar bundle receipt schema 1
 *.metadata.json                          Agent Bar release metadata schema 1

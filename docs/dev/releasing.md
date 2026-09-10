@@ -1,8 +1,8 @@
 # Releasing Agent Bar
 
 Releases are automatic. Every push to `master` that touches a product path
-(`src/**`, `scripts/**`, `Cargo.toml`, `Cargo.lock`, `*.qml`, `Core*.js`,
-`components/**`, `icons/**`, `manifest.json`) triggers
+(`src/**`, `scripts/**`, `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml`,
+`*.qml`, `Core*.js`, `components/**`, `icons/**`, `manifest.json`) triggers
 `.github/workflows/auto-release.yml`, which cuts a release (a patch bump,
 or a minor or major set by hand; see [Manual boundary](#manual-boundary)), stamps
 the release artifacts into the repository root, and publishes the product
