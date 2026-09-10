@@ -17,8 +17,8 @@ to enable the plugin now; enabling it prompts for a bar section, defaulting
 to `right` from the manifest's `barWidget.defaultSection` when the prompt is
 skipped.
 
-Update and remove use the matching Omarchy commands, or the Settings
-Maintenance buttons, which delegate to them:
+Update and remove use the matching Omarchy commands, or the buttons on the
+Settings About tab, which delegate to them:
 
 ```bash
 omarchy plugin update othavi0.agent-bar

@@ -226,6 +226,41 @@ function chipAccessibleLabel(provider, metric, nowMs) {
   return parts.join(" · ")
 }
 
+// The rail plate marks whoever owns the open content: the provider in the
+// usage view, the Settings slot in the settings view.
+function railProviderSelected(view, providerId, selectedId) {
+  if (view === "settings")
+    return false
+  var id = String(providerId || "")
+  return id.length > 0 && id === String(selectedId || "")
+}
+
+function railTooltipText(provider, metric, nowMs) {
+  var label = chipAccessibleLabel(provider, metric, nowMs)
+  if (chipSeverityUrgent(provider))
+    label += " · critical"
+  return label
+}
+
+var SETTINGS_PROVIDER_STATUS = {
+  "cli_missing": "Not installed",
+  "unauthenticated": "Signed out",
+  "rate_limited": "Rate limited",
+  "network_error": "Offline",
+  "provider_error": "Failed"
+}
+
+function settingsProviderStatus(provider) {
+  if (!provider)
+    return ""
+  var s = String(provider.state || "")
+  if (SETTINGS_PROVIDER_STATUS[s] !== undefined)
+    return SETTINGS_PROVIDER_STATUS[s]
+  if (presentsReading(s) && (!provider.windows || provider.windows.length === 0))
+    return "No percentage"
+  return ""
+}
+
 function iconOpticalScale(id) {
   if (String(id || "") === "grok")
     return 0.875

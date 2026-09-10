@@ -36,6 +36,8 @@ TestCase {
       "components/UsageWindow.qml",
       "components/StateMessage.qml",
       "components/SettingsProviderRow.qml",
+      "components/SettingsFooter.qml",
+      "components/SectionHeader.qml",
       "components/ConfirmDialog.qml"
     ]
   }

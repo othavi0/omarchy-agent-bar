@@ -40,6 +40,8 @@ TestCase {
       "components/UsageWindow.qml",
       "components/StateMessage.qml",
       "components/SettingsProviderRow.qml",
+      "components/SettingsFooter.qml",
+      "components/SectionHeader.qml",
       "components/ConfirmDialog.qml",
       "components/FocusController.qml"
     ]
@@ -92,9 +94,9 @@ TestCase {
     verify(header.indexOf("󰑐") >= 0)
     var rail = read("ProviderRail.qml")
     verify(rail.indexOf("󰒓") >= 0)
-    var settings = read("SettingsView.qml")
-    verify(settings.indexOf("Save changes") >= 0)
-    verify(settings.indexOf("Restore defaults") >= 0)
+    var footer = read("components/SettingsFooter.qml")
+    verify(footer.indexOf("Save changes") >= 0)
+    verify(footer.indexOf("Restore defaults") >= 0)
     var maint = read("MaintenanceView.qml")
     verify(maint.indexOf("Check for updates") >= 0)
     verify(maint.indexOf("Uninstall Agent Bar") >= 0)

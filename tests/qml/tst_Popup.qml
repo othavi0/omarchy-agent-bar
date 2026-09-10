@@ -361,6 +361,8 @@ TestCase {
       "components/ProviderChip.qml",
       "components/ProviderHeader.qml",
       "components/SettingsProviderRow.qml",
+      "components/SettingsFooter.qml",
+      "components/SectionHeader.qml",
       "components/StateMessage.qml",
       "components/UsageWindow.qml",
       "CoreMaintenance.js",

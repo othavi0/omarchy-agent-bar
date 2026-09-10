@@ -9,6 +9,9 @@ Item {
 
   property var providers: []
   property string selectedProviderId: ""
+  property bool settingsActive: false
+  property string displayMetric: "remaining"
+  property double nowMs: Date.now()
   property color foreground: Color.foreground
   property string fontFamily: Style.font.family
   property url iconBase: Qt.resolvedUrl("icons/")
@@ -102,12 +105,16 @@ Item {
           return modelData
         }
         readonly property string pid: entry && entry.id ? String(entry.id) : ""
-        readonly property bool selected: {
-          var sel = String(root.selectedProviderId || "").trim()
-          var id = railItem.pid
-          return id.length > 0 && sel.length > 0 && id === sel
-        }
+        readonly property bool selected: Core.railProviderSelected(
+          root.settingsActive ? "settings" : "usage",
+          railItem.pid,
+          String(root.selectedProviderId || "").trim()
+        )
         readonly property bool dimmed: entry ? Core.chipDimmed(entry) : true
+        readonly property string label: entry
+            ? Core.railTooltipText(entry, root.displayMetric, root.nowMs)
+            : Core.providerDisplayName(railItem.pid)
+        readonly property string cue: entry ? Core.chipStateCue(entry) : ""
 
         function focusActivate() {
           root.providerSelected(railItem.pid)
@@ -139,7 +146,23 @@ Item {
           opacity: railItem.dimmed ? 0.4 : (railItem.selected ? 1.0 : 0.65)
         }
 
+        Text {
+          visible: railItem.cue.length > 0
+          anchors.top: parent.top
+          anchors.right: parent.right
+          anchors.topMargin: Style.spacing.xxs
+          anchors.rightMargin: Style.spacing.xs
+          text: railItem.cue
+          color: entry && Core.chipSeverityUrgent(entry) ? Color.urgent : root.foreground
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+          font.bold: true
+          textFormat: Text.PlainText
+          Accessible.ignored: true
+        }
+
         MouseArea {
+          id: railMouse
           anchors.fill: parent
           hoverEnabled: true
           cursorShape: Qt.PointingHandCursor
@@ -150,11 +173,15 @@ Item {
         Keys.onEnterPressed: railItem.focusActivate()
         Keys.onSpacePressed: railItem.focusActivate()
 
-        Accessible.name: entry && entry.name
-            ? String(entry.name)
-            : Core.providerDisplayName(railItem.pid)
+        Accessible.name: railItem.label
         Accessible.role: Accessible.Button
         Accessible.onPressAction: railItem.focusActivate()
+
+        PanelToolTip {
+          visible: railMouse.containsMouse
+          text: railItem.label
+          fontFamily: root.fontFamily
+        }
       }
     }
 
@@ -181,9 +208,11 @@ Item {
       Rectangle {
         anchors.fill: parent
         radius: Style.cornerRadius
-        color: (settingsItem.activeFocus || settingsMouse.containsMouse)
-            ? Style.hoverFill
-            : "transparent"
+        color: root.settingsActive
+            ? Style.selectedFill
+            : ((settingsItem.activeFocus || settingsMouse.containsMouse)
+              ? Style.hoverFill
+              : "transparent")
         border.width: settingsItem.activeFocus ? 1 : 0
         border.color: Color.accent
       }

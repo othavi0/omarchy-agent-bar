@@ -104,7 +104,7 @@ confirmed owned legacy artifacts.
   retrying every minute while the session is locked. It prints
   `{"schemaVersion":1,"operation":"updateRun","outcome":"..."}`.
 
-Normal users use the Maintenance UI.
+Normal users use the Settings About tab.
 
 ## Uninstall
 

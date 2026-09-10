@@ -39,6 +39,7 @@ KeyboardPanel {
   )
 
   readonly property string displayMetric: Core.displayMetric(appliedSettings)
+  property string settingsTab: "providers"
 
   readonly property string selectedId: {
     if (!agentService)
@@ -66,9 +67,13 @@ KeyboardPanel {
     owner
   )
 
+  readonly property int footerHeight: settingsFooter.shown
+      ? settingsFooter.implicitHeight + Style.space(8)
+      : 0
+
   readonly property int measuredBodyHeight: {
     var col = contentColumn ? contentColumn.implicitHeight : 0
-    var margins = contentMargins * 2
+    var margins = contentMargins * 2 + root.footerHeight
     var railMin = rail && rail.minStackHeight
         ? rail.minStackHeight + Style.space(8)
         : Style.space(160)
@@ -171,6 +176,8 @@ KeyboardPanel {
       list = list.concat(stalledMessage.collectFocusTargets())
     if (contentLoader.item && typeof contentLoader.item.collectFocusTargets === "function")
       list = list.concat(contentLoader.item.collectFocusTargets())
+    if (settingsFooter.shown)
+      list = list.concat(settingsFooter.collectFocusTargets())
     focusController.setTargets(list)
   }
 
@@ -196,6 +203,10 @@ KeyboardPanel {
       root.rebuildFocusTargets()
   })
   onAgentServiceChanged: scheduleFocusRebuild()
+  onIsOpenChanged: {
+    if (isOpen)
+      settingsTab = "providers"
+  }
 
   PanelKeyCatcher {
     id: keyCatcher
@@ -255,6 +266,9 @@ KeyboardPanel {
         height: parent.height
         providers: root.railProviders
         selectedProviderId: root.selectedId
+        settingsActive: root.view === "settings"
+        displayMetric: root.displayMetric
+        nowMs: root.owner && root.owner.nowMs !== undefined ? root.owner.nowMs : Date.now()
         foreground: Color.foreground
         fontFamily: Style.font.family
         iconBase: Qt.resolvedUrl("icons/")
@@ -266,6 +280,13 @@ KeyboardPanel {
         id: railGutter
         width: Style.space(8)
         height: parent.height
+
+        PanelSeparator {
+          anchors.left: parent.left
+          width: 1
+          height: parent.height
+          foreground: Color.foreground
+        }
       }
 
       Item {
@@ -279,7 +300,7 @@ KeyboardPanel {
           anchors.leftMargin: root.contentMargins
           anchors.rightMargin: root.contentMargins
           anchors.topMargin: root.contentMargins
-          anchors.bottomMargin: root.contentMargins
+          anchors.bottomMargin: root.contentMargins + root.footerHeight
           contentWidth: width
           contentHeight: contentColumn.implicitHeight
           clip: true
@@ -337,6 +358,21 @@ KeyboardPanel {
             }
           }
         }
+
+        SettingsFooter {
+          id: settingsFooter
+          anchors.left: parent.left
+          anchors.right: parent.right
+          anchors.bottom: parent.bottom
+          anchors.leftMargin: root.contentMargins
+          anchors.rightMargin: root.contentMargins
+          anchors.bottomMargin: root.contentMargins
+          active: root.view === "settings"
+          agentService: root.agentService
+          foreground: Color.foreground
+          fontFamily: Style.font.family
+          onShownChanged: root.scheduleFocusRebuild()
+        }
       }
     }
   }
@@ -360,6 +396,10 @@ KeyboardPanel {
   property Component settingsContent: Component {
     SettingsView {
       width: contentColumn.width
+      // A Binding element, unlike a plain binding, survives the view's own
+      // assignment to `tab` when a tab is clicked.
+      Binding on tab { value: root.settingsTab }
+      onTabChanged: root.settingsTab = tab
       agentService: root.agentService
       foreground: Color.foreground
       fontFamily: Style.font.family

@@ -65,6 +65,111 @@ TestCase {
     compare(d.providers[0].id, "claude")
   }
 
+  function ids(draft) {
+    var out = []
+    for (var i = 0; i < draft.providers.length; i++)
+      out.push(draft.providers[i].id)
+    return out.join(",")
+  }
+
+  function test_move_provider_stays_within_its_section() {
+    var d = Service.defaultSettings()
+    d = Core.setProviderEnabled(d, "grok", true)
+    compare(ids(d), "claude,codex,grok,amp,antigravity")
+    d = Core.moveProvider(d, "grok", -1)
+    compare(ids(d), "claude,grok,codex,amp,antigravity")
+    compare(ids(Core.moveProvider(d, "claude", -1)), "claude,grok,codex,amp,antigravity")
+    compare(ids(Core.moveProvider(d, "codex", 1)), "claude,grok,codex,amp,antigravity")
+    compare(ids(Core.moveProvider(d, "amp", 1)), "claude,grok,codex,antigravity,amp")
+  }
+
+  function test_enabling_a_provider_joins_the_end_of_the_bar() {
+    var d = Service.defaultSettings()
+    d = Core.setProviderEnabled(d, "antigravity", true)
+    compare(ids(d), "claude,codex,antigravity,amp,grok")
+    d = Core.setProviderEnabled(d, "claude", true)
+    compare(ids(d), "claude,codex,antigravity,amp,grok")
+    d = Core.setProviderEnabled(d, "codex", false)
+    compare(ids(d), "claude,codex,antigravity,amp,grok")
+    compare(d.providers[1].enabled, false)
+  }
+
+  function test_provider_sections_split_by_enabled() {
+    var s = Core.providerSections(Service.defaultSettings())
+    compare(s.shown.length, 2)
+    compare(s.shown[0].id, "claude")
+    compare(s.shown[0].canMoveUp, false)
+    compare(s.shown[0].canMoveDown, true)
+    compare(s.shown[1].id, "codex")
+    compare(s.shown[1].canMoveDown, false)
+    compare(s.hidden.length, 3)
+    compare(s.hidden[0].id, "amp")
+    compare(s.hidden[2].id, "antigravity")
+    compare(Core.providerSections(null).shown.length, 0)
+  }
+
+  function test_settings_changes_count_per_tab() {
+    var snap = Service.defaultSettings()
+    var none = Core.settingsChanges(snap, Core.cloneDraft(snap))
+    compare(none.count, 0)
+    compare(none.tabs.providers + none.tabs.general + none.tabs.about, 0)
+
+    var d = Core.setProviderEnabled(snap, "grok", true)
+    d = Core.moveProvider(d, "grok", -1)
+    d = Core.setDisplayMetric(d, "used")
+    d = Core.setAutomaticUpdates(d, false)
+    var c = Core.settingsChanges(snap, d)
+    compare(c.tabs.providers, 2)
+    compare(c.tabs.general, 1)
+    compare(c.tabs.about, 1)
+    compare(c.count, 4)
+
+    compare(Core.settingsChanges(null, d).count, 0)
+    var roundTrip = Core.setProviderEnabled(Core.setProviderEnabled(snap, "grok", true), "grok", false)
+    compare(Core.settingsChanges(snap, roundTrip).count, 0,
+            "switching a provider on and off again leaves nothing to save")
+    var legacy = Core.cloneDraft(snap)
+    delete legacy.updates
+    compare(Core.settingsChanges(legacy, Core.cloneDraft(snap)).count, 0)
+  }
+
+  function test_settings_tabs_table() {
+    var tabs = []
+    for (var i = 0; i < Core.SETTINGS_TABS.length; i++)
+      tabs.push(Core.SETTINGS_TABS[i].id + ":" + Core.SETTINGS_TABS[i].label)
+    compare(tabs.join(","), "providers:Providers,general:General,about:About")
+  }
+
+  function test_rail_selection_follows_the_open_view() {
+    compare(View.railProviderSelected("usage", "claude", "claude"), true)
+    compare(View.railProviderSelected("settings", "claude", "claude"), false)
+    compare(View.railProviderSelected("usage", "codex", "claude"), false)
+    compare(View.railProviderSelected("usage", "", ""), false)
+  }
+
+  function test_rail_tooltip_names_provider_and_state() {
+    var nowMs = Date.parse("2026-09-10T12:00:00Z")
+    var missing = { id: "antigravity", name: "Antigravity", state: "cli_missing", windows: [] }
+    compare(View.railTooltipText(missing, "remaining", nowMs), "Antigravity · no CLI")
+    var grok = { id: "grok", name: "Grok", state: "ready",
+                 windows: [{ id: "session", usedPercent: 96, remainingPercent: 4 }] }
+    compare(View.railTooltipText(grok, "remaining", nowMs), "Grok · 4% · critical")
+    var claude = { id: "claude", name: "Claude", state: "ready",
+                   windows: [{ id: "session", usedPercent: 62, remainingPercent: 38 }] }
+    compare(View.railTooltipText(claude, "used", nowMs), "Claude · 62%")
+  }
+
+  function test_settings_provider_status_words() {
+    compare(View.settingsProviderStatus({ state: "cli_missing" }), "Not installed")
+    compare(View.settingsProviderStatus({ state: "unauthenticated" }), "Signed out")
+    compare(View.settingsProviderStatus({ state: "network_error" }), "Offline")
+    compare(View.settingsProviderStatus({ state: "ready", windows: [] }), "No percentage")
+    compare(View.settingsProviderStatus({ state: "ready",
+                                          windows: [{ id: "session", usedPercent: 1 }] }), "")
+    compare(View.settingsProviderStatus({ state: "loading" }), "")
+    compare(View.settingsProviderStatus(null), "")
+  }
+
   function test_display_metric_and_interval_bounds() {
     var d = Service.defaultSettings()
     d = Core.setDisplayMetric(d, "used")
@@ -196,9 +301,11 @@ TestCase {
 
   function test_settings_view_source_contracts() {
     var src = read("SettingsView.qml")
-    verify(src.indexOf("Restore defaults") >= 0)
-    verify(src.indexOf("Save changes") >= 0)
-    verify(src.indexOf("Cancel") >= 0)
+    var footer = read("components/SettingsFooter.qml")
+    verify(footer.indexOf("Restore defaults") >= 0)
+    verify(footer.indexOf("Save changes") >= 0)
+    verify(footer.indexOf("Cancel") >= 0)
+    verify(footer.indexOf("settingsChanges(") >= 0)
     verify(src.indexOf("NumberField") >= 0)
     verify(src.indexOf("Notifications") >= 0)
     verify(src.indexOf("Remaining") >= 0)
@@ -211,7 +318,9 @@ TestCase {
     verify(src.indexOf('Accessible.name: "Restart shell"') >= 0)
     verify(src.indexOf("root.agentService.restartShell()") >= 0)
     verify(src.indexOf("function collectFocusTargets()") >= 0)
-    verify(src.indexOf("return root.loadFailed ? [restartShellButton] : []") >= 0)
+    verify(src.indexOf("if (root.loadFailed)\n      out.push(restartShellButton)") >= 0)
+    verify(src.indexOf("out.push(tabRepeater.itemAt(i))") >= 0,
+           "keyboard users reach every Settings tab through the focus order")
     verify(src.indexOf("Keys.onReturnPressed") < 0,
            "Settings must rely on the host Button key mapping")
     verify(src.indexOf("credential") < 0 || src.toLowerCase().indexOf("no credential") >= 0)
@@ -227,11 +336,92 @@ TestCase {
     verify(src.indexOf("Usage threshold alerts") < 0)
     verify(src.indexOf('text: "Loading\\u2026"') >= 0)
     verify(src.indexOf("Loading settings") < 0)
-    // The host NumberField has no suffix property, so the unit is a sibling
-    // label positioned against the spin box.
     verify(src.indexOf('text: "seconds"') >= 0)
     verify(src.indexOf("Remind me every") >= 0)
     verify(src.indexOf('text: "minutes"') >= 0)
+  }
+
+  function test_settings_view_is_tabbed_with_line_headers() {
+    var src = read("SettingsView.qml")
+    verify(src.indexOf("model: Settings.SETTINGS_TABS") >= 0)
+    verify(src.indexOf("Accessible.role: Accessible.PageTab") >= 0)
+    verify(src.indexOf("SectionHeader") >= 0)
+    verify(src.indexOf('"On the bar"') >= 0)
+    verify(src.indexOf('"Hidden"') >= 0)
+    verify(src.indexOf("providerSections(") >= 0)
+    verify(src.indexOf("PanelSeparator") < 0,
+           "sections open with a titled line, never a full-width separator")
+    var maint = read("MaintenanceView.qml")
+    verify(maint.indexOf("SectionHeader") >= 0)
+    verify(maint.indexOf("PanelSeparator") < 0)
+    var header = read("components/SectionHeader.qml").replace(/\/\/[^\n]*/g, "")
+    verify(header.indexOf("PanelSectionHeader") < 0,
+           "the host header tints with Qt.darker, darker than body text on light themes")
+    verify(header.indexOf("Util.alpha(root.foreground, 0.55)") >= 0)
+    verify(header.indexOf("Layout.fillWidth: true") >= 0)
+  }
+
+  function test_hidden_tabs_are_disabled_and_rows_toggle_their_own_way() {
+    var src = read("SettingsView.qml")
+    compare(src.split("enabled: !root.locked && visible").length - 1, 2,
+            "a hidden tab page must not keep editor focus")
+    verify(src.indexOf('visible: root.tab === "about"\n      enabled: visible') >= 0)
+    var shown = src.indexOf("model: root.sections.shown")
+    var hidden = src.indexOf("model: root.sections.hidden")
+    verify(shown > 0 && hidden > shown)
+    verify(src.substring(shown, hidden).indexOf("setProviderEnabled(providerId, false)") >= 0)
+    verify(src.substring(hidden).indexOf("setProviderEnabled(providerId, true)") >= 0)
+    var footer = read("components/SettingsFooter.qml")
+    verify(footer.indexOf("root.canSave && root.changeCount > 0") >= 0,
+           "Save stays off when the draft matches what is saved")
+    var row = read("components/SettingsProviderRow.qml")
+    verify(row.indexOf("activeFocusOnTab: !root.locked") >= 0)
+    verify(row.indexOf("hasCursor: activeFocus") >= 0)
+    verify(row.indexOf("Accessible.onPressAction: focusActivate()") >= 0)
+  }
+
+  function blockEnd(src, start) {
+    var open = src.indexOf("{", start)
+    var depth = 0
+    for (var i = open; i < src.length; i++) {
+      if (src[i] === "{")
+        depth++
+      else if (src[i] === "}" && --depth === 0)
+        return i
+    }
+    return -1
+  }
+
+  function test_popup_pins_the_settings_footer_outside_the_scroll() {
+    var src = read("Popup.qml")
+    var flick = src.indexOf("Flickable {")
+    verify(flick > 0)
+    var flickEnd = blockEnd(src, flick)
+    var footer = src.indexOf("SettingsFooter {")
+    verify(footer > flickEnd, "the footer sits after the Flickable, never inside the scrolled content")
+    verify(src.substring(flick, flickEnd).indexOf("anchors.bottomMargin: root.contentMargins + root.footerHeight") >= 0,
+           "the scroll surface stops above the footer")
+    var measured = src.indexOf("readonly property int measuredBodyHeight")
+    verify(src.substring(measured, blockEnd(src, measured)).indexOf("root.footerHeight") >= 0,
+           "the popup height budgets the footer")
+    verify(src.indexOf("list = list.concat(settingsFooter.collectFocusTargets())") >= 0)
+    verify(src.indexOf("Binding on tab { value: root.settingsTab }") >= 0,
+           "a plain tab binding would die on the first tab click")
+    verify(src.indexOf("tab: root.settingsTab") < 0)
+  }
+
+  function test_rail_state_follows_view_with_tooltips() {
+    var rail = read("ProviderRail.qml")
+    verify(rail.indexOf("property bool settingsActive") >= 0)
+    verify(rail.indexOf("Core.railProviderSelected(") >= 0)
+    verify(rail.indexOf("Core.railTooltipText(") >= 0)
+    verify(rail.indexOf("Core.chipStateCue(") >= 0)
+    var tooltips = rail.split("PanelToolTip {").length - 1
+    compare(tooltips, 2, "every rail slot, provider and Settings, carries a tooltip")
+    verify(rail.indexOf("PanelSeparator") < 0,
+           "the owner dropped the rule above the Settings slot; the rail edge rule lives in Popup")
+    var popup = read("Popup.qml")
+    verify(popup.indexOf('settingsActive: root.view === "settings"') >= 0)
   }
 
   function test_settings_row_has_icon_name_chevrons() {
