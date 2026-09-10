@@ -4,7 +4,9 @@
 
 ## Prerequisites
 
-- Current stable Rust toolchain through rustup.
+- Rust toolchain pinned by `rust-toolchain.toml`, installed automatically by
+  rustup. Bump it deliberately: every bump changes the shipped helper's
+  digest (see the file's header comment).
 - Git.
 - Omarchy Quattro and Quickshell development files for QML validation.
 - Qt Quick Test tools (`qmltestrunner`, `qmllint`).
@@ -32,6 +34,7 @@ explicit final QA gate.
 cargo fmt --check
 cargo test
 cargo clippy --all-targets -- -D warnings
+git diff --check
 ```
 
 QML/plugin verification:
@@ -86,9 +89,9 @@ Active documentation is English and must match executable contracts.
 Every versioned changelog release section, `docs/releases/**`,
 and ADR bodies 0001–0003 remain
 historical: they record how things were and are never rewritten. The
-`[Unreleased]` changelog section, the ADR index, ADR 0004, the numbered
-files under `docs/specs/v10/`, and `docs/guide/**` are active and must match
-the shipped behavior. `docs/specs/v10/amendments/**` are the approved design
+`[Unreleased]` changelog section, the ADR index, ADR 0004 and later, the
+numbered files under `docs/specs/v10/`, and `docs/guide/**` are active and
+must match the shipped behavior. `docs/specs/v10/amendments/**` are the approved design
 documents as written on their approval date: frozen, never rewritten, and
 superseded wherever a numbered spec file or the code says otherwise.
 

@@ -146,17 +146,9 @@ until then.
   version; nothing is left half-installed.
 - **Not a git checkout**: a plugin directory installed before the git-based
   distribution has no `.git`. `omarchy plugin update` silently skips it in
-  a bulk run and refuses it outright when targeted by ID. `update check`
-  detects this and reports `reinstallRequired: true`; the Settings UI shows
-  the one-time migration instruction:
-
-  ```bash
-  omarchy plugin remove othavi0.agent-bar
-  omarchy plugin add https://github.com/othavi0/omarchy-agent-bar.git
-  ```
-
-  Settings, cache, and backups live outside the plugin directory and
-  survive the reinstall.
+  a bulk run and refuses it outright when targeted by ID. See
+  [Migrating a pre-conversion install](integration.md#migrating-a-pre-conversion-install)
+  for the detection, the reinstall commands, and what survives.
 
 Confirm the outcome with:
 

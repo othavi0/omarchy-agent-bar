@@ -78,9 +78,10 @@ There is no v9 runtime compatibility layer after migration.
 ## Update and uninstall delegation
 
 `update apply` and `uninstall` no longer stage, exchange, or roll back the
-plugin directory themselves. Each resolves `omarchy` and `systemd-run` to
-absolute executable paths, then hands its live mutation to the Omarchy CLI
-as a detached transient unit:
+plugin directory themselves. Uninstall resolves `omarchy` and `systemd-run`
+to absolute executable paths; update apply additionally resolves
+`omarchy-restart-shell`, `git`, and `timeout`. Both then hand their live
+mutation to the Omarchy CLI as a detached transient unit:
 
 ```text
 systemd-run --user --collect --no-block --unit=agent-bar-update-<txid>.service \
@@ -127,20 +128,15 @@ legacy. Modified and ambiguous paths remain untouched.
 
 ## Uninstall
 
-```bash
-"$PLUGIN" uninstall
-"$PLUGIN" uninstall purge
-```
+See [Uninstall](commands.md#uninstall) for the command forms, confirmation
+flow, and preserved/removed paths.
 
-After confirmation, `uninstall` purges only Agent Bar's own XDG state (when
-invoked with `purge`) under the exclusive maintenance lock, then delegates
-unconditionally to `omarchy plugin remove othavi0.agent-bar --yes` as above.
-Standard uninstall preserves settings, cache, and migration backups; purge
-additionally removes `$XDG_CONFIG_HOME/agent-bar`, `$XDG_CACHE_HOME/agent-bar`,
-and `$XDG_STATE_HOME/agent-bar` before the handoff. Purge and the delegated
-remove are disjoint by construction: purge never touches the plugin
-directory, and `omarchy plugin remove` never touches Agent Bar's own XDG
-state.
+Purge removes the settings and cache directories under the exclusive
+maintenance lock, then releases the lock before it removes
+`$XDG_STATE_HOME/agent-bar`, which holds the lock file. Purge and the
+delegated remove are disjoint by construction: purge never touches
+the plugin directory, and `omarchy plugin remove` never touches Agent Bar's
+own XDG state.
 
 ## Live safety
 

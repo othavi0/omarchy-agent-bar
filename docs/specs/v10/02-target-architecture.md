@@ -295,7 +295,7 @@ The table is product data, not an example:
 ## Target QML boundaries
 
 ```text
-assets/omarchy/
+<repository root>/
 ├── manifest.json
 ├── Service.qml
 ├── BarWidget.qml
@@ -304,6 +304,11 @@ assets/omarchy/
 ├── ProviderView.qml
 ├── SettingsView.qml
 ├── MaintenanceView.qml
+├── CoreMaintenance.js
+├── CoreScroll.js
+├── CoreService.js
+├── CoreSettings.js
+├── CoreView.js
 ├── components/
 │   ├── ProviderChip.qml
 │   ├── ProviderHeader.qml
@@ -311,12 +316,14 @@ assets/omarchy/
 │   ├── StateMessage.qml
 │   ├── SettingsProviderRow.qml
 │   ├── ConfirmDialog.qml
-│   └── FocusController.qml
+│   ├── FocusController.qml
+│   └── HeaderTag.qml
 └── icons/
     ├── claude.png
     ├── codex.png
     ├── amp.svg
-    └── grok.svg
+    ├── grok.svg
+    └── antigravity.png
 ```
 
 - `Service.qml` owns state and commands; it contains no visual layout.

@@ -32,6 +32,11 @@ othavi0.agent-bar/
 ├── ProviderView.qml
 ├── SettingsView.qml
 ├── MaintenanceView.qml
+├── CoreMaintenance.js
+├── CoreScroll.js
+├── CoreService.js
+├── CoreSettings.js
+├── CoreView.js
 ├── components/
 ├── icons/
 ├── scripts/
@@ -193,7 +198,7 @@ breaks the update check for all of them with no remote-side recovery.
 - `BUNDLE-012`: Reproducible assembly produces the same inventory and content
   hashes from the same source commit.
 - `BUNDLE-012A`: Icons retain their approved source formats:
-  `claude.png`, `codex.png`, `amp.svg`, and `grok.svg`.
+  `claude.png`, `codex.png`, `amp.svg`, `grok.svg`, and `antigravity.png`.
 - `BUNDLE-012B`: **Retired.** There is no separate release-metadata document;
   `bundle.json` (above) is the only discovery document, fetched directly
   from the distribution repository over HTTPS.
@@ -290,7 +295,7 @@ The exact successful `update check` response is:
     "version": "10.1.0",
     "omarchyContract": 1,
     "minimumQuickshellVersion": "0.3.0",
-    "releaseNotesUrl": "https://github.com/othavi0/agent-bar/releases/tag/v10.1.0"
+    "releaseNotesUrl": "https://github.com/othavi0/omarchy-agent-bar/releases/tag/v10.1.0"
   }
 }
 ```
