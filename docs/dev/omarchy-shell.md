@@ -135,8 +135,9 @@ it can reset placement.
 ## Interactive login
 
 QML invokes the bundled Bash launcher with an argv array. The launcher resolves
-the private helper from its own location in the plugin tree, delegates the configured
-terminal choice to `xdg-terminal-exec`, and runs the helper by bundle path. It
+the private helper from its own location in the plugin tree, delegates the
+configured terminal choice to `xdg-terminal-exec`, and runs the helper by
+bundle path. It
 does not assume a global executable, construct a shell string, or maintain its
 own terminal-emulator fallback list.
 

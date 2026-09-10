@@ -516,16 +516,18 @@ Item {
       finishVersionProbeFailure()
   }
 
-  // pluginRoot resolves at construction; an empty helper path only means a test
-  // harness has not set helperPath yet. Do not treat that as a permanent probe
-  // failure — retry when the path appears.
+  // pluginRoot resolves at construction. It is empty only when Service.qml was
+  // loaded from a non-file URL; say so instead of idling silently, and keep
+  // retrying if a helperPath arrives later.
   function tryStartProduction() {
     if (testMode)
       return
     if (versionReady || versionProbeRunning)
       return
-    if (!resolvedHelperPath().length)
+    if (!resolvedHelperPath().length) {
+      console.warn("Agent Bar: cannot resolve plugin root from " + Qt.resolvedUrl("."))
       return
+    }
     startVersionProbe()
   }
 
@@ -538,7 +540,7 @@ Item {
       return
     var helper = resolvedHelperPath()
     if (!helper.length) {
-      // Wait for onManifestChanged / onHelperPathChanged rather than locking out.
+      // Wait for onHelperPathChanged rather than locking out.
       return
     }
     versionProbeRunning = true

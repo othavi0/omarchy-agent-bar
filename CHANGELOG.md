@@ -57,8 +57,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   plugins a public manifest copy without `__sourceDir`, which the service used
   to locate `bin/agent-bar`; the helper path came out empty, no process ever
   started, and the popup stayed on its loading skeleton with "Update check
-  failed". The service now derives the plugin root from its own file URL, so
-  status, login, and update checks work on every Omarchy version.
+  failed". The service now derives the plugin root from its own file URL and
+  reads no host-only manifest field, so status, login, and update checks start
+  again.
 - fix: Grok no longer flips to "Sign in" after hours idle. The CLI's access
   token lives six hours and nothing renews it while the CLI is idle; sending
   it expired earned a 401 that read as a real rejection and discarded the

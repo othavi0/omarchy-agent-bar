@@ -21,7 +21,9 @@ TestCase {
   function createService() {
     var component = Qt.createComponent(serviceUrl)
     if (component.status === Component.Ready) {
-      service = component.createObject(testCase)
+      // testMode must hold before Component.onCompleted: pluginRoot resolves
+      // at construction and would otherwise start the bundled helper.
+      service = component.createObject(testCase, { testMode: true, helperPath: "/nonexistent" })
     } else {
       // Arch packages Quickshell's QML plugins into the quickshell executable,
       // so qmltestrunner cannot load Process/IpcHandler. Keep Service.qml's
@@ -48,6 +50,7 @@ TestCase {
       source = source.slice(0, processStart) + processMocks + source.slice(processEnd)
       source = source.replace(/  IpcHandler \{[\s\S]*?\n  \}\n\n  onHelperPathChanged:/,
                               "  QtObject { }\n\n  onHelperPathChanged:")
+      source = source.replace("property bool testMode: false", "property bool testMode: true")
       service = Qt.createQmlObject(source, testCase, serviceUrl)
     }
     verify(service !== null, component.errorString())
