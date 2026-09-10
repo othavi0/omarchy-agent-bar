@@ -396,7 +396,9 @@ KeyboardPanel {
   property Component settingsContent: Component {
     SettingsView {
       width: contentColumn.width
-      tab: root.settingsTab
+      // A Binding element, unlike a plain binding, survives the view's own
+      // assignment to `tab` when a tab is clicked.
+      Binding on tab { value: root.settingsTab }
       onTabChanged: root.settingsTab = tab
       agentService: root.agentService
       foreground: Color.foreground

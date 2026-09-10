@@ -405,6 +405,9 @@ TestCase {
     verify(src.substring(measured, blockEnd(src, measured)).indexOf("root.footerHeight") >= 0,
            "the popup height budgets the footer")
     verify(src.indexOf("list = list.concat(settingsFooter.collectFocusTargets())") >= 0)
+    verify(src.indexOf("Binding on tab { value: root.settingsTab }") >= 0,
+           "a plain tab binding would die on the first tab click")
+    verify(src.indexOf("tab: root.settingsTab") < 0)
   }
 
   function test_rail_state_follows_view_with_tooltips() {
