@@ -5,6 +5,21 @@ provider, a popup with every usage window, and a countdown to the next
 reset. A fresh install shows Claude and Codex; Amp, Grok, and Antigravity
 are one toggle away in Settings.
 
+> [!IMPORTANT]
+> **Agent Bar older than 10.3.25 can't update itself on Omarchy 4.0.3.**
+> Version 10.3.22 and older never loads there: the chips show `···`, the
+> popup stays on its loading placeholder, and Settings says "Update check
+> failed". Version 10.3.24 loads but can stop refreshing a couple of minutes
+> after the shell starts. Run this once in a terminal to move to the fixed
+> release:
+>
+> ```bash
+> omarchy plugin update othavi0.agent-bar --yes && omarchy-restart-shell
+> ```
+>
+> If you're already current, it only restarts the shell. From 10.3.25 on,
+> Agent Bar installs new releases by itself.
+
 ![Agent Bar preview](preview.png)
 
 ## What you see
