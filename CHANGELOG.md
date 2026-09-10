@@ -65,6 +65,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- fix: an automatic update no longer freezes the bar. On 10.3.24 the
+  two-minute update check lands on the second 60 s poll; the handoff then
+  waited for that status run and nothing retried it, so polling stopped,
+  the gear no longer opened Settings, and the update never applied. The
+  finished status run now retries the waiting handoff. A 10.3.24 install
+  that already stopped refreshing needs
+  `omarchy plugin update othavi0.agent-bar --yes && omarchy-restart-shell`
+  once.
 - fix: the bar loads again on Omarchy 4.0.3. The host now hands third-party
   plugins a public manifest copy without `__sourceDir`, which the service used
   to locate `bin/agent-bar`; the helper path came out empty, no process ever
