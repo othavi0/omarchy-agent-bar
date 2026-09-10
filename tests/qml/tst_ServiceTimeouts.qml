@@ -21,7 +21,9 @@ TestCase {
   function createService() {
     var component = Qt.createComponent(serviceUrl)
     if (component.status === Component.Ready) {
-      service = component.createObject(testCase)
+      // testMode must hold before Component.onCompleted: pluginRoot resolves
+      // at construction and would otherwise start the bundled helper.
+      service = component.createObject(testCase, { testMode: true, helperPath: "/nonexistent" })
     } else {
       // Arch packages Quickshell's QML plugins into the quickshell executable,
       // so qmltestrunner cannot load Process/IpcHandler. Keep Service.qml's
@@ -48,12 +50,13 @@ TestCase {
       source = source.slice(0, processStart) + processMocks + source.slice(processEnd)
       source = source.replace(/  IpcHandler \{[\s\S]*?\n  \}\n\n  onHelperPathChanged:/,
                               "  QtObject { }\n\n  onHelperPathChanged:")
+      source = source.replace("property bool testMode: false", "property bool testMode: true")
       service = Qt.createQmlObject(source, testCase, serviceUrl)
     }
     verify(service !== null, component.errorString())
     service.testMode = true
     service.helperPath = "/nonexistent"
-    service.manifest = ({ version: "10.3.17", __sourceDir: "/nonexistent" })
+    service.manifest = ({ version: "10.3.17" })
     service.versionProbeTimeoutMs = 50
     service.statusTimeoutMs = 50
     service.settingsTimeoutMs = 50
@@ -337,6 +340,18 @@ TestCase {
     s.checkForUpdates()
     tryCompare(s, "runtimeHealth", "stalled", 500)
     compare(s.health("10.3.17"), "stalled")
+  }
+
+  // Omarchy 4.0.3 (basecamp/omarchy#9618) injects a public manifest copy
+  // without the host-only __sourceDir; the plugin tree must still resolve.
+  function test_helper_and_login_resolve_from_public_manifest() {
+    var s = createService()
+    s.helperPath = ""
+    s.manifest = ({ id: "othavi0.agent-bar", version: "10.3.22" })
+    compare(s.pluginRoot, repoRoot)
+    compare(s.resolvedHelperPath(), repoRoot + "/bin/agent-bar")
+    s.loginProvider("claude")
+    compare(s.lastLoginArgv[0], repoRoot + "/scripts/agent-bar-open-terminal")
   }
 
   function test_restart_shell_records_exact_argv_without_execution_in_test_mode() {

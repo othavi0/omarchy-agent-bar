@@ -319,7 +319,8 @@ delegates to always fast-forwards to whatever the distribution repository's
 Omarchy contract `1` means all of these are required:
 
 - Quattro manifest service and bar-widget entry points;
-- `manifest.__sourceDir` service injection;
+- service injection of a public `manifest` copy (the plugin root comes from
+  `Service.qml`'s own URL, never from host-only manifest fields);
 - `bar.shell.serviceFor(moduleName)`;
 - `KeyboardPanel`, `PanelKeyCatcher`, and `BarWidget`;
 - `IpcHandler` reached through `omarchy-shell`;

@@ -17,9 +17,9 @@ Item {
   property var barWidgetRegistry: null
   property var pluginRegistry: null
 
-  readonly property string pluginRoot: manifest && manifest.__sourceDir
-      ? String(manifest.__sourceDir)
-      : ""
+  // The plugin tree is this file's directory. The host's manifest copy carries
+  // no source path for third-party plugins (Omarchy 4.0.3).
+  readonly property string pluginRoot: Core.pluginRootFromUrl(Qt.resolvedUrl("."))
 
   // Test harness: absolute helper path. Production uses pluginRoot/bin/agent-bar.
   property string helperPath: ""
@@ -118,16 +118,8 @@ Item {
   function resolvedHelperPath() {
     if (helperPath && helperPath.length > 0)
       return helperPath
-    // Prefer live manifest.__sourceDir over pluginRoot: Quattro sets `manifest`
-    // after createObject, and onManifestChanged can run before the pluginRoot
-    // binding re-evaluates (nested JS field access is not a QML property).
-    var root = ""
-    if (manifest && manifest.__sourceDir)
-      root = String(manifest.__sourceDir)
-    else if (pluginRoot && pluginRoot.length > 0)
-      root = pluginRoot
-    if (root && root.length > 0)
-      return root + "/bin/agent-bar"
+    if (pluginRoot.length > 0)
+      return pluginRoot + "/bin/agent-bar"
     return ""
   }
 
@@ -524,16 +516,18 @@ Item {
       finishVersionProbeFailure()
   }
 
-  // Quattro injects `manifest` (and thus pluginRoot) after createObject returns.
-  // The completed handler therefore often runs with an empty helper path; do not
-  // treat that as a permanent probe failure — retry when the path appears.
+  // pluginRoot resolves at construction. It is empty only when Service.qml was
+  // loaded from a non-file URL; say so instead of idling silently, and keep
+  // retrying if a helperPath arrives later.
   function tryStartProduction() {
     if (testMode)
       return
     if (versionReady || versionProbeRunning)
       return
-    if (!resolvedHelperPath().length)
+    if (!resolvedHelperPath().length) {
+      console.warn("Agent Bar: cannot resolve plugin root from " + Qt.resolvedUrl("."))
       return
+    }
     startVersionProbe()
   }
 
@@ -546,8 +540,7 @@ Item {
       return
     var helper = resolvedHelperPath()
     if (!helper.length) {
-      // Empty path is expected before Quattro property injection; wait for
-      // onManifestChanged / onHelperPathChanged rather than locking out.
+      // Wait for onHelperPathChanged rather than locking out.
       return
     }
     versionProbeRunning = true

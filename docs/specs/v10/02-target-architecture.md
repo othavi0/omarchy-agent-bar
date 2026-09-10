@@ -336,8 +336,8 @@ property var manifest: null
 property var barWidgetRegistry: null
 property var pluginRegistry: null
 
-readonly property string pluginRoot:
-    manifest && manifest.__sourceDir ? String(manifest.__sourceDir) : ""
+// This file's directory; the host's public manifest carries no source path.
+readonly property string pluginRoot: Core.pluginRootFromUrl(Qt.resolvedUrl("."))
 ```
 
 `BarWidget.qml` receives `bar`, `moduleName`, and `settings`. It resolves the

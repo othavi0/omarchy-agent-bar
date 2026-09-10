@@ -217,6 +217,14 @@ TestCase {
     verify(!("activation" in m))
   }
 
+  function test_plugin_root_from_url() {
+    compare(Core.pluginRootFromUrl("file:///home/u/.config/omarchy/plugins/othavi0.agent-bar/"),
+            "/home/u/.config/omarchy/plugins/othavi0.agent-bar")
+    compare(Core.pluginRootFromUrl("file:///home/a%20b/%C3%A7/plugin/"), "/home/a b/" + String.fromCharCode(0xE7) + "/plugin")
+    compare(Core.pluginRootFromUrl("qrc:/plugin/"), "")
+    compare(Core.pluginRootFromUrl(""), "")
+  }
+
   function test_version_and_health() {
     reset()
     h.applyVersion("10.0.0\n")
@@ -523,7 +531,8 @@ TestCase {
     verify(src.indexOf("onManifestChanged") >= 0)
     verify(src.indexOf("onHelperPathChanged") >= 0)
     verify(src.indexOf("tryStartProduction()") >= 0)
-    verify(src.indexOf("manifest.__sourceDir") >= 0)
+    // The host strips __sourceDir from third-party manifests (Omarchy 4.0.3).
+    verify(src.indexOf("__sourceDir") < 0)
     // Empty helper path must wait, not finishVersionProbeFailure.
     var emptyBranch = src.indexOf("if (!helper.length)")
     verify(emptyBranch >= 0)
