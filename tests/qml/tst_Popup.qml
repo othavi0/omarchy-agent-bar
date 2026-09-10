@@ -482,4 +482,22 @@ TestCase {
     var win = read("components/UsageWindow.qml")
     verify(win.indexOf("property string resetClock") >= 0)
   }
+
+  // #83: a deferred rebuild can run after the popup was destroyed, where an
+  // unguarded root.rebuildFocusTargets() throws on every open/close cycle.
+  function test_deferred_focus_rebuild_survives_popup_destruction() {
+    var src = read("Popup.qml")
+    verify(src.indexOf("Qt.callLater(root.rebuildFocusTargets)") < 0)
+    var re = /root\.rebuildFocusTargets\(\)/g
+    var m
+    while ((m = re.exec(src)) !== null) {
+      var before = src.slice(Math.max(0, m.index - 80), m.index)
+      verify(before.indexOf('typeof root.rebuildFocusTargets === "function"') >= 0,
+             "unguarded rebuildFocusTargets() at offset " + m.index)
+    }
+    // One deferral helper instead of a guarded closure per call site.
+    verify(src.indexOf("function scheduleFocusRebuild()") >= 0)
+    compare(src.split("Qt.callLater(").length - 1, 2,
+            "only scheduleFocusRebuild and onSelectedIdChanged defer")
+  }
 }
