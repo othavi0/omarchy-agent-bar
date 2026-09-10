@@ -83,6 +83,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `This plan does not publish a usage percentage.` (PROD-031 / UX-032A
   amended).
 
+## [10.3.23] - 2026-09-10
+
+### Changed
+
+- fix: warn on empty plugin root, amend v10 spec
+- fix: resolve plugin root from Service.qml URL
+
 ## [10.3.22] - 2026-09-04
 
 ### Changed
