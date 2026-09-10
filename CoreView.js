@@ -644,11 +644,12 @@ function remainingRank(line) {
   return line.remainingPercent === null ? Infinity : line.remainingPercent
 }
 
-// UX-020D (amended 2026-09-04): the window ids the Rust mappers emit for a
-// provider's short rolling window (Claude/Codex `session`, Antigravity
-// `gemini-5h`). Typed schema data, like the `plan-` prefix below — this list
-// only promotes known ids; an id it does not know is never demoted.
-var SESSION_WINDOW_IDS = ["session", "gemini-5h"]
+// UX-020D (amended 2026-09-04, 2026-09-10): the window ids the Rust mappers
+// emit for a provider's short rolling window (Claude/Codex `session`,
+// Antigravity `gemini-5h` and `3p-5h`). Typed schema data, like the `plan-`
+// prefix below — this list only promotes known ids; an id it does not know is
+// never demoted.
+var SESSION_WINDOW_IDS = ["session", "gemini-5h", "3p-5h"]
 
 function isSessionWindowId(id) {
   return SESSION_WINDOW_IDS.indexOf(String(id)) >= 0
@@ -675,10 +676,17 @@ function electLeadIndex(lines) {
   //    through providerSeverity, it just never takes the number. Without
   //    this, every morning the elapsed session reset handed the chip to the
   //    weekly percentage.
+  //    (amended 2026-09-10) Antigravity delivers one session per model
+  //    family; the family in use drains its own, so the lowest remaining
+  //    leads and a tie keeps the delivered order.
   for (i = 0; i < lines.length; i++) {
-    if (isSessionWindowId(lines[i].id))
-      return i
+    if (!isSessionWindowId(lines[i].id))
+      continue
+    if (best < 0 || remainingRank(lines[i]) < remainingRank(lines[best]))
+      best = i
   }
+  if (best >= 0)
+    return best
 
   // 1. Any critical window leads; among criticals, the lowest remaining.
   for (i = 0; i < lines.length; i++) {

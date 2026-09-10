@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   failed or rolled-back update. Turn it off with the new "Update
   automatically" toggle (`updates.automatic` in `settings.json`, default on
   and assumed when absent; ignored until the settings file was read).
+- feat: Antigravity also reports the Claude/GPT quota (`3p-weekly`,
+  `3p-5h`) next to Gemini. The two families have separate quotas (requested
+  in #82, first proposed in #85 by @alinuxfan).
 
 - feat: Antigravity usage and quota support via
   `agy --print /usage --output-format json`, reading the `gemini-weekly` and
@@ -46,6 +49,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- feat: Antigravity windows name their family and duration (`Gemini · 7d`,
+  `Gemini · 5h`, `Claude/GPT · 7d`, `Claude/GPT · 5h`) instead of
+  `Weekly (7d)` and `Session (5h)`. With both session windows delivered,
+  the lower one leads the chip. A full bucket shows no reset: its window
+  only starts on first use, and until then `agy` reports a reset that moves
+  with the clock.
 - fix: the chip and popup lead with the session window whenever the provider
   delivers one (`session` for Claude and Codex, `gemini-5h` for Antigravity).
   Once the five-hour reset elapsed overnight the old election handed the

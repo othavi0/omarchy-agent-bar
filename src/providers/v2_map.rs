@@ -23,6 +23,13 @@ const LABEL_SESSION: &str = "Session (5h)";
 const LABEL_DAILY: &str = "Daily (1d)";
 const LABEL_WEEKLY: &str = "Weekly (7d)";
 
+// Antigravity meters two model families on separate quotas, so each window
+// names its family.
+const LABEL_GEMINI_WEEKLY: &str = "Gemini · 7d";
+const LABEL_GEMINI_SESSION: &str = "Gemini · 5h";
+const LABEL_THIRD_PARTY_WEEKLY: &str = "Claude/GPT · 7d";
+const LABEL_THIRD_PARTY_SESSION: &str = "Claude/GPT · 5h";
+
 // ---------------------------------------------------------------------------
 // Amp
 // ---------------------------------------------------------------------------
@@ -928,10 +935,15 @@ fn antigravity_error(message: &str) -> ProviderResult {
 
 /// Parse `agy --print /usage --output-format json` into a domain result.
 ///
-/// Only the Gemini family carries a percentage window Agent Bar reports; the
-/// shared Claude/GPT buckets (`3p-*`) are ignored. A run without any window is
-/// `Ready` with an empty list — a connected provider without a percentage
-/// window is valid, exactly as for Amp.
+/// `agy` meters two model families, Gemini (`gemini-*`) and Claude/GPT
+/// (`3p-*`), each on its own weekly and five-hour quota. All four buckets map
+/// to windows in a fixed order; any other bucket id is ignored. A run without
+/// any window is `Ready` with an empty list — a connected provider without a
+/// percentage window is valid, exactly as for Amp.
+///
+/// A window starts on first use. A full bucket has none running, and `agy`
+/// reports its `reset_time` as now plus the whole window, a moving target, so
+/// a full bucket carries no reset.
 ///
 /// The logged-out banner is not handled here: `Unauthenticated` needs to know
 /// whether login is available, which is discovery state the adapter owns, so
@@ -946,10 +958,13 @@ pub fn antigravity_from_usage_json(stdout: &str, now: OffsetDateTime) -> Provide
         return antigravity_error("Antigravity usage command failed.");
     }
 
-    // Two named slots rather than a push list: they give the fixed weekly ->
-    // 5h order and the per-id dedupe (first bucket wins) in one move.
-    let mut weekly: Option<UsageWindow> = None;
-    let mut session: Option<UsageWindow> = None;
+    // Named slots rather than a push list: they give the fixed family, then
+    // weekly -> 5h, order and the per-id dedupe (first bucket wins) in one
+    // move.
+    let mut gemini_weekly: Option<UsageWindow> = None;
+    let mut gemini_session: Option<UsageWindow> = None;
+    let mut third_party_weekly: Option<UsageWindow> = None;
+    let mut third_party_session: Option<UsageWindow> = None;
 
     for bucket in usage
         .command
@@ -959,8 +974,10 @@ pub fn antigravity_from_usage_json(stdout: &str, now: OffsetDateTime) -> Provide
         .flat_map(|group| group.buckets.iter())
     {
         let (label, slot) = match bucket.id.as_str() {
-            "gemini-weekly" => (LABEL_WEEKLY, &mut weekly),
-            "gemini-5h" => (LABEL_SESSION, &mut session),
+            "gemini-weekly" => (LABEL_GEMINI_WEEKLY, &mut gemini_weekly),
+            "gemini-5h" => (LABEL_GEMINI_SESSION, &mut gemini_session),
+            "3p-weekly" => (LABEL_THIRD_PARTY_WEEKLY, &mut third_party_weekly),
+            "3p-5h" => (LABEL_THIRD_PARTY_SESSION, &mut third_party_session),
             _ => continue,
         };
         if slot.is_some() {
@@ -975,6 +992,7 @@ pub fn antigravity_from_usage_json(stdout: &str, now: OffsetDateTime) -> Provide
         let resets_at = bucket
             .reset_time
             .as_deref()
+            .filter(|_| fraction < 1.0)
             .and_then(|ts| OffsetDateTime::parse(ts, &Rfc3339).ok())
             .map(|ts| ts.to_offset(UtcOffset::UTC));
 
@@ -995,7 +1013,12 @@ pub fn antigravity_from_usage_json(stdout: &str, now: OffsetDateTime) -> Provide
         source: DataSource::Live,
         plan: None,
         account: None,
-        windows: weekly.into_iter().chain(session).collect(),
+        windows: gemini_weekly
+            .into_iter()
+            .chain(gemini_session)
+            .chain(third_party_weekly)
+            .chain(third_party_session)
+            .collect(),
         last_success_at: now,
         rate_limit_resets_available: None,
     }
@@ -1644,10 +1667,10 @@ mod tests {
                 account,
                 ..
             } => {
-                assert_eq!(windows.len(), 2);
+                assert_eq!(windows.len(), 4);
 
                 assert_eq!(windows[0].id(), "gemini-weekly");
-                assert_eq!(windows[0].label(), LABEL_WEEKLY);
+                assert_eq!(windows[0].label(), "Gemini · 7d");
                 assert!((windows[0].remaining_percent() - 86.0).abs() < 0.01);
                 assert!((windows[0].used_percent() - 14.0).abs() < 0.01);
                 assert_eq!(
@@ -1656,13 +1679,25 @@ mod tests {
                 );
 
                 assert_eq!(windows[1].id(), "gemini-5h");
-                assert_eq!(windows[1].label(), LABEL_SESSION);
+                assert_eq!(windows[1].label(), "Gemini · 5h");
                 assert!((windows[1].remaining_percent() - 92.0).abs() < 0.01);
                 assert!((windows[1].used_percent() - 8.0).abs() < 0.01);
                 assert_eq!(
                     windows[1].resets_at(),
                     Some(datetime!(2026-08-23 04:25:14 UTC))
                 );
+
+                // The Claude/GPT pair is untouched in this capture: full, so
+                // no window is running and its reset is dropped.
+                assert_eq!(windows[2].id(), "3p-weekly");
+                assert_eq!(windows[2].label(), "Claude/GPT · 7d");
+                assert!((windows[2].remaining_percent() - 100.0).abs() < 0.01);
+                assert_eq!(windows[2].resets_at(), None);
+
+                assert_eq!(windows[3].id(), "3p-5h");
+                assert_eq!(windows[3].label(), "Claude/GPT · 5h");
+                assert!((windows[3].remaining_percent() - 100.0).abs() < 0.01);
+                assert_eq!(windows[3].resets_at(), None);
 
                 assert!(plan.is_none());
                 assert!(account.is_none());
@@ -1672,16 +1707,42 @@ mod tests {
     }
 
     #[test]
-    fn antigravity_ignores_the_shared_third_party_buckets() {
-        // The fixture carries `3p-weekly` and `3p-5h` next to the Gemini pair;
-        // only the Gemini family has a window Agent Bar reports, so the ready
-        // result above must contain exactly two windows and neither of these.
-        let fixture = include_str!("../../tests/fixtures/antigravity/usage.json");
-        match antigravity_from_usage_json(fixture, datetime!(2026-08-21 12:00:00 UTC)) {
+    fn antigravity_ignores_unknown_bucket_ids() {
+        // Only the four ids `agy` 1.2.0 reports are mapped. Guessed aliases
+        // such as `claude-5h` stay unknown and never become a window.
+        let payload = r#"{"status":"SUCCESS","command":{"name":"usage","data":{"groups":[
+            {"name":"Claude and GPT models","buckets":[
+              {"id":"claude-weekly","window":"weekly","remaining_fraction":0.5},
+              {"id":"claude-5h","window":"5h","remaining_fraction":0.5}]}]}}}"#;
+        match antigravity_from_usage_json(payload, datetime!(2026-08-21 12:00:00 UTC)) {
+            ProviderResult::Ready { windows, .. } => assert!(windows.is_empty(), "{windows:?}"),
+            other => panic!("expected ready, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn antigravity_full_bucket_carries_no_reset() {
+        // A window starts on first use. Until then `agy` reports the bucket
+        // full with `reset_time` = now + the whole window, a moving target
+        // that never arrives, so a full bucket carries no reset. A bucket
+        // with any use keeps the fixed reset `agy` reports.
+        let payload = r#"{"status":"SUCCESS","command":{"name":"usage","data":{"groups":[
+            {"name":"Gemini Models","buckets":[
+              {"id":"gemini-weekly","window":"weekly","remaining_fraction":1.4,
+               "reset_time":"2026-08-28T12:00:03Z"},
+              {"id":"gemini-5h","window":"5h","remaining_fraction":1,
+               "reset_time":"2026-08-21T17:00:03Z"}]},
+            {"name":"Claude and GPT models","buckets":[
+              {"id":"3p-5h","window":"5h","remaining_fraction":0.99,
+               "reset_time":"2026-08-21T16:10:00Z"}]}]}}}"#;
+        match antigravity_from_usage_json(payload, datetime!(2026-08-21 12:00:00 UTC)) {
             ProviderResult::Ready { windows, .. } => {
-                assert!(
-                    windows.iter().all(|w| !w.id().starts_with("3p-")),
-                    "{windows:?}"
+                assert_eq!(windows.len(), 3);
+                assert_eq!(windows[0].resets_at(), None);
+                assert_eq!(windows[1].resets_at(), None);
+                assert_eq!(
+                    windows[2].resets_at(),
+                    Some(datetime!(2026-08-21 16:10:00 UTC))
                 );
             }
             other => panic!("expected ready, got {other:?}"),
@@ -1692,10 +1753,10 @@ mod tests {
     fn antigravity_zero_windows_is_ready_not_an_error() {
         // Same rule as Amp: a connected provider without a percentage window
         // is valid and renders "—" (CLAUDE.md, provider rules). An account
-        // with only the shared Claude/GPT group is exactly this case.
+        // whose buckets carry no id Agent Bar maps is exactly this case.
         let payload = r#"{"status":"SUCCESS","command":{"name":"usage","data":{"groups":[
-            {"name":"Claude and GPT models","buckets":[
-              {"id":"3p-weekly","window":"weekly","remaining_fraction":1,
+            {"name":"Other models","buckets":[
+              {"id":"other-weekly","window":"weekly","remaining_fraction":1,
                "reset_time":"2026-08-29T23:25:14Z"}]}]}}}"#;
         let result = antigravity_from_usage_json(payload, datetime!(2026-08-21 12:00:00 UTC));
         assert_no_money(&result);
@@ -1778,17 +1839,20 @@ mod tests {
     }
 
     #[test]
-    fn antigravity_orders_weekly_before_the_five_hour_window() {
-        // The CLI is free to reorder its buckets; the rendered order is not.
+    fn antigravity_orders_windows_by_family_then_weekly_first() {
+        // The CLI is free to reorder groups and buckets; the rendered order
+        // is not: Gemini weekly, Gemini 5h, Claude/GPT weekly, Claude/GPT 5h.
         let payload = r#"{"status":"SUCCESS","command":{"name":"usage","data":{"groups":[
+            {"name":"Claude and GPT models","buckets":[
+              {"id":"3p-5h","window":"5h","remaining_fraction":1},
+              {"id":"3p-weekly","window":"weekly","remaining_fraction":1}]},
             {"name":"Gemini Models","buckets":[
               {"id":"gemini-5h","window":"5h","remaining_fraction":1},
               {"id":"gemini-weekly","window":"weekly","remaining_fraction":1}]}]}}}"#;
         match antigravity_from_usage_json(payload, datetime!(2026-08-21 12:00:00 UTC)) {
             ProviderResult::Ready { windows, .. } => {
-                assert_eq!(windows.len(), 2);
-                assert_eq!(windows[0].id(), "gemini-weekly");
-                assert_eq!(windows[1].id(), "gemini-5h");
+                let ids: Vec<&str> = windows.iter().map(|w| w.id()).collect();
+                assert_eq!(ids, ["gemini-weekly", "gemini-5h", "3p-weekly", "3p-5h"]);
                 // A bucket without `reset_time` is still a window.
                 assert_eq!(windows[0].resets_at(), None);
             }
