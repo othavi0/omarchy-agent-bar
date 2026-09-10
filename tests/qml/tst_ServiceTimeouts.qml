@@ -404,6 +404,38 @@ TestCase {
     compare(s.maintenanceUi.message, "Update started. The shell reloads when it finishes.")
   }
 
+  // Live 10.3.24: the two-minute tick lands on the second 60 s poll, the
+  // check returns before the status run, and the handoff waited for a status
+  // completion that never retried it: polling stopped and Settings stayed
+  // blocked for good.
+  function test_handoff_waiting_on_status_starts_when_status_finishes() {
+    var s = createService()
+    bootstrapSettings(s)
+    verify(s.automaticUpdateTick())
+    s.kickStatus()
+    compare(s.statusBusy, true)
+    var statusGeneration = s.activeStatusGeneration
+
+    s.applyUpdateCheckResult(s.activeMaintenanceCheckGeneration, availableCheck(), 0)
+    compare(s.maintenanceState.blocked, true)
+    compare(s.maintenanceHandoffBusy, false)
+
+    s.applyStatusResult(statusGeneration, validEnvelope(), "", 0)
+    compare(s.maintenanceHandoffBusy, true)
+  }
+
+  function test_handoff_waiting_on_a_failed_status_still_starts() {
+    var s = createService()
+    bootstrapSettings(s)
+    s.kickStatus()
+    var statusGeneration = s.activeStatusGeneration
+    s.pendingMaintenanceIntention = ({ kind: "update_apply", version: "10.3.18" })
+    s.beginMaintenanceHandoff()
+    compare(s.maintenanceHandoffBusy, false)
+    s.applyStatusResult(statusGeneration, "", "boom", 1)
+    compare(s.maintenanceHandoffBusy, true)
+  }
+
   function test_automatic_update_checks_then_applies_without_a_click() {
     var s = createService()
     bootstrapSettings(s)

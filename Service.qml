@@ -702,6 +702,9 @@ Item {
     statusBusy = false
     refreshing = false
     recordCompletedCallback(!!fromTimeout, "status")
+    // A handoff that began while this run was in flight waits for the free
+    // lane; without this retry it waits forever with polling stopped.
+    tryMaintenanceDetach()
 
     if (exitCode !== 0) {
       // Keep last snapshot (CACHE-021 / malformed retention).
