@@ -67,7 +67,7 @@ exists.
 `updates.automatic` (default `true`, and assumed when the block is absent)
 lets the service check for a new release two minutes after start and every
 six hours, then install it and reload the shell while the popup is closed.
-Turn it off with the "Update automatically" toggle in Settings.
+Turn it off with the "Update automatically" toggle on the Settings About tab.
 
 Unknown keys and invalid/duplicate/missing providers are rejected. Reads never
 rewrite. Applies validate before lock and atomic replacement. File mode is

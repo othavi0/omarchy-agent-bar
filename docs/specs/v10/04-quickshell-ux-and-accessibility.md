@@ -54,7 +54,13 @@ settings glyph. `[R]` represents the native refresh glyph; these letters are
 not literal UI.
 
 - `UX-013`: The left rail is visually separate and uses provider icons only.
-- `UX-014`: Provider names are available through tooltips and accessibility.
+- `UX-014` (amended 2026-09-10): Provider names are available through
+  tooltips and accessibility. Each provider slot's tooltip and accessible name
+  read like the chip's accessible label, with `critical` appended when a
+  critical window drives severity, and the slot shows the chip's `!` cue in
+  its corner under the same rule as the bar chip (`UX-020C`). A hairline
+  separates the rail from the content and another sits above Settings. See
+  `docs/specs/v10/amendments/2026-09-10-settings-tabs-and-rail-state-design.md`.
 - `UX-015`: Settings is the last control in the rail stack (the stack shares
   the popup content inset top and bottom; not overlaid with
   `anchors.bottom` on short cards).
@@ -96,9 +102,10 @@ not literal UI.
   hours. A critical non-lead window still drives severity (`UX-020C`); it
   never takes the number. See
   `docs/specs/v10/amendments/2026-09-04-session-window-leads-design.md`.
-- `UX-020B`: The selected rail icon uses a neutral soft plate only for the
-  provider that owns the open content; no accent edge tick; Settings has no
-  idle selected-looking border.
+- `UX-020B` (amended 2026-09-10): The rail uses a neutral soft plate only
+  for the slot that owns the open content: the selected provider in the
+  usage view, the Settings slot while Settings is open. No accent edge tick;
+  Settings has no idle selected-looking border.
 - `UX-021`: The popup opens on the monitor that received the interaction.
 - `UX-022`: Only one agent-bar popup is visible across all monitors.
 - `UX-023`: Moving the popup to another monitor preserves selected provider
@@ -138,22 +145,32 @@ not literal UI.
 
 ## Settings
 
-Settings contains:
+Settings (amended 2026-09-10) is split into three tabs switched by the native
+`ButtonGroup`, each section opening with its title and a rule to the right
+edge instead of a full-width separator:
 
-- provider enable controls;
-- provider order controls;
-- a used/remaining selector;
-- a native numeric refresh interval control;
-- the notification toggle;
-- `Restore defaults`;
-- `Cancel`;
-- `Save changes`;
-- the Maintenance section.
+- `Providers`: the providers on the bar under `On the bar`, the rest under
+  `Hidden`, each with its enable switch and, on the bar section, order
+  controls;
+- `General`: the used/remaining selector with a preview of the chip number,
+  a native numeric refresh interval control, the notification toggle, and the
+  reminder interval, disabled while notifications are off;
+- `About`: the installed version with the update controls, the automatic
+  updates toggle, and the danger zone.
+
+A tab whose fields differ from the saved settings shows `•` after its label.
+`Restore defaults`, the unsaved-change count, `Cancel`, and `Save changes`
+sit in a footer pinned under the scroll surface on every tab. See
+`docs/specs/v10/amendments/2026-09-10-settings-tabs-and-rail-state-design.md`.
 
 Requirements:
 
-- `UX-033`: Provider rows use official icons and English names.
-- `UX-034`: Ordering uses verified native up/down chevrons.
+- `UX-033` (amended 2026-09-10): Provider rows use official icons, English
+  names, the native `ToggleSwitch`, and the provider's state in words when it
+  has no reading or no percentage.
+- `UX-034` (amended 2026-09-10): Ordering uses verified native up/down
+  chevrons on the `On the bar` section only; a move swaps with the nearest
+  provider in the same section.
 - `UX-035`: The interval uses a native numeric control, not custom plus/minus
   glyph buttons.
 - `UX-036`: `Restore defaults` changes only the draft.
