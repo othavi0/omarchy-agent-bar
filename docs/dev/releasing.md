@@ -3,7 +3,8 @@
 Releases are automatic. Every push to `master` that touches a product path
 (`src/**`, `scripts/**`, `Cargo.toml`, `Cargo.lock`, `*.qml`, `Core*.js`,
 `components/**`, `icons/**`, `manifest.json`) triggers
-`.github/workflows/auto-release.yml`, which cuts a patch release, stamps
+`.github/workflows/auto-release.yml`, which cuts a release (a patch bump,
+or a minor or major set by hand; see [Manual boundary](#manual-boundary)), stamps
 the release artifacts into the repository root, and publishes the product
 release in a single run. Docs-only merges cut nothing. See
 [ADR 0006](../adr/0006-single-repository-distribution.md), which
@@ -236,8 +237,11 @@ and `manifest.json` in a pull request. That version has no tag yet, so the
 release run its merge triggers publishes it as set instead of bumping the
 patch; `workflow_dispatch` runs the same pipeline without a merge. Until
 that run lands, `master` carries the new version in `manifest.json` next to
-the previous `bundle.json` and helper; the update check reads `bundle.json`,
-so installs are not offered the half-stamped tree. Merging to `master` is
+the previous `bundle.json` and helper. `update check` reads `bundle.json`,
+so neither the Settings button nor automatic updates offer that tree; a
+manual `omarchy plugin update` in the window pulls it, the health IPC
+answers `unknown` until the next update, and a failed release run keeps the
+window open until a fixed run lands. Merging to `master` is
 the release decision; there is no separate per-release authorization step.
 
 ## Local reproduction

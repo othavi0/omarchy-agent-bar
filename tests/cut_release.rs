@@ -33,12 +33,16 @@ fn git(repo: &Path, args: &[&str]) {
     assert!(status.success(), "git {args:?}");
 }
 
-fn write_version(repo: &Path, version: &str) {
+fn write_cargo_version(repo: &Path, version: &str) {
     fs::write(
         repo.join("Cargo.toml"),
-        format!("[package]\nname = \"fixture\"\nversion = \"{version}\"\n"),
+        format!("[package]\nname = \"fixture\"\nversion = \"{version}\"\nedition = \"2021\"\n"),
     )
     .unwrap();
+}
+
+fn write_version(repo: &Path, version: &str) {
+    write_cargo_version(repo, version);
     fs::write(
         repo.join("manifest.json"),
         format!("{{\n  \"version\": \"{version}\"\n}}\n"),
@@ -50,6 +54,9 @@ fn write_version(repo: &Path, version: &str) {
 fn released_repo(tmp: &Path) -> PathBuf {
     let repo = tmp.join("repo");
     fs::create_dir_all(repo.join("docs/releases")).unwrap();
+    // A buildable crate so the real run's `cargo update --offline` works.
+    fs::create_dir_all(repo.join("src")).unwrap();
+    fs::write(repo.join("src/lib.rs"), "").unwrap();
     fs::write(
         repo.join("CHANGELOG.md"),
         "# Changelog\n\n## [Unreleased]\n",
@@ -121,6 +128,69 @@ fn untagged_version_below_the_last_release_is_refused() {
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
         stderr.contains("10.3.9 is not above the last release 10.3.27"),
+        "{stderr}"
+    );
+}
+
+fn cut(repo: &Path) -> std::process::Output {
+    Command::new("bash")
+        .arg(cut_release_script())
+        .current_dir(repo)
+        .output()
+        .expect("run cut-release")
+}
+
+fn read(repo: &Path, rel: &str) -> String {
+    fs::read_to_string(repo.join(rel)).unwrap()
+}
+
+#[test]
+fn real_run_stamps_a_deliberate_version_as_set() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = released_repo(tmp.path());
+    write_version(&repo, "10.4.0");
+    git(&repo, &["commit", "-q", "-am", "chore: set version 10.4.0"]);
+    let out = cut(&repo);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(read(&repo, "Cargo.toml").contains("version = \"10.4.0\""));
+    assert!(read(&repo, "manifest.json").contains("\"version\": \"10.4.0\""));
+    assert!(read(&repo, "docs/releases/10.4.0.md").contains("Changes since 10.3.27:"));
+    assert!(read(&repo, "CHANGELOG.md").contains("## [10.4.0] - "));
+}
+
+#[test]
+fn real_run_bumps_a_tagged_version() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = released_repo(tmp.path());
+    let out = cut(&repo);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(read(&repo, "Cargo.toml").contains("version = \"10.3.28\""));
+    assert!(read(&repo, "manifest.json").contains("\"version\": \"10.3.28\""));
+    assert!(repo.join("docs/releases/10.3.28.md").is_file());
+}
+
+#[test]
+fn deliberate_version_missing_from_the_manifest_is_refused() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = released_repo(tmp.path());
+    write_cargo_version(&repo, "10.4.0");
+    git(
+        &repo,
+        &["commit", "-q", "-am", "chore: half a version bump"],
+    );
+    let out = cut(&repo);
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("manifest.json version stamp failed"),
         "{stderr}"
     );
 }
