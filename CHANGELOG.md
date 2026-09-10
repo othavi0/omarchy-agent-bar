@@ -118,6 +118,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `This plan does not publish a usage percentage.` (PROD-031 / UX-032A
   amended).
 
+## [10.3.27] - 2026-09-10
+
+### Changed
+
+- feat: report Antigravity Claude/GPT quota
+
 ## [10.3.26] - 2026-09-10
 
 ### Changed
