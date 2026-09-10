@@ -118,6 +118,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `This plan does not publish a usage percentage.` (PROD-031 / UX-032A
   amended).
 
+## [10.4.0] - 2026-09-10
+
+### Changed
+
+- test: cover real release runs, fix patch wording
+- chore: set version 10.4.0
+- feat: release a deliberately set version
+
 ## [10.3.27] - 2026-09-10
 
 ### Changed
