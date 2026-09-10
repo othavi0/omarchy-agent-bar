@@ -20,9 +20,13 @@ installation.
 
 ## Automatic pipeline
 
-1. `scripts/agent-bar-cut-release` bumps the patch version in `Cargo.toml`,
-   the lockfile, and `manifest.json`, writes `docs/releases/{version}.md`
-   from the Conventional Commit subjects since the last tag, and prepends
+1. `scripts/agent-bar-cut-release` picks the version: when the
+   `Cargo.toml` version already has a `v{version}` tag it bumps the patch
+   in `Cargo.toml`, the lockfile, and `manifest.json`; when it has no tag
+   yet (a minor or major set by hand, see [Manual boundary](#manual-boundary))
+   it releases that version as set, and refuses one that is not above the
+   last release tag. It writes `docs/releases/{version}.md` from the
+   Conventional Commit subjects since the last release tag, and prepends
    a matching CHANGELOG section below `[Unreleased]`. Preview locally:
 
    ```bash
@@ -226,10 +230,15 @@ in one call; the release workflow runs it as part of the stamp step.
 
 ## Manual boundary
 
-Automatic cuts are always patch bumps. Minor and major releases remain
-human-driven: set the version deliberately, then run the same pipeline via
-`workflow_dispatch`. Merging to `master` is the release decision for patch
-versions; there is no separate per-release authorization step.
+Automatic cuts are patch bumps. Minor and major releases remain
+human-driven: set the version deliberately in `Cargo.toml`, `Cargo.lock`,
+and `manifest.json` in a pull request. That version has no tag yet, so the
+release run its merge triggers publishes it as set instead of bumping the
+patch; `workflow_dispatch` runs the same pipeline without a merge. Until
+that run lands, `master` carries the new version in `manifest.json` next to
+the previous `bundle.json` and helper; the update check reads `bundle.json`,
+so installs are not offered the half-stamped tree. Merging to `master` is
+the release decision; there is no separate per-release authorization step.
 
 ## Local reproduction
 

@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Bump the patch version and materialize release notes for an auto-release.
+# Pick the release version and materialize release notes for an auto-release.
+# A Cargo.toml version that already carries a tag bumps the patch; a version
+# set deliberately and not yet tagged (a minor or major) is released as set.
 # Mutates: Cargo.toml, Cargo.lock, docs/releases/{next}.md, CHANGELOG.md.
 # Git commit/tag/push stay in the workflow, so this stays testable locally.
 # Usage: scripts/agent-bar-cut-release [--dry-run]
@@ -31,11 +33,25 @@ case "$MAJOR$MINOR$PATCH" in
     exit 1
     ;;
 esac
-NEXT="${MAJOR}.${MINOR}.$((PATCH + 1))"
+# Notes cover everything since the last release tag, which for a deliberate
+# version is not v${CUR}.
+PREV="$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || true)"
+
+if git rev-parse -q --verify "refs/tags/v${CUR}" >/dev/null; then
+  NEXT="${MAJOR}.${MINOR}.$((PATCH + 1))"
+else
+  NEXT="$CUR"
+  LAST="${PREV#v}"
+  if [ -n "$LAST" ] &&
+    [ "$(printf '%s\n%s\n' "$LAST" "$NEXT" | sort -V | tail -n 1)" != "$NEXT" ]; then
+    echo "Cargo.toml version $NEXT is not above the last release $LAST" >&2
+    exit 1
+  fi
+fi
 
 RANGE=""
-if git rev-parse -q --verify "refs/tags/v${CUR}" >/dev/null; then
-  RANGE="v${CUR}..HEAD"
+if [ -n "$PREV" ]; then
+  RANGE="${PREV}..HEAD"
 fi
 if [ -n "$RANGE" ]; then
   SUBJECTS="$(git log --no-merges --pretty='- %s' "$RANGE")"
@@ -49,7 +65,7 @@ fi
 TODAY="$(date -u +%F)"
 NOTES_PATH="docs/releases/${NEXT}.md"
 NOTES="$(printf '# Agent Bar %s\n\nAutomated release cut from main. Changes since %s:\n\n%s\n' \
-  "$NEXT" "$CUR" "$SUBJECTS")"
+  "$NEXT" "${PREV#v}" "$SUBJECTS")"
 
 if [ "$DRY_RUN" -eq 1 ]; then
   echo "next-version: $NEXT"
@@ -67,7 +83,7 @@ if [ -f "$NOTES_PATH" ]; then
   exit 1
 fi
 
-# Bump only the first (package) version line.
+# Bump only the first (package) version line; a no-op for a deliberate one.
 sed -i "0,/^version = \"${CUR}\"/s//version = \"${NEXT}\"/" Cargo.toml
 cargo update --workspace --offline --quiet
 
