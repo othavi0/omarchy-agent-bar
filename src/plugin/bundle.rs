@@ -1,10 +1,3 @@
-//! Plugin release stamping, receipt (`bundle.json`), and tree validation.
-//!
-//! The plugin QML/JS/manifest tree lives at the repo root (monorepo
-//! migration). `BundleBuilder::stamp` does not assemble a separate tree; it
-//! stamps release artifacts (private helper, `bundle.json`) directly into
-//! that root and validates the shipped scope.
-
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsStr;
 use std::fs::{self, File, OpenOptions};
@@ -273,14 +266,12 @@ impl BundleBuilder {
             )));
         }
 
-        // Private helper.
         let bin_dir = repo_root.join("bin");
         fs::create_dir_all(&bin_dir)?;
         let dest_helper = bin_dir.join("agent-bar");
         fs::copy(helper_bin, &dest_helper)?;
         set_unix_mode(&dest_helper, 0o755)?;
 
-        // Deterministic non-exec modes for ordinary shipped files.
         normalize_bundle_modes(repo_root)?;
 
         let receipt = BundleValidator::build_receipt(self, repo_root)?;
@@ -288,7 +279,6 @@ impl BundleBuilder {
         let json = receipt.to_pretty_json()?;
         write_bytes_atomic(&receipt_path, json.as_bytes(), 0o644)?;
 
-        // Final validation including the written receipt.
         BundleValidator::validate_tree(repo_root)?;
         Ok(receipt)
     }
@@ -340,7 +330,6 @@ impl BundleValidator {
                 plugin_root.display()
             )));
         }
-        // No symlinks / special files anywhere in the tree.
         reject_special_files(plugin_root)?;
 
         let receipt_path = plugin_root.join("bundle.json");
@@ -400,7 +389,6 @@ impl BundleValidator {
         }
 
         validate_manifest_matches(&plugin_root.join("manifest.json"), &receipt.version)?;
-        // Helper version must match manifest/receipt exactly (BUNDLE-006 / BUNDLE-027).
         let helper = plugin_root.join("bin/agent-bar");
         if !helper.is_file() {
             return Err(BundleError::msg("bin/agent-bar is missing"));
@@ -428,7 +416,6 @@ impl BundleValidator {
             }
         }
 
-        // Required top-level files.
         for required in [
             "manifest.json",
             "Service.qml",
@@ -449,10 +436,6 @@ impl BundleValidator {
         Ok(receipt)
     }
 }
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 pub fn validate_source_commit(s: &str) -> Result<(), BundleError> {
     if s.len() != 40 {
@@ -487,7 +470,6 @@ pub fn validate_build_run(s: &str) -> Result<(), BundleError> {
 pub fn validate_semver_strict(v: &str) -> Result<(), BundleError> {
     let parsed = semver::Version::parse(v)
         .map_err(|e| BundleError::msg(format!("invalid semantic version '{v}': {e}")))?;
-    // Disallow leading zeros / weird forms by round-trip.
     if parsed.to_string() != v {
         return Err(BundleError::msg(format!(
             "version must be strict semver canonical form, got '{v}'"
@@ -578,7 +560,6 @@ fn validate_manifest_matches(manifest_path: &Path, version: &str) -> Result<(), 
     Ok(())
 }
 
-/// Run `bin/agent-bar version` and return the trimmed first line (BUNDLE-006).
 fn read_helper_version(helper: &Path) -> Result<String, BundleError> {
     let output = Command::new(helper)
         .arg("version")
@@ -601,9 +582,6 @@ fn read_helper_version(helper: &Path) -> Result<String, BundleError> {
     Ok(line)
 }
 
-/// Walk a shipped directory (`components/` or `icons/`) recursively,
-/// invoking `visit` for each regular file found. Rejects symlinks and other
-/// special files anywhere in the walk.
 fn walk_shipped_dir(
     root: &Path,
     dir_name: &str,
@@ -654,8 +632,6 @@ fn walk_shipped_dir(
 fn normalize_bundle_modes(root: &Path) -> Result<(), BundleError> {
     for rel in SHIPPED_ROOT_FILES {
         let path = root.join(rel);
-        // Presence check first, so an absent shipped file is refused by name
-        // instead of surfacing as a bare OS error from the chmod below.
         fs::symlink_metadata(&path)
             .map_err(|e| BundleError::msg(format!("missing shipped file {rel}: {e}")))?;
         if *rel == "bin/agent-bar" || *rel == "scripts/agent-bar-open-terminal" {
@@ -670,24 +646,12 @@ fn normalize_bundle_modes(root: &Path) -> Result<(), BundleError> {
     Ok(())
 }
 
-/// True for a real directory named `.git` sitting directly under `root`.
-///
-/// Unlike omarchy-plugin-validate's `find "$PLUGIN_DIR" -name .git -prune`,
-/// which skips a `.git` directory anywhere in the tree, this tolerance is
-/// deliberately root-only: installed plugins are git checkouts, so a `.git`
-/// at the tree root is expected and never part of the plugin contract, but a
-/// `.git` nested deeper is unexpected and still trips the ordinary
-/// extra-file-not-in-receipt check below. A `.git` that is itself a symlink
-/// at the root gets no pass either -- the symlink check always runs first.
+/// Root-only on purpose, unlike `omarchy-plugin-validate`: installed plugins are
+/// git checkouts, but a nested `.git` must still fail the receipt check.
 fn is_root_git_dir(root: &Path, dir: &Path, name: &OsStr, is_dir: bool) -> bool {
     is_dir && dir == root && name == OsStr::new(".git")
 }
 
-/// Collect (relative path with `/`, sha256, size, mode) for every shipped
-/// regular file: [`SHIPPED_ROOT_FILES`] plus a full walk of [`SHIPPED_DIRS`].
-/// The repo root also holds `src/`, `docs/`, `target/`, and other non-shipped
-/// trees; those are outside this inventory's scope entirely, not merely
-/// tolerated.
 fn collect_inventory(root: &Path) -> Result<Vec<(String, String, u64, String)>, BundleError> {
     let mut out = Vec::new();
     for rel in SHIPPED_ROOT_FILES {
@@ -727,11 +691,6 @@ fn collect_inventory(root: &Path) -> Result<Vec<(String, String, u64, String)>, 
     Ok(out)
 }
 
-/// Reject symlinks and other special files within the shipped scope, plus
-/// the repo root's own immediate entries (excluding a root `.git`). This
-/// deliberately does not descend into non-shipped subdirectories like
-/// `src/` or `docs/` -- a symlink there is the shell's own full-tree
-/// validator's job at install time, not this bundle's.
 fn reject_special_files(root: &Path) -> Result<(), BundleError> {
     for entry in fs::read_dir(root)? {
         let entry = entry?;
@@ -834,10 +793,6 @@ fn write_bytes_atomic(path: &Path, bytes: &[u8], mode: u32) -> Result<(), Bundle
     }
     Ok(())
 }
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
@@ -971,14 +926,10 @@ mod tests {
         assert!(r.validate_shape().is_err());
         assert!(validate_receipt_path("..").is_err());
         assert!(validate_receipt_path("").is_err());
-        assert!(validate_receipt_path("bundle.json").is_ok()); // path ok; shape forbids in files
+        assert!(validate_receipt_path("bundle.json").is_ok());
         assert!(validate_receipt_path("../evil").is_err());
     }
 
-    /// A fully-stamped shipped root: every `SHIPPED_ROOT_FILES` entry plus
-    /// non-empty `SHIPPED_DIRS`, ready for `BundleValidator` calls directly
-    /// (as opposed to `write_stamp_source_root`, which is missing the two
-    /// artifacts `stamp` itself creates).
     fn write_minimal_plugin(root: &Path, version: &str) {
         fs::create_dir_all(root.join("bin")).unwrap();
         fs::create_dir_all(root.join("scripts")).unwrap();
@@ -1036,7 +987,6 @@ mod tests {
             fs::write(root.join(name), format!("// {name}\n")).unwrap();
             fs::set_permissions(root.join(name), fs::Permissions::from_mode(0o644)).unwrap();
         }
-        // Fake helper that answers `version` with the staged receipt version.
         fs::write(
             root.join("bin/agent-bar"),
             format!(
@@ -1081,9 +1031,6 @@ mod tests {
         }
     }
 
-    /// A stamp-input root: everything `stamp` expects to already exist,
-    /// minus the one artifact it creates itself (`bin/agent-bar`). The
-    /// committed `preview.png` is part of the input tree.
     fn write_stamp_source_root(root: &Path, version: &str) {
         write_minimal_plugin(root, version);
         fs::remove_file(root.join("bin/agent-bar")).unwrap();
@@ -1121,9 +1068,6 @@ mod tests {
         let receipt = BundleValidator::build_receipt(&builder, &root).unwrap();
         fs::write(root.join("bundle.json"), receipt.to_pretty_json().unwrap()).unwrap();
 
-        // Extra file after receipt was built, inside the shipped scope
-        // (`components/`) -- outside it, e.g. loose at the repo root, is
-        // deliberately not this validator's business.
         fs::write(root.join("components/evil.txt"), b"x").unwrap();
         assert!(BundleValidator::validate_tree(&root).is_err());
 
@@ -1160,11 +1104,8 @@ mod tests {
         let dir = tempdir().unwrap();
         let root = dir.path().join("othavi0.agent-bar");
         write_minimal_plugin(&root, "10.0.0");
-        // Inside the shipped scope (`components/`) -- a symlink loose at the
-        // repo root is outside collect_inventory's business now.
         std::os::unix::fs::symlink("/etc/passwd", root.join("components/link")).unwrap();
         let builder = BundleBuilder::new("10.0.0", ZERO_COMMIT).unwrap();
-        // build_receipt itself walks and rejects symlinks.
         assert!(BundleValidator::build_receipt(&builder, &root).is_err());
     }
 
@@ -1176,7 +1117,6 @@ mod tests {
         write_stamp_source_root(&root, version);
 
         let helper = dir.path().join("agent-bar");
-        // Stand-in helper that reports the package version for BUNDLE-006.
         fs::write(
             &helper,
             format!(
@@ -1190,8 +1130,6 @@ mod tests {
         let receipt = builder.stamp(&root, &helper).unwrap();
         assert_eq!(receipt.version, version);
         assert_eq!(receipt.plugin_id, PLUGIN_ID);
-        // stamp creates the helper fresh; the committed preview.png is
-        // carried into the receipt as-is.
         assert!(root.join("bin/agent-bar").is_file());
         assert!(root.join("preview.png").is_file());
         assert!(root.join("bundle.json").is_file());

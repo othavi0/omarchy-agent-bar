@@ -1,5 +1,3 @@
-//! Concrete [`ProviderAdapter`] implementations for the four locked providers.
-
 use crate::cli::ProviderId;
 use crate::status::schema::{Account, Plan, ProviderResult};
 use crate::support::redact::strip_ansi_and_controls;
@@ -17,10 +15,6 @@ use super::v2_map::{
     codex_from_rate_limits_json, grok_from_billing_json,
 };
 use super::{Discovery, ProviderDescriptor};
-
-// ---------------------------------------------------------------------------
-// Amp
-// ---------------------------------------------------------------------------
 
 pub struct AmpAdapter;
 
@@ -93,14 +87,7 @@ fn classify_amp_failure(out: &ProcessOutput, login_available: bool) -> ProviderR
     }
 }
 
-// ---------------------------------------------------------------------------
-// Grok
-// ---------------------------------------------------------------------------
-
-/// Authenticated billing endpoint (literal; equality-tested).
 pub const GROK_BILLING_URL: &str = "https://cli-chat-proxy.grok.com/v1/billing?format=credits";
-/// Monthly-limit billing shape, consulted only when the credits shape carries
-/// no percentage (literal; equality-tested).
 pub const GROK_MONTHLY_BILLING_URL: &str = "https://cli-chat-proxy.grok.com/v1/billing";
 
 pub struct GrokAdapter;
@@ -141,8 +128,6 @@ impl ProviderAdapter for GrokAdapter {
             let auth_path = grok_home.join("auth.json");
             let login = login_available(discovery);
 
-            // Token is used only for the Authorization header — never stored in
-            // ProviderResult, logs, or error messages.
             let mut creds = match read_grok_credentials(context, &auth_path) {
                 Ok(creds) => creds,
                 Err(err) => return grok_auth_failure(err, login),
@@ -174,8 +159,6 @@ impl ProviderAdapter for GrokAdapter {
                         | Err(err @ GrokAuthError::Unreadable) => {
                             return grok_auth_failure(err, login);
                         }
-                        // Torn mid-rewrite: fall through with the expired
-                        // token and report the session expired.
                         Err(GrokAuthError::Torn) => {}
                     }
                 }
@@ -228,12 +211,6 @@ impl ProviderAdapter for GrokAdapter {
     }
 }
 
-/// Second billing shape for accounts whose credits payload publishes no
-/// percentage (monthly-limit teams). Network errors and 5xx are the same
-/// typed operational results as the primary request, so the coordinator's
-/// stale retention keeps the last good reading instead of an empty `Ready`
-/// overwriting it. A 4xx, or a 2xx body without a window, keeps the credits
-/// reading, including its `plan`/`account`.
 async fn grok_monthly_fallback(
     context: &CollectionContext<'_>,
     headers: &[(&str, &str)],
@@ -251,10 +228,6 @@ async fn grok_monthly_fallback(
         max_body,
     )
     .await;
-    // The credits request just proved the token, so a 4xx here (including
-    // 401/403 or a missing route) is not a fault of this account: keep the
-    // credits reading. Network errors and 5xx are typed failures so stale
-    // retention can protect a cached monthly window.
     let resp = match response {
         Ok(resp) if (200..300).contains(&resp.status) => resp,
         Ok(resp) if resp.status < 500 => return credits,
@@ -292,8 +265,6 @@ async fn grok_monthly_fallback(
     }
 }
 
-/// Map a non-2xx or failed billing request to its typed result. Shared by
-/// the credits and monthly requests.
 fn grok_http_failure(
     response: Result<super::adapter::HttpResponse, super::adapter::HttpError>,
     login: bool,
@@ -339,34 +310,22 @@ fn grok_http_failure(
     }
 }
 
-/// A token this close to `expires_at` counts as expired, so a request never
-/// carries a token that dies in flight.
 const GROK_TOKEN_EXPIRY_MARGIN: time::Duration = time::Duration::seconds(60);
 
-/// What the adapter keeps from Grok `auth.json`: the access token (header
-/// only), the display label, and the token's expiry when the file states one.
-/// `refresh_token` is never read.
 struct GrokCredentials {
     token: String,
     account: Option<String>,
     expires_at: Option<time::OffsetDateTime>,
 }
 
-/// Grok `auth.json` outcomes the caller maps to typed results.
 enum GrokAuthError {
-    /// No file, or a well-formed document without a token: signed out.
     NotAuthenticated,
     /// The file exists but is not a whole JSON document — the CLI rewrites
     /// it non-atomically, so this is transient.
     Torn,
-    /// The file exists but cannot be read (permissions, I/O): neither a
-    /// sign-out nor a rewrite window, so neither "Sign in" nor stale
-    /// retention is honest.
     Unreadable,
 }
 
-/// Read and parse `auth.json`. A missing file is `NotAuthenticated`, any
-/// other I/O error is `Unreadable`, and a partial document is `Torn`.
 fn read_grok_credentials(
     context: &CollectionContext<'_>,
     auth_path: &std::path::Path,
@@ -408,13 +367,6 @@ fn grok_auth_failure(err: GrokAuthError, login: bool) -> ProviderResult {
     }
 }
 
-/// Extract the access token, optional `first_name` label, and optional
-/// `expires_at` from Grok `auth.json`.
-///
-/// An unparseable document is `Torn`; a parseable one with no non-empty
-/// `key` is `NotAuthenticated`. A missing or malformed `expires_at` means "no
-/// known expiry" and the token is used as is. The token must only be used for
-/// the HTTP Authorization header and must never enter `ProviderResult`.
 fn parse_grok_credentials(bytes: &[u8]) -> Result<GrokCredentials, GrokAuthError> {
     let value: serde_json::Value =
         serde_json::from_slice(bytes).map_err(|_| GrokAuthError::Torn)?;
@@ -449,10 +401,6 @@ fn grok_token_expired(creds: &GrokCredentials, now: time::OffsetDateTime) -> boo
         .is_some_and(|expires_at| expires_at <= now + GROK_TOKEN_EXPIRY_MARGIN)
 }
 
-// ---------------------------------------------------------------------------
-// Codex
-// ---------------------------------------------------------------------------
-
 pub struct CodexAdapter;
 
 pub static CODEX_ADAPTER: CodexAdapter = CodexAdapter;
@@ -478,7 +426,6 @@ impl ProviderAdapter for CodexAdapter {
                 };
             }
 
-            // 1. App-server when collection exe is present (one timeout retry).
             if let Some(exe) = collection_exe(discovery) {
                 let version = crate::app_identity::VERSION;
                 let timeout = CODEX.timeout;
@@ -491,8 +438,6 @@ impl ProviderAdapter for CodexAdapter {
                     AppServerOutcome::Ok(bytes) => {
                         return codex_from_rate_limits_json(&bytes, context.clock.now_utc());
                     }
-                    // JSON-004 / JSON-007: a signed-out account never falls
-                    // through to obsolete session-log usage.
                     AppServerOutcome::Unauthenticated => {
                         return unauthenticated(
                             ProviderId::Codex,
@@ -507,9 +452,6 @@ impl ProviderAdapter for CodexAdapter {
                 }
             }
 
-            // 2. Bounded session-log fallback (~/.codex/sessions/**/*.jsonl).
-            // The log's own event timestamp — not collection time — becomes
-            // last_success_at, since this data may be hours or days old.
             if let Some((bytes, log_timestamp)) =
                 find_latest_rate_limits(&home.join(".codex/sessions"))
             {
@@ -517,7 +459,6 @@ impl ProviderAdapter for CodexAdapter {
                 return codex_from_rate_limits_json(&bytes, now);
             }
 
-            // 3. Typed miss / cli_missing
             if collection_exe(discovery).is_none() {
                 return missing_collection(
                     ProviderId::Codex,
@@ -534,10 +475,6 @@ impl ProviderAdapter for CodexAdapter {
         })
     }
 }
-
-// ---------------------------------------------------------------------------
-// Claude
-// ---------------------------------------------------------------------------
 
 pub const CLAUDE_USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
 
@@ -602,7 +539,6 @@ impl ProviderAdapter for ClaudeAdapter {
                 );
             }
 
-            // Never log the token. Pass only as Authorization header value.
             let bearer = format!("Bearer {}", creds.token);
             let headers = [
                 ("Authorization", bearer.as_str()),
@@ -637,7 +573,6 @@ impl ProviderAdapter for ClaudeAdapter {
                     retryable: false,
                 },
                 Ok(resp) => {
-                    // Redact: never store Authorization values in the domain result.
                     let _ = resp.final_url;
                     claude_from_usage_json(
                         &resp.body,
@@ -706,8 +641,6 @@ fn parse_claude_credentials(bytes: &[u8]) -> Option<ClaudeCredentials> {
     })
 }
 
-/// Prefer the granular rate-limit tier ("max_20x" → "Max 20x"); fall back to
-/// the capitalized subscription type. Mirrors the native widget's formatTier.
 fn claude_plan(subscription_type: Option<&str>, rate_limit_tier: Option<&str>) -> Option<Plan> {
     if let Some(tier) = rate_limit_tier.filter(|t| !t.is_empty()) {
         if let Some(pos) = tier.find("max_") {
@@ -740,7 +673,6 @@ fn capitalize_ascii(raw: &str) -> String {
     }
 }
 
-/// Test-only fixed clock.
 #[cfg(test)]
 pub struct FixedClock(pub time::OffsetDateTime);
 
@@ -750,10 +682,6 @@ impl crate::support::Clock for FixedClock {
         self.0
     }
 }
-
-// ---------------------------------------------------------------------------
-// Antigravity
-// ---------------------------------------------------------------------------
 
 pub struct AntigravityAdapter;
 
@@ -802,9 +730,6 @@ impl ProviderAdapter for AntigravityAdapter {
                     };
                 }
                 Ok(out) => {
-                    // A non-zero exit leaves us without a version, which is
-                    // the same answer as an unparseable one: we may not run
-                    // the usage command.
                     let supported = out.exit_code == Some(0)
                         && parse_version_prefix(&out.stdout)
                             .is_some_and(|found| found >= ANTIGRAVITY_MIN_VERSION);
@@ -873,8 +798,6 @@ fn antigravity_spec(exe: &std::path::Path, args: &[&str]) -> ProcessSpec {
         .with_env("TERM", "dumb")
 }
 
-/// Typed refusal for a CLI too old to answer `/usage` without spending quota.
-/// Not retryable: only reinstalling the CLI can change the answer.
 fn antigravity_unsupported_version() -> ProviderResult {
     let (major, minor, patch) = ANTIGRAVITY_MIN_VERSION;
     ProviderResult::ProviderError {
@@ -940,7 +863,6 @@ fn classify_antigravity_failure(out: &ProcessOutput, login_available: bool) -> P
     }
 }
 
-/// In-memory filesystem for adapter tests.
 #[cfg(test)]
 #[derive(Default)]
 pub struct MapFileSystem {
@@ -982,11 +904,8 @@ mod tests {
     use time::macros::datetime;
 
     struct ScriptedProcess {
-        /// Pending results in reverse order: `run` pops from the back.
         outputs: Mutex<Vec<Result<ProcessOutput, ProcessError>>>,
         pub last_spec: Mutex<Option<ProcessSpec>>,
-        /// Every spec seen, in call order, so a multi-call adapter can be
-        /// asserted invocation by invocation.
         pub specs: Mutex<Vec<ProcessSpec>>,
     }
 
@@ -995,7 +914,6 @@ mod tests {
             Self::sequence(vec![Ok(out)])
         }
 
-        /// Script consecutive runs: `outputs[0]` answers the first call.
         fn sequence(outputs: Vec<Result<ProcessOutput, ProcessError>>) -> Self {
             let mut reversed = outputs;
             reversed.reverse();
@@ -1090,7 +1008,6 @@ mod tests {
 
     #[test]
     fn amp_network_flavored_auth_substring_is_not_unauthenticated() {
-        // "authorization server unavailable" contains "auth" but is operational.
         let out = fake_process_output(1, "", "authorization server unavailable");
         let result = classify_amp_failure(&out, true);
         assert!(matches!(result, ProviderResult::ProviderError { .. }));
@@ -1166,7 +1083,6 @@ mod tests {
         first: HttpResponse,
         second: Result<HttpResponse, HttpError>,
     ) -> ScriptedHttpClient {
-        // Responses pop from the end: push the second call first.
         let client = ScriptedHttpClient::single(second);
         client
             .responses
@@ -1212,8 +1128,6 @@ mod tests {
 
     #[tokio::test]
     async fn grok_monthly_fallback_network_failure_is_typed() {
-        // A failed second request must not become an empty `Ready` that
-        // evicts a cached monthly window; it is a retryable operational result.
         let credits =
             include_bytes!("../../tests/fixtures/providers/grok/billing-credits-no-quota.json");
         let http = scripted_pair(
@@ -1599,12 +1513,11 @@ mod tests {
 
     #[tokio::test]
     async fn claude_expired_token_skips_http_and_is_retryable() {
-        let http = ScriptedHttpClient::default(); // any HTTP call would error
+        let http = ScriptedHttpClient::default();
         let process = empty_process();
         let mut fs = MapFileSystem::default();
         fs.files.insert(
             std::path::PathBuf::from("/home/u/.claude/.credentials.json"),
-            // expiresAt in the past relative to the fixed clock below.
             br#"{"claudeAiOauth":{"accessToken":"tok","expiresAt":1690000000000}}"#.to_vec(),
         );
         let env = ExecutionEnvironment {
@@ -1664,7 +1577,6 @@ mod tests {
         let grok_home = home.join(".grok");
         fs.files.insert(
             grok_home.join("auth.json"),
-            // Synthetic key — not a real JWT or credential.
             br#"{"acct":{"key":"SYNTH_GROK_KEY_NOT_REAL","first_name":"Ada"}}"#.to_vec(),
         );
         ExecutionEnvironment {
@@ -1777,8 +1689,6 @@ mod tests {
         let result = GROK_ADAPTER.collect(&ctx, &discovery).await;
         let dbg = format!("{result:?}");
         assert!(!dbg.contains("SYNTH_GROK_KEY_NOT_REAL"));
-        // A valid token the server rejects is a real sign-in request: never
-        // retryable, so no stale reading survives it (JSON-007, CACHE-023).
         assert!(
             matches!(
                 result,
@@ -1791,9 +1701,6 @@ mod tests {
         );
     }
 
-    /// Filesystem whose reads of one path answer from a script, so a test can
-    /// hand the adapter an expired credential first and a renewed one after
-    /// the refresh process ran. The last entry repeats once exhausted.
     struct ScriptedFs {
         path: std::path::PathBuf,
         reads: Mutex<Vec<Result<Vec<u8>, std::io::ErrorKind>>>,
@@ -1840,7 +1747,6 @@ mod tests {
     }
 
     fn grok_auth_json(key: &str, expires_at: &str) -> Vec<u8> {
-        // Synthetic key — not a real JWT or credential.
         format!(
             r#"{{"https://auth.x.ai::client":{{"key":"{key}","first_name":"Ada","refresh_token":"SYNTH_GROK_REFRESH_NOT_REAL","expires_at":"{expires_at}","auth_mode":"oidc"}}}}"#
         )
@@ -2002,7 +1908,6 @@ mod tests {
             let http = grok_billing_ok();
             let process = ScriptedProcess::sequence(vec![outcome]);
             let env = grok_env();
-            // The file never changes: the CLI did not renew anything.
             let fs = ScriptedFs::new(
                 grok_auth_path(&env),
                 vec![Ok(grok_auth_json(
@@ -2041,7 +1946,6 @@ mod tests {
 
     #[tokio::test]
     async fn grok_expiry_margin_treats_a_token_about_to_expire_as_expired() {
-        // 30 s of validity left: refresh. 120 s left: use it.
         for (expires_at, expect_refresh) in [
             ("2026-09-04T06:00:30Z", true),
             ("2026-09-04T06:02:00Z", false),
@@ -2153,7 +2057,6 @@ mod tests {
 
     #[tokio::test]
     async fn grok_auth_file_without_expiry_keeps_the_current_flow() {
-        // The pre-OIDC shape (no expires_at) is neither expired nor refreshed.
         let http = grok_billing_ok();
         let process = empty_process();
         let mut fs = MapFileSystem::default();
@@ -2210,9 +2113,6 @@ mod tests {
 
     #[tokio::test]
     async fn grok_unreadable_auth_file_is_a_typed_non_retryable_error() {
-        // EACCES (root-owned file after `sudo grok`) is neither a sign-out
-        // nor a rewrite window: a retryable result would keep days-old usage
-        // on the bar forever, and "Sign in" would be a lie.
         let http = grok_billing_ok();
         let process = empty_process();
         let env = grok_env();
@@ -2244,8 +2144,6 @@ mod tests {
 
     #[tokio::test]
     async fn grok_refresh_that_clears_credentials_asks_to_sign_in() {
-        // A dead refresh token makes the CLI delete auth.json. The second read
-        // then says signed out, and that must win over "session expired".
         let http = grok_billing_ok();
         let process = empty_process();
         let env = grok_env();
@@ -2285,9 +2183,6 @@ mod tests {
 
     #[tokio::test]
     async fn grok_second_read_after_refresh_keeps_torn_and_unreadable_apart() {
-        // Same rules as the first read: a torn document mid-rewrite falls
-        // through to "session expired" (retryable); a file that cannot be
-        // read is the typed non-retryable error, never stale retention.
         for (second_read, expect_retryable_expired) in [
             (
                 Ok(b"{\"https://auth.x.ai::client\":{\"key\":\"SYNTH_GROK_KEY_NOT_REAL\"".to_vec()),
@@ -2347,8 +2242,6 @@ mod tests {
 
     #[tokio::test]
     async fn grok_non_string_expires_at_means_no_known_expiry() {
-        // Fail open on purpose: a shape this adapter does not understand is
-        // used as is, exactly like a file that carries no expiry at all.
         let http = grok_billing_ok();
         let process = empty_process();
         let env = grok_env();
@@ -2376,8 +2269,6 @@ mod tests {
 
     #[tokio::test]
     async fn grok_missing_auth_file_or_key_is_not_retryable() {
-        // No file, or a well-formed file without a key (logged out), is a real
-        // sign-in request, never a stale reading.
         for read in [
             Err(std::io::ErrorKind::NotFound),
             Ok(br#"{"https://auth.x.ai::client":{"first_name":"Ada"}}"#.to_vec()),
@@ -2438,8 +2329,6 @@ mod tests {
         let http = ScriptedHttpClient::default();
         let fs = MapFileSystem::default();
 
-        // Real tempdir: find_latest_rate_limits walks std::fs directly, not
-        // the injected fs seam.
         let home_dir = tempfile::tempdir().expect("tempdir");
         let home = home_dir.path().to_path_buf();
         let sessions = home.join(".codex/sessions/2026/07/28");
@@ -2455,8 +2344,6 @@ mod tests {
             path_dirs: vec![],
             grok_home: None,
         };
-        // Fake clock's "now" is far after the log's own timestamp — asserts
-        // last_success_at reflects data generation, not collection time.
         let clock = FixedClock(datetime!(2026-08-06 12:00:00 UTC));
         let ctx = CollectionContext {
             env: &env,
@@ -2466,9 +2353,6 @@ mod tests {
             http: &http,
             plugin_root: None,
         };
-        // Non-existent exe so app-server spawn fails immediately and
-        // collection falls through to the session-log fallback (no live
-        // Codex dependency, no rate-limits.json — that stage is gone).
         let discovery = discovery_with_exe(Path::new("/nonexistent/codex"));
         let result = CODEX_ADAPTER.collect(&ctx, &discovery).await;
         assert_no_money(&result);
@@ -2485,8 +2369,6 @@ mod tests {
         }
     }
 
-    /// Writes an executable fake `codex` that speaks just enough app-server
-    /// protocol to answer initialize, account/read, and refuse rateLimits.
     fn write_fake_codex_unauthenticated(dir: &Path) -> std::path::PathBuf {
         use std::os::unix::fs::PermissionsExt;
         let exe = dir.join("codex");
@@ -2512,7 +2394,6 @@ done
         let home = dir.path().join("home");
         let sessions = home.join(".codex/sessions/2026/07/28");
         std::fs::create_dir_all(&sessions).expect("mkdir");
-        // Old usage on disk must NOT be presented for a signed-out account (JSON-007).
         std::fs::write(
             sessions.join("rollout.jsonl"),
             concat!(
@@ -2595,9 +2476,6 @@ done
             other => panic!("expected ready, got {other:?}"),
         }
 
-        // The version guard runs first, then the usage call; both must carry
-        // the catalog timeout/cap and the two env vars that keep `agy` from
-        // drawing a TUI.
         let calls = process.calls();
         assert_eq!(calls.len(), 2, "{calls:?}");
         assert_eq!(calls[0].args, vec!["--version".to_owned()]);
@@ -2627,8 +2505,6 @@ done
         }
     }
 
-    /// Run the Antigravity adapter against a scripted `--version` result
-    /// followed by a scripted usage result.
     async fn antigravity_collect_scripted(process: ScriptedProcess) -> (ProviderResult, usize) {
         let http = ScriptedHttpClient::default();
         let fs = MapFileSystem::default();
@@ -2652,7 +2528,6 @@ done
         (result, calls)
     }
 
-    /// Collect with a supported CLI version, scripting only the usage result.
     async fn antigravity_collect(usage: ProcessOutput) -> ProviderResult {
         let (result, _) = antigravity_collect_scripted(ScriptedProcess::sequence(vec![
             Ok(antigravity_output(0, "1.1.18\n")),
@@ -2662,8 +2537,6 @@ done
         result
     }
 
-    /// Collect with `--version` answering `version`, and a usage call that
-    /// would succeed — so a refusal proves the guard, not the usage path.
     async fn antigravity_collect_at_version(version: ProcessOutput) -> (ProviderResult, usize) {
         let fixture = include_str!("../../tests/fixtures/antigravity/usage.json");
         antigravity_collect_scripted(ScriptedProcess::sequence(vec![
@@ -2686,7 +2559,6 @@ done
 
     #[tokio::test]
     async fn antigravity_collect_unauthenticated() {
-        // A non-zero exit is only a login problem when the banner says so.
         let fixture = include_str!("../../tests/fixtures/antigravity/unauthorized.json");
         let result = antigravity_collect(antigravity_output(1, fixture)).await;
         assert_no_money(&result);
@@ -2700,8 +2572,6 @@ done
 
     #[tokio::test]
     async fn antigravity_logged_out_banner_on_exit_zero_is_unauthenticated() {
-        // `agy` prints the logged-out banner and still exits 0, so the exit
-        // code alone would let an empty Ready through.
         let fixture = include_str!("../../tests/fixtures/antigravity/unauthorized.json");
         let result = antigravity_collect(antigravity_output(0, fixture)).await;
         match result {
@@ -2734,9 +2604,6 @@ done
 
     #[tokio::test]
     async fn antigravity_too_old_a_cli_is_refused_before_the_usage_call() {
-        // The whole point of the guard: on 1.1.10 the "/usage" text reaches
-        // the model as a prompt and spends quota, so the usage call must never
-        // be made.
         let (result, calls) =
             antigravity_collect_at_version(antigravity_output(0, "1.1.10\n")).await;
         assert_eq!(calls, 1, "the usage command must not run");
@@ -2768,8 +2635,6 @@ done
 
     #[tokio::test]
     async fn antigravity_unparseable_version_is_refused_not_assumed_new() {
-        // Failing open would spend quota on an unknown build; the guard treats
-        // "no version" exactly like "too old".
         for stdout in ["not a version\n", "", "1.1\n", "abc.def.ghi\n"] {
             let (result, calls) =
                 antigravity_collect_at_version(antigravity_output(0, stdout)).await;
@@ -2785,8 +2650,6 @@ done
 
     #[tokio::test]
     async fn antigravity_failing_version_command_is_refused() {
-        // A non-zero `--version` leaves us without a version, which is the
-        // same answer as an unparseable one.
         let (result, calls) =
             antigravity_collect_at_version(antigravity_output(1, "1.1.18\n")).await;
         assert_eq!(calls, 1);
@@ -2838,7 +2701,6 @@ done
         assert_eq!(parse_version_prefix("1.1"), None);
         assert_eq!(parse_version_prefix("nope"), None);
         assert_eq!(parse_version_prefix(""), None);
-        // The boundary the constant encodes.
         assert!(parse_version_prefix("1.1.11").unwrap() >= ANTIGRAVITY_MIN_VERSION);
         assert!(parse_version_prefix("1.1.10").unwrap() < ANTIGRAVITY_MIN_VERSION);
         assert!(parse_version_prefix("1.0.99").unwrap() < ANTIGRAVITY_MIN_VERSION);
@@ -2889,8 +2751,6 @@ done
         };
         let result = ANTIGRAVITY_ADAPTER.collect(&ctx, &discovery).await;
         assert!(matches!(result, ProviderResult::CliMissing { .. }));
-        // Neither the version guard nor the usage call may run without an
-        // executable to run them with.
         assert_eq!(process.calls().len(), 0, "{:?}", process.calls());
     }
 

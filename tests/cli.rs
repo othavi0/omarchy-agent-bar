@@ -1,5 +1,3 @@
-//! Exhaustive v10 word-based CLI grammar and binary contract tests.
-
 use std::path::{Path, PathBuf};
 use std::process::Command as StdCommand;
 
@@ -205,9 +203,6 @@ fn login_config_setup_update_uninstall_doctor_forms() {
 
 #[test]
 fn setup_rejects_any_argument() {
-    // `setup` takes no arguments now that install is git-clone-based
-    // (git-plugin-distribution Task 4): `plugins-dir` and any other word
-    // after `setup` is an ordinary unknown-argument grammar error.
     let plugins_dir = parse(words(&["setup", "plugins-dir", "/tmp/plugins"])).unwrap_err();
     assert_eq!(plugins_dir.exit_code, GRAMMAR);
     let other = parse(words(&["setup", "extra"])).unwrap_err();
@@ -216,8 +211,6 @@ fn setup_rejects_any_argument() {
 
 #[test]
 fn update_run_parses_and_takes_no_argument() {
-    // `update run` is what the detached update unit executes; QML never
-    // calls it directly.
     assert_eq!(
         parse(words(&["update", "run"])).unwrap(),
         Command::Update(UpdateCommand::Run)
@@ -228,8 +221,6 @@ fn update_run_parses_and_takes_no_argument() {
 
 #[test]
 fn update_apply_rejects_trailing_arguments() {
-    // `update apply` takes no argument (git-plugin-distribution Task 2): it
-    // delegates unconditionally instead of applying a specific version.
     for extra in [
         words(&["update", "apply", "10.0.0"]),
         words(&["update", "apply", "extra", "words"]),
@@ -260,9 +251,6 @@ fn double_dash_aliases_and_legacy_rejections() {
     assert_eq!(parse(words(&["--version"])).unwrap(), Command::Version);
     assert_eq!(parse(words(&["version"])).unwrap(), Command::Version);
 
-    // Legacy words are rejected by the grammar. Tokens that the active-legacy
-    // gate forbids as contiguous source text are built with concat! so the
-    // scan stays clean while runtime strings still match the old CLI surface.
     let action_right = concat!("action", "-", "right");
     let menu_font = concat!("menu", "-", "font");
     let legacy: Vec<Vec<&str>> = vec![
@@ -300,7 +288,6 @@ fn binary_version_prints_exact_package_semver_only() {
         .code(SUCCESS)
         .stdout(format!("{}\n", env!("CARGO_PKG_VERSION")))
         .stderr("");
-    // assert_cmd already checked; keep binding used.
     let _ = assert;
 
     CargoBin::cargo_bin("agent-bar")
@@ -315,7 +302,6 @@ fn binary_version_prints_exact_package_semver_only() {
 #[test]
 fn binary_version_does_not_require_config_home() {
     let dir = tempdir().unwrap();
-    // Point XDG/HOME at an empty tree so accidental discovery would fail.
     CargoBin::cargo_bin("agent-bar")
         .unwrap()
         .arg("version")
@@ -349,8 +335,6 @@ fn binary_grammar_errors_exit_2() {
         .assert()
         .code(GRAMMAR)
         .stdout("");
-    // setup no longer accepts plugins-dir (git-plugin-distribution Task 4):
-    // git clone is the install now, so this is an ordinary unknown argument.
     CargoBin::cargo_bin("agent-bar")
         .unwrap()
         .args(["setup", "plugins-dir", "/tmp/x"])
@@ -371,13 +355,6 @@ fn binary_help_mentions_plugin_first_product() {
         .stderr("");
 }
 
-/// Live QA regression (Task 22): setup must apply v9→v10 settings migration so
-/// `config show` / status can read the strict document. Reproduction of the
-/// failure where leftover v9 `settings.json` caused `unknown settings key`.
-///
-/// Retargeted at plain `setup` (git-plugin-distribution Task 4): setup no
-/// longer installs a plugin tree, so there is no source tree to stage — the
-/// binary under test is the real cargo-built helper, invoked directly.
 #[test]
 fn binary_setup_migrates_v9_settings_to_strict_v10() {
     let dir = tempdir().unwrap();
@@ -390,7 +367,6 @@ fn binary_setup_migrates_v9_settings_to_strict_v10() {
     std::fs::create_dir_all(&state).unwrap();
     std::fs::create_dir_all(&cache).unwrap();
 
-    // Live-shaped v9 settings (unknown keys include `cache`, `waybar`, …).
     let v9 = std::fs::read(
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("tests/fixtures/migration/v9/settings-valid.json"),
@@ -399,7 +375,6 @@ fn binary_setup_migrates_v9_settings_to_strict_v10() {
     let settings_path = config.join("agent-bar/settings.json");
     std::fs::write(&settings_path, &v9).unwrap();
 
-    // Clean shell entry (existing layout; no Agent Bar inline keys).
     let shell_path = home.join(".config/omarchy/shell.json");
     std::fs::write(
         &shell_path,
@@ -429,7 +404,6 @@ fn binary_setup_migrates_v9_settings_to_strict_v10() {
         String::from_utf8_lossy(&out.stderr)
     );
 
-    // Settings must be strict v10 (no unknown keys); fixture migrated interval 120.
     let show = StdCommand::new(&helper)
         .args(["config", "show"])
         .env("HOME", &home)
@@ -458,21 +432,18 @@ fn binary_setup_migrates_v9_settings_to_strict_v10() {
         "v9 keys must not remain in config show: {stdout}"
     );
 
-    // On-disk document must parse as strict v10.
     let stored = std::fs::read(&settings_path).unwrap();
     assert!(
         agent_bar::settings::schema::Settings::parse_strict(&stored).is_ok(),
         "stored settings must be strict v10 after setup"
     );
 
-    // shell.json without Agent Bar inline keys must remain byte-identical.
     let shell_after = std::fs::read(&shell_path).unwrap();
     assert_eq!(
         shell_before, shell_after,
         "setup must not rewrite clean shell.json bytes"
     );
 
-    // Pre-migration settings must be backed up under XDG state.
     let backups = state.join("agent-bar/backups");
     assert!(
         backups.is_dir(),
@@ -518,7 +489,6 @@ fn binary_doctor_scan_is_read_only_and_exits_zero() {
 fn binary_doctor_clean_backs_up_and_removes_owned_legacy() {
     let dir = tempdir().unwrap();
     let home = dir.path();
-    // Split filename so active-legacy gates stay clean.
     let legacy_name = concat!("usage", ".", "re", "db");
     let legacy = home.join(".cache/agent-bar").join(legacy_name);
     std::fs::create_dir_all(legacy.parent().unwrap()).unwrap();
@@ -541,10 +511,6 @@ fn binary_doctor_clean_backs_up_and_removes_owned_legacy() {
 
 #[test]
 fn binary_interactive_update_rejects_non_tty() {
-    // Bare `update` has no interactive flow left (git-plugin-distribution
-    // Task 2 removed the TTY confirm-then-apply dance): it always points at
-    // the two real subcommands, TTY or not. Pipe stdin so the process is
-    // non-TTY, matching the historical name of this test.
     let dir = tempdir().unwrap();
     let home = dir.path();
     let bin = assert_cmd::cargo::cargo_bin("agent-bar");
@@ -559,7 +525,6 @@ fn binary_interactive_update_rejects_non_tty() {
         .stderr(std::process::Stdio::piped())
         .spawn()
         .unwrap();
-    // Drop stdin immediately → non-TTY / closed.
     drop(child.stdin.take());
     let output = child.wait_with_output().unwrap();
     assert_eq!(output.status.code(), Some(VALIDATION));
@@ -571,8 +536,6 @@ fn binary_interactive_update_rejects_non_tty() {
     );
 }
 
-/// Write an executable shell script (mirrors `tests/terminal_helper.rs`'s
-/// fake-PATH-tool pattern for `xdg-terminal-exec`).
 fn write_executable(path: &Path, body: &str) {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).unwrap();
@@ -587,7 +550,6 @@ fn write_executable(path: &Path, body: &str) {
     }
 }
 
-/// Recording shim: records its NUL-separated argv to `out` then exits 0.
 fn recording_shim_body(out: &Path) -> String {
     format!(
         r#"#!/usr/bin/env bash
@@ -613,11 +575,6 @@ fn read_nul_argv(path: &Path) -> Vec<String> {
 
 #[test]
 fn update_apply_emits_delegation_document() {
-    // omarchy, omarchy-restart-shell and systemd-run resolved via fake PATH
-    // shims in a tempdir that record argv (git-plugin-distribution Task 2):
-    // `update apply` never downloads/stages/exchanges anymore, it queues
-    // `systemd-run --user --collect --no-block --unit=... -- <helper> update
-    // run` and prints the delegation document.
     let dir = tempdir().unwrap();
     let home = dir.path().join("home");
     std::fs::create_dir_all(&home).unwrap();
@@ -672,8 +629,6 @@ fn update_apply_emits_delegation_document() {
     );
 
     let argv = read_nul_argv(&systemd_run_argv);
-    // The unit runs this very helper: `update run` owns the fast-forward and
-    // the shell restart, so a rescan that keeps the old QML is not the end.
     let helper = std::fs::canonicalize(&bin).unwrap();
     assert!(
         argv.ends_with(&[
@@ -685,8 +640,6 @@ fn update_apply_emits_delegation_document() {
     );
     assert_eq!(argv.first().map(String::as_str), Some("--user"));
     assert!(argv.contains(&"--collect".to_string()));
-    // Queued, not awaited: the helper and its maintenance lock never wait on
-    // a git fetch or a locked session.
     assert!(argv.contains(&"--no-block".to_string()));
     assert!(argv.contains(&"--property=RuntimeMaxSec=25h".to_string()));
     assert!(argv.iter().any(|a| a == &format!("--unit={unit}")));
@@ -721,9 +674,6 @@ fn update_apply_fails_closed_without_omarchy_restart_shell() {
     assert!(!systemd_run_argv.exists(), "no unit may start");
 }
 
-/// Shims for `update run`: a git that answers `before` then `after` for
-/// `rev-parse HEAD`, an omarchy that succeeds, and a restart that records it
-/// ran. PATH is limited to the shim directory plus `bash` and `timeout`.
 fn update_run_in(root: &Path, before: &str, after: &str) -> (std::process::Output, PathBuf) {
     let home = root.join("home");
     std::fs::create_dir_all(&home).unwrap();
@@ -805,10 +755,6 @@ fn update_run_restarts_the_shell_only_when_the_tree_moved() {
     assert!(!restarted.exists(), "an up-to-date tree must not restart");
 }
 
-/// Fixture for the two `uninstall` delegation tests: isolated XDG roots with
-/// owned content, plus a fake `$HOME/.config/omarchy/shell.json` the helper
-/// must never touch (git-plugin-distribution Task 3: shell.json is
-/// omarchy's now).
 struct UninstallFixture {
     home: PathBuf,
     settings_dir: PathBuf,
@@ -899,12 +845,6 @@ fn run_uninstall(
 
 #[test]
 fn uninstall_purge_removes_xdg_state_and_delegates_remove() {
-    // git-plugin-distribution Task 3: `uninstall purge` no longer runs a
-    // quarantine/rollback worker chain over a copied worker binary — it
-    // purges Agent Bar's own XDG state directly under the maintenance gate,
-    // then hands the plugin tree + shell.json removal to `omarchy plugin
-    // remove` via the same detached-unit shape Task 2 used for `update
-    // apply`.
     let dir = tempdir().unwrap();
     let fx = seed_uninstall_fixture(dir.path());
 
@@ -1016,12 +956,6 @@ fn uninstall_without_purge_preserves_xdg_state_and_delegates_remove() {
 
 #[test]
 fn uninstall_purge_fails_closed_without_touching_state_when_omarchy_missing() {
-    // Review round 1, finding 1: tool resolution must happen before any
-    // destructive purge, so a missing `omarchy` fails the whole command
-    // before the settings/cache/state XDG roots are touched — not after
-    // they are already gone with the plugin never actually removed. PATH is
-    // isolated to just `path_dir` (no real system PATH fallback) so a real
-    // `omarchy` binary elsewhere on this machine cannot mask the failure.
     let dir = tempdir().unwrap();
     let fx = seed_uninstall_fixture(dir.path());
     std::fs::remove_file(fx.path_dir.join("omarchy")).unwrap();
@@ -1042,11 +976,15 @@ fn uninstall_purge_fails_closed_without_touching_state_when_omarchy_missing() {
     {
         use std::io::Write as _;
         let mut stdin = child.stdin.take().unwrap();
-        stdin
-            .write_all(
-                br#"{"schemaVersion":1,"operation":"uninstall","confirmed":true,"purgeSettingsAndBackups":true}"#,
-            )
-            .unwrap();
+        if let Err(err) = stdin.write_all(
+            br#"{"schemaVersion":1,"operation":"uninstall","confirmed":true,"purgeSettingsAndBackups":true}"#,
+        ) {
+            assert_eq!(
+                err.kind(),
+                std::io::ErrorKind::BrokenPipe,
+                "only an early preflight exit may close stdin"
+            );
+        }
     }
     let output = child.wait_with_output().unwrap();
 

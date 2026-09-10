@@ -1,5 +1,3 @@
-//! Plugin bundle paths, ownership classification, and maintenance.
-
 pub mod bundle;
 pub mod doctor;
 pub mod maintenance;

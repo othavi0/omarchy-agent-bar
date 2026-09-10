@@ -124,9 +124,7 @@ TestCase {
     verify(src.indexOf("Image") >= 0)
     verify(src.indexOf("settingsBtn") >= 0 || src.indexOf("Settings") >= 0)
     verify(src.indexOf("󰒓") >= 0)
-    // No provider display-name Text labels as primary rail content
     verify(src.indexOf("modelData.name") < 0 || src.indexOf("Accessible.name") >= 0)
-    // Names only via Accessible / tooltip path, not as visible Text content of the icon
     verify(src.indexOf("text: modelData.name") < 0)
     verify(src.indexOf("text: modelData") < 0)
   }
@@ -138,20 +136,11 @@ TestCase {
     verify(src.indexOf("name") >= 0)
     verify(src.indexOf("plan") >= 0)
     verify(src.indexOf("󰑐") >= 0)
-    // Connection state is implied structurally (windows render only when
-    // ready) and update age lives in ProviderView's stale banner (plan 03
-    // deleted the meta footer) — the header no longer owns that prop/text.
     verify(src.indexOf("connection") < 0)
-    // §6: the plan pill becomes an uppercase tag — no more pill radius.
-    // Task 4 extracted the tag shape into HeaderTag.qml (its own uppercase
-    // assertion lives in test_header_renders_plan_and_severity_tags below),
-    // so this file only needs to prove it delegates to that component.
     verify(src.indexOf("HeaderTag") >= 0)
     verify(src.indexOf("radius: height / 2") < 0)
   }
 
-  // §6: name · plan tag · [severity tag] · spacer · refresh. One tag shape,
-  // one urgent variant — not two hand-copied Rectangles.
   function test_header_renders_plan_and_severity_tags() {
     var hdr = read("components/ProviderHeader.qml")
     verify(hdr.indexOf("HeaderTag {") >= 0)
@@ -159,7 +148,6 @@ TestCase {
     verify(hdr.indexOf("id: severityTag") >= 0)
     verify(hdr.indexOf("property string severityText") >= 0)
     verify(hdr.indexOf("property bool severityUrgent") >= 0)
-    // The pill's own Rectangle is gone; the tag lives in one file now.
     verify(hdr.indexOf("border.color: Style.normalBorderColor") < 0)
 
     var tag = read("components/HeaderTag.qml")
@@ -169,8 +157,6 @@ TestCase {
     verify(tag.indexOf("Qt.rgba(") < 0)
   }
 
-  // The refresh glyph must stay inside the pane when both tags render; the
-  // spacer subtracts the real tag widths instead of a lump constant.
   function test_header_spacer_accounts_for_both_tags() {
     var hdr = read("components/ProviderHeader.qml")
     verify(hdr.indexOf("planTag.visible ? planTag.width") >= 0)
@@ -183,8 +169,6 @@ TestCase {
 
   function test_rail_has_no_own_frame() {
     var rail = read("ProviderRail.qml")
-    // §6: the rail draws no fill or border of its own inside an already
-    // bordered card; the selected plate is the only chrome.
     verify(rail.indexOf("normalFill") < 0)
     verify(rail.indexOf("normalBorderColor") < 0)
     verify(rail.indexOf("selectedFill") >= 0)
@@ -203,59 +187,36 @@ TestCase {
   }
 
   function test_no_meta_footer() {
-    // NOTE: repoRoot (above) already pops to the repo root, matching every
-    // sibling read() call in this file ("ProviderView.qml" etc., relative to
-    // repo root); a path like "../../ProviderView.qml" would resolve outside
-    // the repo, so XHR would return "" and the test would pass/fail
-    // vacuously regardless of ProviderView.qml's contents.
     var view = read("ProviderView.qml")
-    // §6/§9: the meta footer is removed in all states; connection state is
-    // structural. The `"Updated "` ban lifted with UX-028 (amended) — the age
-    // is now a neutral line owned by test_stale_age_line_is_neutral. What this
-    // test still guards is the footer's own vocabulary never coming back.
     verify(view.indexOf("connection") < 0)
     verify(view.indexOf('"Cache"') < 0)
     verify(view.indexOf('"Live"') < 0)
   }
 
-  // UX-028 (amended): the urgent stale banner is replaced by one neutral age
-  // line. No glyph, no urgent colour, no Retry — the header's own refresh
-  // control already covers the action, and nothing may read as a fault.
   function test_stale_age_line_is_neutral() {
     var view = read("ProviderView.qml")
     verify(view.length > 0)
     verify(view.indexOf("formatAgoText") >= 0)
     verify(view.indexOf('"Updated "') >= 0)
-    // The alarming shapes the old banner used must all be gone.
     verify(view.indexOf("󰅐") < 0)
     verify(view.indexOf("⌛") < 0)
     verify(view.indexOf('"Last data "') < 0)
     verify(view.indexOf("Color.urgent") < 0)
     verify(view.indexOf("errorMessage") < 0)
-    // formatAgoText already returns "5m ago"/"just now" — an appended " ago"
-    // literal is the regression shape this test exists to catch.
     verify(view.indexOf('+ " ago"') < 0)
   }
 
-  // The retained reading must render at full strength: no opacity knob may
-  // reappear keyed on staleness.
   function test_stale_windows_are_not_dimmed() {
     var view = read("ProviderView.qml")
     verify(view.length > 0)
     verify(view.indexOf("isStale") < 0)
     verify(view.indexOf("stale_windows") < 0)
     verify(view.indexOf("dimmed:") < 0)
-    // Banning the `dimmed` property alone only bans one spelling. An inline
-    // `opacity:` binding keyed on provider.state would restore the same
-    // visual result under a different name, so the pane may assign none.
-    // (Prose may still say "opacity" — only the binding is banned.)
     verify(view.indexOf("opacity:") < 0)
   }
 
   function test_full_width_separator_present() {
     var src = read("ProviderView.qml")
-    // Separator is the host's PanelSeparator (fixed 1px height internally);
-    // this file only needs to place it full-width.
     verify(src.indexOf("PanelSeparator") >= 0)
     verify(src.indexOf("width: parent.width") >= 0)
   }
@@ -274,7 +235,6 @@ TestCase {
       verify(src.indexOf("Text.RichText") < 0, files[i])
       verify(src.indexOf("RichText") < 0, files[i])
       verify(src.indexOf("innerHTML") < 0, files[i])
-      // Prefer explicit PlainText when setting format
       if (src.indexOf("textFormat:") >= 0)
         verify(src.indexOf("Text.PlainText") >= 0, files[i] + " should use PlainText")
     }
@@ -291,7 +251,6 @@ TestCase {
     ]
     for (var i = 0; i < files.length; i++) {
       var src = read(files[i])
-      // Allow the money detector regex itself in CoreView.js
       if (files[i].indexOf("CoreView.js") >= 0)
         continue
       verify(!Core.containsMoneyCopy(src), files[i] + " has money copy")
@@ -341,8 +300,6 @@ TestCase {
     compare(Core.mapActionKind("bash"), null)
   }
 
-  // §6: the lead window is 2.5x the body size with the reset promoted into
-  // its label line; the old bottom "resets" row is gone.
   function test_lead_window_geometry_and_label_line() {
     var win = read("components/UsageWindow.qml")
     verify(win.indexOf("Math.round(Style.font.body * 2.5)") >= 0)
@@ -355,7 +312,6 @@ TestCase {
            "the reset row moved into the label line")
   }
 
-  // UX-020A extended: every window row carries a track, not just the lead.
   function test_compact_rows_carry_their_own_track() {
     var win = read("components/UsageWindow.qml")
     var compact = win.slice(win.indexOf("id: compactRow"))
@@ -368,18 +324,12 @@ TestCase {
            "the reset column is measured with TextMetrics, never hardcoded px")
   }
 
-  // §7: critical paints the numeral and the fill in Color.urgent; nothing
-  // else in this file may introduce a colour.
   function test_critical_window_uses_the_urgent_token() {
     var win = read("components/UsageWindow.qml")
     verify(win.indexOf("Color.urgent") >= 0)
     verify(win.indexOf('root.severity === "critical"') >= 0)
     verify(win.indexOf("Qt.rgba(") < 0)
 
-    // The numeral and its track must agree about severity. They disagreed
-    // once: valueColor ignored `dimmed` while fillColor gave it precedence,
-    // so a stale critical window painted an urgent number beside a neutral
-    // track. Both must reach Color.urgent from `isCritical` alone.
     var value = win.slice(win.indexOf("readonly property color valueColor"))
     value = value.slice(0, value.indexOf("\n"))
     verify(value.indexOf("root.dimmed") < 0,
@@ -396,7 +346,6 @@ TestCase {
     verify(view.indexOf("emphasis: true") >= 0)
     verify(view.indexOf("emphasis: false") >= 0)
     verify(view.indexOf("severityText: ") >= 0)
-    // The quiet rule between lead and rows is gone (approved mockup).
     verify(view.indexOf("strength: 0.08") < 0)
   }
 
@@ -443,10 +392,6 @@ TestCase {
     verify(view.indexOf("groups.secondary") < 0)
   }
 
-  // §6/§3.7 amended 2026-08-03 (owner decision on live mockups): the LEAD
-  // window appends the reset's wall-clock time after the countdown, in the
-  // viewer's locale format. The plan-04 deletions stay deleted: no weekday
-  // table, no fixed-format humaniser, compact rows countdown-only.
   function test_absolute_clock_humaniser_is_gone() {
     var core = read("CoreView.js")
     verify(core.indexOf("formatResetText") < 0)
@@ -458,10 +403,8 @@ TestCase {
   function test_lead_reset_clock_is_locale_formatted() {
     var core = read("CoreView.js")
     verify(core.indexOf("function resetClockText(") >= 0)
-    // The format is the caller's locale format, never hardcoded.
     verify(core.indexOf('"hh:mm"') < 0)
     verify(core.indexOf('"HH:mm"') < 0)
-    // 24h locale shape and 12h locale shape both come from the same seam.
     var h24 = Core.resetClockText("2026-08-02T02:00:00Z", "HH:mm")
     verify(/^\(\d{2}:\d{2}\)$/.test(h24), "got: " + h24)
     var h12 = Core.resetClockText("2026-08-02T02:00:00Z", "h:mm AP")
@@ -472,7 +415,6 @@ TestCase {
 
   function test_only_the_lead_window_gets_the_clock() {
     var view = read("ProviderView.qml")
-    // Exactly one binding site — the lead Repeater; compact rows stay bare.
     var first = view.indexOf("resetClock:")
     verify(first >= 0, "lead window must bind resetClock")
     verify(view.indexOf("resetClock:", first + 1) < 0,
@@ -495,7 +437,6 @@ TestCase {
       verify(before.indexOf('typeof root.rebuildFocusTargets === "function"') >= 0,
              "unguarded rebuildFocusTargets() at offset " + m.index)
     }
-    // One deferral helper instead of a guarded closure per call site.
     verify(src.indexOf("function scheduleFocusRebuild()") >= 0)
     compare(src.split("Qt.callLater(").length - 1, 2,
             "only scheduleFocusRebuild and onSelectedIdChanged defer")

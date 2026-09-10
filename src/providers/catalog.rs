@@ -1,7 +1,3 @@
-//! Locked v10 provider catalog and executable discovery.
-//!
-//! Descriptors hold metadata only. Collection behavior lives in adapters.
-
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -482,15 +478,12 @@ mod tests {
         assert_eq!(ANTIGRAVITY.cache_ttl, Duration::from_secs(90));
         assert_eq!(ANTIGRAVITY.timeout, Duration::from_secs(10));
         assert_eq!(ANTIGRAVITY.max_output_bytes, ONE_MIB);
-        // The only catalog entry that does not retry: see the descriptor.
         assert_eq!(ANTIGRAVITY.retry_policy, RetryPolicy::None);
         assert_eq!(ANTIGRAVITY.retry_delay(), None);
     }
 
     #[test]
     fn empty_login_argv_keeps_login_missing_even_with_the_executable() {
-        // Collection availability and login availability are distinct: `agy`
-        // being on PATH must never advertise a login action.
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path().join("home");
         let path_dir = dir.path().join("path");

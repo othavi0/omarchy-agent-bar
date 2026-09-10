@@ -1,10 +1,7 @@
-//! Map temporary [`ProviderResult`] values into validated [`ProviderStatus`].
-
 use super::schema::{
     ErrorCode, ProviderAction, ProviderError, ProviderResult, ProviderStatus, SchemaError,
 };
 
-/// Convert a typed collection result into a completed provider status row.
 pub fn provider_status_from_result(result: ProviderResult) -> Result<ProviderStatus, SchemaError> {
     match result {
         ProviderResult::Ready {

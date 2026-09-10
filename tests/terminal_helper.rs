@@ -1,5 +1,3 @@
-//! Argv-safe `scripts/agent-bar-open-terminal` contract (Task 13).
-
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -19,7 +17,6 @@ fn write_executable(path: &Path, body: &str) {
     fs::set_permissions(path, perms).expect("chmod");
 }
 
-/// Minimal plugin root: scripts/helper + bin/agent-bar stub + PATH fake xdg-terminal-exec.
 fn fixture_plugin_root(tmp: &Path) -> PathBuf {
     let plugin = tmp.join("othavi0.agent-bar");
     let scripts = plugin.join("scripts");
@@ -30,7 +27,6 @@ fn fixture_plugin_root(tmp: &Path) -> PathBuf {
     let helper_src = fs::read_to_string(repo_helper_source()).expect("read helper source");
     write_executable(&scripts.join("agent-bar-open-terminal"), &helper_src);
 
-    // Private helper stub — must be regular + executable.
     write_executable(
         &bin.join("agent-bar"),
         "#!/usr/bin/env bash\necho stub-agent-bar \"$@\"\n",
@@ -42,7 +38,6 @@ fn fixture_plugin_root(tmp: &Path) -> PathBuf {
 fn fake_xdg_on_path(tmp: &Path, argv_out: &Path) -> PathBuf {
     let path_dir = tmp.join("pathbin");
     fs::create_dir_all(&path_dir).unwrap();
-    // Records NUL-separated argv then exits 0 (stands in for xdg-terminal-exec).
     let script = format!(
         r#"#!/usr/bin/env bash
 set -euo pipefail
@@ -121,7 +116,6 @@ fn helper_requires_executable_private_helper() {
     let argv_out = tmp.path().join("argv.bin");
     let path_dir = fake_xdg_on_path(tmp.path(), &argv_out);
 
-    // Remove execute bit from private helper.
     let private = plugin.join("bin/agent-bar");
     let mut perms = fs::metadata(&private).unwrap().permissions();
     perms.set_mode(0o644);

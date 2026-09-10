@@ -1,5 +1,3 @@
-//! Plugin path layout and path-safety helpers (MIG-002A, BUNDLE-007A).
-
 use std::io;
 use std::path::{Component, Path, PathBuf};
 
@@ -82,7 +80,6 @@ pub fn validate_archive_entry_path(rel: &str) -> Result<(), PathError> {
             "absolute archive path rejected: {rel}"
         )));
     }
-    // Windows drive / UNC style
     if rel.len() >= 2 && rel.as_bytes()[1] == b':' {
         return Err(PathError::msg(format!(
             "absolute archive path rejected: {rel}"

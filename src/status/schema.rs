@@ -16,7 +16,6 @@ use crate::cli::{CacheMode, ProviderId, SERIALIZATION};
 const SCHEMA_VERSION: u32 = 2;
 const PERCENT_SUM_TOLERANCE: f64 = 0.01;
 
-/// Semantic or construction failure for status schema v2.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SchemaError {
     message: String,
@@ -42,7 +41,6 @@ impl fmt::Display for SchemaError {
 
 impl std::error::Error for SchemaError {}
 
-/// Failure writing status JSON (maps to helper exit code 4).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StatusOutputError {
     message: String,
@@ -84,7 +82,6 @@ impl From<SchemaError> for StatusOutputError {
     }
 }
 
-/// Completed provider state (helper response; never `loading`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProviderState {
@@ -111,7 +108,6 @@ impl ProviderState {
     }
 }
 
-/// Provenance of retained provider data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DataSource {
@@ -128,7 +124,6 @@ impl DataSource {
     }
 }
 
-/// Closed error codes for provider failures.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ErrorCode {
@@ -151,7 +146,6 @@ impl ErrorCode {
     }
 }
 
-/// Closed action kinds for QML service methods.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ActionKind {
@@ -170,7 +164,6 @@ impl ActionKind {
     }
 }
 
-/// Typed provider error payload.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderError {
@@ -189,7 +182,6 @@ impl ProviderError {
     }
 }
 
-/// Typed provider action payload.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderAction {
@@ -233,7 +225,6 @@ impl ProviderAction {
     }
 }
 
-/// Plan identity shown in the UI.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Plan {
@@ -248,7 +239,6 @@ pub struct Account {
     pub label: String,
 }
 
-/// One percentage quota window with validated percentages.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UsageWindow {
@@ -261,7 +251,6 @@ pub struct UsageWindow {
 }
 
 impl UsageWindow {
-    /// Construct a window after enforcing finite range and sum invariants.
     pub fn try_new(
         id: impl Into<String>,
         label: impl Into<String>,
@@ -318,7 +307,6 @@ impl UsageWindow {
     }
 }
 
-/// One provider row in a status envelope.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderStatus {
@@ -337,7 +325,6 @@ pub struct ProviderStatus {
     rate_limit_resets_available: Option<u32>,
 }
 
-/// Serde adapter so [`ProviderId`] serializes as a lowercase string.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ProviderIdSerde(ProviderId);
 
@@ -407,15 +394,11 @@ impl ProviderStatus {
         self.rate_limit_resets_available
     }
 
-    /// Attach a provider-granted rate-limit reset count after construction.
-    /// Used by the `ProviderResult::Ready` conversion and by stale/cache-hit
-    /// rebuilds that must carry the previous value through.
     pub(crate) fn with_rate_limit_resets_available(mut self, value: Option<u32>) -> Self {
         self.rate_limit_resets_available = value;
         self
     }
 
-    /// When serving a previously live ready row from cache, label source as `cache`.
     pub fn for_cache_hit(&self) -> Result<Self, SchemaError> {
         match self.state {
             ProviderState::Ready => {
@@ -435,12 +418,10 @@ impl ProviderStatus {
                     status.with_rate_limit_resets_available(self.rate_limit_resets_available)
                 })
             }
-            // Stale already uses source=cache; other states keep their shape.
             _ => Ok(self.clone()),
         }
     }
 
-    /// Retain last good connected data after a temporary refresh failure (CACHE-022).
     pub fn retain_as_stale(&self, error: ProviderError) -> Result<Self, SchemaError> {
         let last = self
             .last_success_at
@@ -463,8 +444,6 @@ impl ProviderStatus {
         .map(|status| status.with_rate_limit_resets_available(self.rate_limit_resets_available))
     }
 
-    /// Temporary failures eligible for stale retention. Rejected auth and
-    /// missing CLI never retain; an expired session (retryable auth) does.
     pub fn is_temporary_failure(&self) -> bool {
         match self.state {
             ProviderState::NetworkError | ProviderState::RateLimited => true,
@@ -766,7 +745,6 @@ fn failure_state(
     })
 }
 
-/// Request echo embedded in the status envelope.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StatusRequest {
@@ -800,7 +778,6 @@ where
     serializer.serialize_str(word)
 }
 
-/// Completed status schema-v2 envelope.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StatusEnvelope {
@@ -831,7 +808,6 @@ impl StatusEnvelope {
         Ok(envelope)
     }
 
-    /// Build an envelope using the running package version as `helperVersion`.
     pub fn try_new_for_package(
         generated_at: OffsetDateTime,
         request: StatusRequest,
@@ -860,7 +836,6 @@ impl StatusEnvelope {
         &self.providers
     }
 
-    /// Every Rust-owned semantic invariant for a completed envelope.
     pub fn validate_semantics(&self) -> Result<(), SchemaError> {
         if self.schema_version != SCHEMA_VERSION {
             return Err(SchemaError::new("schemaVersion must be 2"));
@@ -874,7 +849,6 @@ impl StatusEnvelope {
         }
         require_utc(self.generated_at, "generatedAt")?;
 
-        // Explicit-provider response contains exactly that provider.
         if let Some(expected) = self.request.provider {
             if self.providers.len() != 1 {
                 return Err(SchemaError::new(
@@ -916,14 +890,9 @@ impl StatusEnvelope {
             }
         }
 
-        // Request/settings order: when no explicit provider, IDs must be unique
-        // (already checked) and callers supply settings order. We only prove
-        // uniqueness here; order preservation is the coordinator's duty and is
-        // checked when a requested order is provided.
         Ok(())
     }
 
-    /// Validate then serialize exactly one JSON object plus a trailing newline.
     pub fn to_json_line(&self) -> Result<String, StatusOutputError> {
         self.validate_semantics()?;
         let mut body = serde_json::to_string(self).map_err(|err| {
@@ -933,7 +902,6 @@ impl StatusEnvelope {
         Ok(body)
     }
 
-    /// Validate request/settings provider order against an expected sequence.
     pub fn validate_provider_order(&self, expected: &[ProviderId]) -> Result<(), SchemaError> {
         let actual: Vec<ProviderId> = self.providers.iter().map(ProviderStatus::id).collect();
         if actual.as_slice() != expected {
@@ -945,7 +913,6 @@ impl StatusEnvelope {
     }
 }
 
-/// Temporary collection result owned here until Task 6 moves it to providers.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ProviderResult {
     Ready {
@@ -1015,7 +982,6 @@ fn require_utc(ts: OffsetDateTime, field: &str) -> Result<(), SchemaError> {
     if ts.offset() != UtcOffset::UTC {
         return Err(SchemaError::new(format!("{field} must be UTC RFC 3339")));
     }
-    // Round-trip through RFC3339 to reject pathological values early.
     ts.format(&Rfc3339).map_err(|err| {
         SchemaError::new(format!("{field} is not a valid RFC 3339 timestamp: {err}"))
     })?;
@@ -1035,7 +1001,6 @@ fn ensure_unique_window_ids(windows: &[UsageWindow]) -> Result<(), SchemaError> 
     Ok(())
 }
 
-/// Test-only hook: force `to_json_line` serialization path failure mapping.
 #[cfg(test)]
 pub(crate) fn map_serialize_error(err: impl fmt::Display) -> StatusOutputError {
     StatusOutputError::serialize(format!("status serialization failed: {err}"))
@@ -1304,7 +1269,6 @@ mod tests {
 
     #[test]
     fn helper_version_must_equal_package_version() {
-        // Deliberately wrong helperVersion — must never equal CARGO_PKG_VERSION.
         let err = StatusEnvelope::try_new(
             "0.0.0-not-package",
             ts(),
@@ -1384,7 +1348,6 @@ mod tests {
         let raw =
             fs::read_to_string(root.join("tests/fixtures/status-v2/money-field.json")).unwrap();
         let value: Value = serde_json::from_str(&raw).unwrap();
-        // Domain construction has no spend field; fixture remains a rejection sample only.
         assert!(value["providers"][0]["windows"][0]
             .get("spendUsd")
             .is_some());
@@ -1457,8 +1420,6 @@ mod tests {
 
     #[test]
     fn provider_status_serializes_reset_count_only_when_present() {
-        // ProviderStatus derives Deserialize: build both rows via serde and
-        // assert the key round-trips only when present.
         let base = serde_json::json!({
             "id": "codex", "name": "Codex", "state": "ready", "source": "live",
             "plan": null, "account": null, "windows": [],

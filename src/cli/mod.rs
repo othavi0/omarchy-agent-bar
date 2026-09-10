@@ -1,5 +1,3 @@
-//! Strict word-based CLI for the private Agent Bar helper.
-
 mod command;
 mod exit;
 mod grammar;
@@ -18,14 +16,10 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-/// Package version line for `version` / `--version` (exact semver + newline).
 pub fn version_stdout() -> String {
     format!("{}\n", env!("CARGO_PKG_VERSION"))
 }
 
-/// Closed provider vocabulary as help prose: exactly the words `status
-/// provider <id>` accepts, in catalog order, derived so a new provider can
-/// never be missing from the footer.
 fn provider_word_list() -> String {
     ProviderId::ALL
         .iter()
@@ -34,7 +28,6 @@ fn provider_word_list() -> String {
         .join(", ")
 }
 
-/// Public help text for the plugin-first product.
 pub fn help_text(topic: Option<HelpTopic>) -> String {
     match topic {
         None => {
@@ -71,9 +64,7 @@ pub fn help_text(topic: Option<HelpTopic>) -> String {
              \n\
              Bare agent-bar equals status format human.\n"
             .to_owned(),
-        // The login topic lists fewer providers than the footer on purpose:
-        // only these four ship an official login command (catalog
-        // `login_argv`); Antigravity signs in inside its own CLI.
+        // Antigravity signs in inside its own CLI, so it has no login verb.
         Some(HelpTopic::Login) => {
             "login <provider> — delegate to the official provider login command\n\
              Providers: claude, codex, amp, grok\n"
@@ -108,9 +99,6 @@ pub fn help_text(topic: Option<HelpTopic>) -> String {
     }
 }
 
-/// Dispatch a fully parsed command for the private helper binary.
-///
-/// Commands not yet implemented after the grammar freeze exit with code 70.
 pub fn dispatch(command: Command) -> Result<(), CliFailure> {
     match command {
         Command::Version => {
@@ -134,15 +122,6 @@ pub fn dispatch(command: Command) -> Result<(), CliFailure> {
     }
 }
 
-/// `setup`: settings migration only (git-plugin-distribution Task 4).
-///
-/// The plugin tree install/activate that used to live here is gone —
-/// `omarchy plugin add othavi0.agent-bar` is the install now, and `update`
-/// (Task 2) / `uninstall` (Task 3) already delegate their tree mutations to
-/// the omarchy CLI the same way. `setup` keeps the one piece of state only
-/// this helper owns: MIG-007..016 explicit settings/shell v9-to-v10
-/// migration, run once under the exclusive maintenance gate. Reads never
-/// write; setup is the authorized apply path.
 fn dispatch_setup() -> Result<(), CliFailure> {
     use crate::plugin::PluginPaths;
     use crate::settings::{default_settings_path, migrate_live_paths};
@@ -301,10 +280,6 @@ where
     }
 }
 
-/// Exact successful `uninstall` stdout document (git-plugin-distribution
-/// Task 3). Own-state purge only — the plugin tree, shell.json entry, and
-/// cache/backups GC that the old worker chain owned all belong to
-/// `omarchy plugin remove` now.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct UninstallDelegation<'a> {
@@ -315,8 +290,6 @@ struct UninstallDelegation<'a> {
     unit: &'a str,
 }
 
-/// Remove `path` and everything under it; a missing path is success
-/// (idempotent purge), any other I/O error propagates.
 fn remove_dir_all_idempotent(path: &Path) -> Result<(), CliFailure> {
     match std::fs::remove_dir_all(path) {
         Ok(()) => Ok(()),
@@ -328,16 +301,6 @@ fn remove_dir_all_idempotent(path: &Path) -> Result<(), CliFailure> {
     }
 }
 
-/// `uninstall [purge]`: own-XDG-state purge under the maintenance gate, then
-/// unconditional detached delegation to the omarchy CLI (git-plugin-
-/// distribution Task 3).
-///
-/// The old worker chain quarantined the plugin tree, stripped the exact
-/// shell.json entry, and polled for absence itself over a copied worker
-/// binary — none of that survives git-native distribution: `omarchy plugin
-/// remove` owns the plugin tree and shell.json now, and this helper only
-/// purges the state it exclusively owns (settings, cache, XDG state)
-/// before handing off, mirroring `update apply`'s Task 2 delegation shape.
 fn dispatch_uninstall(purge: bool) -> Result<(), CliFailure> {
     use crate::plugin::{
         resolve_absolute_executable, txid_from_bytes, CommandRunner, PluginPaths,
@@ -353,20 +316,12 @@ fn dispatch_uninstall(purge: bool) -> Result<(), CliFailure> {
     let xdg_state = std::env::var_os("XDG_STATE_HOME").map(PathBuf::from);
     let paths = PluginPaths::production(home.clone(), xdg_state);
 
-    // Exclusive barrier (ARCH-026), mirroring dispatch_update_apply (Task 2):
-    // block shared status/settings and any other maintenance operation while
-    // the purge and handoff run.
     let gate = MaintenanceGate::open(&paths.maintenance_lock)
         .map_err(|e| CliFailure::plugin(format!("open maintenance lock: {e}")))?;
     let exclusive = gate
         .lock_exclusive()
         .map_err(|e| CliFailure::plugin(format!("exclusive maintenance lock: {e}")))?;
 
-    // Resolve the delegation tools before consuming the confirmation or
-    // touching any state: a missing `omarchy`/`systemd-run` must fail closed
-    // before anything destructive happens, not after the purge already ran
-    // and the plugin was never actually removed (mirrors the pre-Task-3
-    // preflight-before-confirmation ordering).
     let omarchy_bin =
         resolve_absolute_executable("omarchy").map_err(|e| CliFailure::plugin(e.to_string()))?;
     let systemd_run = resolve_absolute_executable("systemd-run")
@@ -396,12 +351,6 @@ fn dispatch_uninstall(purge: bool) -> Result<(), CliFailure> {
         remove_dir_all_idempotent(&cache_dir)?;
     }
 
-    // `paths.xdg_state` ($XDG_STATE_HOME/agent-bar) holds `maintenance.lock`
-    // itself. Drop the exclusive guard before removing that directory:
-    // unlinking a file while its flock is still held is safe on Linux, but
-    // the drop-then-remove order is kept explicit — and covered by the
-    // `uninstall_purge_removes_xdg_state_and_delegates_remove` test — rather
-    // than relying on that platform detail.
     drop(exclusive);
     if purge {
         remove_dir_all_idempotent(&paths.xdg_state)?;
@@ -476,12 +425,6 @@ fn dispatch_update_check() -> Result<(), CliFailure> {
     Ok(())
 }
 
-/// Exact successful `update apply` stdout document (git-plugin-distribution
-/// Task 2). `update apply` no longer downloads, stages, or swaps the plugin
-/// tree itself — it hands the whole fast-forward to
-/// `omarchy plugin update othavi0.agent-bar --yes`, running as a detached
-/// transient unit so this process can return as soon as the handoff is
-/// accepted.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct UpdateApplyDelegation<'a> {
@@ -491,11 +434,6 @@ struct UpdateApplyDelegation<'a> {
     unit: &'a str,
 }
 
-/// `update apply`: unconditional detached delegation to the omarchy CLI.
-///
-/// BUNDLE-021 v-next carries no archive/checksum/source-commit fields (Task
-/// 1), so the old download/stage/exchange/health worker chain cannot run
-/// anymore — `omarchy plugin update` owns the git fast-forward instead.
 fn dispatch_update_apply() -> Result<(), CliFailure> {
     use crate::plugin::{
         resolve_absolute_executable, txid_from_bytes, CommandRunner, PluginPaths,
@@ -509,16 +447,12 @@ fn dispatch_update_apply() -> Result<(), CliFailure> {
     let xdg_state = std::env::var_os("XDG_STATE_HOME").map(PathBuf::from);
     let paths = PluginPaths::production(PathBuf::from(home), xdg_state);
 
-    // Exclusive barrier (ARCH-026): block shared status/settings and any other
-    // maintenance operation while the handoff is issued.
     let gate = MaintenanceGate::open(&paths.maintenance_lock)
         .map_err(|e| CliFailure::plugin(format!("open maintenance lock: {e}")))?;
     let _exclusive = gate
         .lock_exclusive()
         .map_err(|e| CliFailure::plugin(format!("exclusive maintenance lock: {e}")))?;
 
-    // Fail closed here, where QML sees the error, rather than inside the
-    // detached unit where nobody would: every tool `update run` requires.
     for tool in ["omarchy", "omarchy-restart-shell", "git", "timeout"] {
         resolve_absolute_executable(tool).map_err(|e| CliFailure::plugin(e.to_string()))?;
     }
@@ -571,7 +505,6 @@ fn dispatch_update_apply() -> Result<(), CliFailure> {
     Ok(())
 }
 
-/// `update run` stdout document: one line for the unit's journal.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct UpdateRunReport {
@@ -591,11 +524,8 @@ fn print_update_run_report(outcome: &'static str) -> Result<(), CliFailure> {
     Ok(())
 }
 
-/// `update run`: the detached unit's body (see `plugin::update_run`).
-///
-/// A second run while one is still retrying a restart exits 0 at once: the
-/// run lock, separate from the maintenance lock, is never waited on, so
-/// status and settings keep working during a long fetch or a locked session.
+/// Takes only the run lock, never the maintenance lock: this run can retry a
+/// restart for hours, and status and settings must keep working meanwhile.
 fn dispatch_update_run() -> Result<(), CliFailure> {
     use crate::plugin::update_run::{
         run_update, UpdateRunLimits, UpdateRunOutcome, UpdateRunTools,
@@ -671,11 +601,6 @@ fn unit_argv_path(path: String) -> Result<String, CliFailure> {
     }
 }
 
-/// `update` (no subcommand): the old TTY confirmation flow required a
-/// version-gated apply to offer, which git-native delegation no longer has —
-/// `update apply` now applies unconditionally. Bare `update` just points
-/// callers at the two real subcommands instead of pretending to be
-/// interactive.
 fn dispatch_update_interactive() -> Result<(), CliFailure> {
     eprintln!("agent-bar update has no interactive flow.");
     eprintln!("Use 'agent-bar update check' or 'agent-bar update apply'.");
@@ -877,23 +802,19 @@ mod tests {
         let mut stderr = Vec::new();
         confirm_uninstall(false, false, &mut stdin, &mut stderr).unwrap();
 
-        // command/purge mismatch
         let mut stdin = Cursor::new(good.as_slice());
         let err = confirm_uninstall(false, true, &mut stdin, &mut stderr).unwrap_err();
         assert_eq!(err.exit_code, VALIDATION);
 
-        // false confirmation
         let bad = br#"{"schemaVersion":1,"operation":"uninstall","confirmed":false,"purgeSettingsAndBackups":false}"#;
         let mut stdin = Cursor::new(bad.as_slice());
         let err = confirm_uninstall(false, false, &mut stdin, &mut stderr).unwrap_err();
         assert_eq!(err.exit_code, VALIDATION);
 
-        // malformed
         let mut stdin = Cursor::new(b"{not-json".as_slice());
         let err = confirm_uninstall(false, false, &mut stdin, &mut stderr).unwrap_err();
         assert_eq!(err.exit_code, VALIDATION);
 
-        // trailing garbage
         let mut stdin = Cursor::new(
             br#"{"schemaVersion":1,"operation":"uninstall","confirmed":true,"purgeSettingsAndBackups":false}{}"#
                 .as_slice(),

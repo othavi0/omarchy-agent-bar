@@ -1,8 +1,3 @@
-//! Shared one-transient-retry loop for HTTP collection.
-//!
-//! The catalog declares [`RetryPolicy::OneTransient`] for every provider; this
-//! is the single implementation of that promise. Only network errors retry.
-
 use super::adapter::{HttpClient, HttpError, HttpResponse};
 use super::catalog::ProviderDescriptor;
 
@@ -43,7 +38,6 @@ mod tests {
 
     #[tokio::test]
     async fn retries_once_after_network_error() {
-        // ScriptedHttpClient pops from the END: last entry is served first.
         let http = ScriptedHttpClient {
             responses: std::sync::Mutex::new(vec![
                 Ok(ok_response()),

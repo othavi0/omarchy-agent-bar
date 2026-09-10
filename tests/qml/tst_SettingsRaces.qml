@@ -9,7 +9,6 @@ TestCase {
   name: "AgentBarSettingsRaces"
   when: windowShown
 
-  // Harness mirrors Service settings lanes without Process I/O.
   Item {
     id: h
     property var settingsState: Core.settingsClosed()
@@ -151,7 +150,6 @@ TestCase {
     var payload = JSON.parse(h.pendingSettingsPayload)
     compare(h.settingsState.phase, "saving")
     h.closePopup("a")
-    // SET-019: still saving after close
     compare(h.settingsState.phase, "saving")
     compare(h.settingsState.busy, true)
     h.applyWrite(gen, true, payload)
@@ -198,7 +196,6 @@ TestCase {
     compare(h.settingsState.phase, "clean")
     compare(h.settingsDraft.display.metric, "used")
 
-    // Stale failure for gen1 must not dirty a completed save
     h.applyWrite(gen1, false, null)
     compare(h.settingsState.phase, "clean")
     compare(h.settingsDraft.display.metric, "used")
@@ -213,8 +210,6 @@ TestCase {
     h.save()
     var gen1 = h.activeSettingsWriteGeneration
     var payload1 = JSON.parse(h.pendingSettingsPayload)
-    // Do not complete gen1 yet — but lane is busy so second save rejected.
-    // Complete gen1 first, then start gen2, then late gen1 fails.
     h.applyWrite(gen1, true, payload1)
 
     h.mutate(function (d) { return Core.setRefreshInterval(d, 90) })
@@ -223,7 +218,6 @@ TestCase {
     verify(gen2 > gen1)
     var payload2 = JSON.parse(h.pendingSettingsPayload)
 
-    // Late gen1 failure must not affect gen2 save
     h.applyWrite(gen1, false, null)
     compare(h.settingsState.phase, "saving")
     h.applyWrite(gen2, true, payload2)
@@ -239,7 +233,6 @@ TestCase {
     h.save()
     var captured = JSON.parse(h.pendingSettingsPayload)
     compare(captured.display.metric, "used")
-    // Edits while saving are locked
     h.mutate(function (d) { return Core.setDisplayMetric(d, "remaining") })
     compare(JSON.parse(h.pendingSettingsPayload).display.metric, "used")
     compare(h.settingsState.pendingPayload.display.metric, "used")
@@ -253,7 +246,6 @@ TestCase {
     h.save()
     var captured = JSON.parse(h.pendingSettingsPayload)
     compare(captured.notifications.reminderMinutes, 240)
-    // Edits while saving are locked
     h.mutate(function (d) { return Core.setReminderMinutes(d, 60) })
     compare(JSON.parse(h.pendingSettingsPayload).notifications.reminderMinutes, 240)
     compare(h.settingsState.pendingPayload.notifications.reminderMinutes, 240)

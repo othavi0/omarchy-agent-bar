@@ -1,10 +1,3 @@
-//! `CoreView.countdownText` humanises a reset countdown in QML; the
-//! notification path humanises the same durations in Rust. The repo bans every
-//! JS runtime, so a Rust test cannot call the QML function — instead both
-//! sides are pinned to one shared table of inputs and expected outputs.
-//! `tests/qml/tst_Format.qml` asserts the QML implementation against the same
-//! file, so either side drifting fails its own suite.
-
 use agent_bar::support::countdown::countdown_text;
 use serde::Deserialize;
 
@@ -37,7 +30,6 @@ fn countdown_matches_the_shared_table() {
     }
 }
 
-// The seam is only real while the QML side still exists under that name.
 #[test]
 fn qml_countdown_function_still_exists() {
     let js = std::fs::read_to_string("CoreView.js").expect("read CoreView.js");

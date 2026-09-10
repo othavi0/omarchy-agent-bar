@@ -1,22 +1,4 @@
-//! `CoreMaintenance.maintenanceUiFromCheck` parses the `update check` stdout
-//! document in QML; `UpdateCheckDocument` is its Rust emitter. The repo bans
-//! every JS runtime, so a Rust test cannot call the QML function — instead
-//! both sides are pinned to the shared fixtures in
-//! `tests/fixtures/update-check/`, which must round-trip byte-exactly through
-//! the real serializer. `tests/qml/tst_Maintenance.qml` feeds the same bytes
-//! to the QML parser, so either side drifting fails its own suite.
-//!
-//! This seam exists because the previous QML parser read a key set the helper
-//! never emitted (`updateAvailable`, `currentVersion`, `targetVersion`,
-//! `releaseNotesUrl` at top level) and its tests fed that invented format
-//! back to it — green tests, broken product.
-//!
-//! BUNDLE-021 v-next (git-plugin-distribution Task 1): the document now
-//! carries `reinstallRequired` and no archive/checksum/source-commit fields
-//! at all — discovery reads the dist repo's `bundle.json` receipt instead of
-//! GitHub Releases. QML reads `reinstallRequired` too (Task 7): this file
-//! pins the Rust-side shape and fixture contents, and asserts the key name
-//! survives into the QML parser.
+//! BUNDLE-021
 
 use agent_bar::plugin::maintenance::UpdateCheckDocument;
 
@@ -29,8 +11,6 @@ fn fixture(name: &str) -> UpdateCheckDocument {
     UpdateCheckDocument::parse_json(&raw).expect("fixture must satisfy the real validator")
 }
 
-/// Every fixture is the exact stdout the helper writes: it passes the
-/// production validator and serializes back to the identical bytes.
 #[test]
 fn fixtures_are_exact_update_check_stdout() {
     let mut names: Vec<String> = Vec::new();
@@ -65,7 +45,6 @@ fn fixtures_are_exact_update_check_stdout() {
     }
 }
 
-/// The four fixtures cover every answer the document can give the UI.
 #[test]
 fn fixture_semantics_cover_every_answer() {
     let available = fixture("available.json");
@@ -96,9 +75,7 @@ fn fixture_semantics_cover_every_answer() {
     assert!(reinstall.latest_compatible.is_none());
 }
 
-/// The rewritten document (BUNDLE-021 v-next) carries no archive-download
-/// fields anywhere: discovery is a dist repo receipt, not a GitHub release
-/// asset list, and `update apply` no longer downloads/verifies an archive.
+/// BUNDLE-021
 #[test]
 fn fixtures_carry_no_archive_fields() {
     for entry in std::fs::read_dir(fixture_dir()).expect("read fixture dir") {
@@ -114,7 +91,6 @@ fn fixtures_carry_no_archive_fields() {
     }
 }
 
-/// The seam is only real while the QML side parses the real key set.
 #[test]
 fn qml_parser_reads_the_real_keys() {
     let js = std::fs::read_to_string("CoreMaintenance.js").expect("read CoreMaintenance.js");

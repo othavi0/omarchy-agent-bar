@@ -40,9 +40,6 @@ TestCase {
     ]
   }
 
-  // Qt.darker divides HSV value. On a dark theme that recedes; on a light
-  // theme it advances, so secondary text outranks primary. Util.alpha works
-  // in both directions with one value.
   function test_no_qt_darker() {
     var files = tokenScannedFiles()
     for (var i = 0; i < files.length; i++) {
@@ -52,9 +49,6 @@ TestCase {
     }
   }
 
-  // Every numeric literal that appears in the opacity slot of a
-  // Util.alpha(color, opacity) call, read from source. Handles both plain
-  // literals and conditional expressions.
   function alphaArgValues(code) {
     var values = []
     var callRe = /Util\.alpha\(([^()]*)\)/g
@@ -73,19 +67,6 @@ TestCase {
     return values
   }
 
-  // Plan 03 removed ProviderView.qml's only two Util.alpha( call sites
-  // (the meta footer, :222/:232) along with the footer itself. The file
-  // legitimately needs no alpha role afterwards: the stale banner uses
-  // Color.urgent directly and the separators are PanelSeparator. It stays
-  // in tokenScannedFiles() above — the no-raw-Qt.rgba and closed-alpha-set
-  // scans still apply — but drops out of this REQUIRES-Util.alpha list.
-  //
-  // Task 4 moved ProviderHeader.qml's only Util.alpha( call site into the
-  // extracted HeaderTag.qml component (deliberately excluded from this list
-  // per its own file header: it was never "converted", it was born using
-  // Util.alpha). ProviderHeader.qml now composes HeaderTag and has no direct
-  // alpha call of its own, so it drops out of this list for the same reason
-  // ProviderView.qml did; it stays in tokenScannedFiles() above.
   function convertedFiles() {
     return [
       "SettingsView.qml",
@@ -96,26 +77,12 @@ TestCase {
     ]
   }
 
-  // Per-file exceptions to the two-level rule: a raw alpha with no host
-  // token, declared once with its reason so the strict rule keeps applying
-  // everywhere else. An undeclared third value still fails — exceptions only
-  // subtract the exact values listed, only for the file listed.
-  //
-  // The modal scrim that motivated this mechanism ended up binding to the
-  // host's Color.menu.scrim token instead of a raw alpha, so it needs no
-  // entry. The usage track's trackColor is the one real holdout: a data
-  // surface with no host token. Exactly one entry — a second would mean the
-  // mechanism grew into a loophole instead of staying a documented rarity.
   function textAlphaExceptions() {
     return {
       "components/UsageWindow.qml": ["0.12"]
     }
   }
 
-  // The "exactly two levels, no third value" contract that Tasks 5-8 build
-  // on. Values are extracted from the call sites themselves, not hardcoded,
-  // so a future task introducing a third alpha value fails here. Does not
-  // assert a call-site count: later plans legitimately add/remove sites.
   function test_no_third_alpha_value() {
     var files = tokenScannedFiles()
     var exceptions = textAlphaExceptions()
@@ -135,8 +102,6 @@ TestCase {
             "Util.alpha opacity must be exactly 0.55 or 0.72, found: " + distinct.join(","))
   }
 
-  // Closes the substitution hole: a hardcoded Qt.rgba(...) literal would
-  // satisfy test_no_qt_darker without ever using Util.alpha.
   function test_util_alpha_used_in_converted_files() {
     var files = convertedFiles()
     for (var i = 0; i < files.length; i++) {
@@ -183,15 +148,10 @@ TestCase {
            data.tag + ": meta " + meta + " must be under supporting " + supporting)
   }
 
-  // Empty: after this task no file keeps a raw foreground alpha. ConfirmDialog
-  // left the list in Task 5 when its scrim bound to Color.menu.scrim, and the
-  // usage track is the last holdout.
   function allowedRawAlphaFiles() {
     return []
   }
 
-  // The track tint has no host token, so it gets a name and exactly one
-  // declaration. Two would be a parallel system starting over.
   function test_usage_track_declared_once() {
     var code = read("components/UsageWindow.qml")
         .replace(/\/\/[^\n]*/g, "")

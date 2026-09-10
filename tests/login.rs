@@ -1,4 +1,4 @@
-//! Login argv, IPC refresh, and CLI-017 exit mapping.
+//! CLI-017
 
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -87,7 +87,6 @@ async fn login_argv_matches_catalog_with_resolved_executable() {
                 .map(|s| s.to_string())
                 .collect::<Vec<_>>()
         );
-        // Element zero of full argv is absolute path, not bare name.
         assert!(spec.program.is_absolute() || spec.program.starts_with("/"));
     }
     assert_eq!(AMP.login_argv, &["amp", "login"]);

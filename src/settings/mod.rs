@@ -1,5 +1,3 @@
-//! Settings: v10 canonical store and v9→v10 data migration.
-
 pub mod migration;
 pub mod schema;
 pub mod store;

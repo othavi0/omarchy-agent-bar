@@ -2,7 +2,6 @@ import QtQuick
 import qs.Commons
 import qs.Ui
 
-// One provider row: icon, English name, enable toggle, up/down order.
 Item {
   id: root
 
@@ -53,7 +52,6 @@ Item {
 
     Item { width: Style.space(8); height: 1 }
 
-    // Native toggle via qs.Ui.Toggle would be tall; use compact ButtonGroup-like text switch.
     Button {
       anchors.verticalCenter: parent.verticalCenter
       text: root.enabled ? "On" : "Off"
@@ -75,7 +73,6 @@ Item {
       height: 1
     }
 
-    // UX-034 native chevrons (Quattro dropdown uses 󰅀 down; 󰅃 up)
     PanelActionButton {
       anchors.verticalCenter: parent.verticalCenter
       iconText: "󰅃"

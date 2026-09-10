@@ -1,16 +1,3 @@
-//! Root-tree completeness (monorepo migration Task 2).
-//!
-//! The plugin QML/JS/manifest tree now lives at the repo root alongside
-//! `src/`, `docs/`, and `target/`. `BundleBuilder::stamp` reads that root,
-//! stamps in the private helper, and writes
-//! `bundle.json` scoped to `SHIPPED_ROOT_FILES`/`SHIPPED_DIRS` only.
-//! `BundleValidator::validate_tree` covers receipt/filesystem consistency but
-//! never learned the shell's own manifest grammar (id regex, entry point
-//! existence, `kinds`, `defaultSection`), so this test reimplements that
-//! grammar directly in Rust -- mirroring `omarchy-plugin-validate` -- rather
-//! than shelling out to it, so the gate still runs in a CI container that has
-//! never heard of Omarchy.
-
 use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -35,9 +22,6 @@ fn copy_dir_all(src: &Path, dst: &Path) {
     }
 }
 
-/// Shipped top-level files that live directly at the real repo root, copied
-/// verbatim into the fake fixture root. `manifest.json` is included so the
-/// fixture carries the real id/kinds/entryPoints grammar this test checks.
 const ROOT_SOURCE_FILES: &[&str] = &[
     "BarWidget.qml",
     "CoreMaintenance.js",
@@ -54,15 +38,6 @@ const ROOT_SOURCE_FILES: &[&str] = &[
     "manifest.json",
 ];
 
-/// Build a throwaway "source repo" containing everything `stamp` reads.
-///
-/// The QML/JS/manifest/`components`/`icons` tree is the real one, so the
-/// manifest and entry points this test checks are the ones that actually
-/// ship. The terminal helper, README, LICENSE, and preview image are small
-/// fakes: their exact bytes are not under test here, only that `stamp`
-/// picks them up and the resulting root is contract-complete. Non-shipped
-/// noise (`src/`, `docs/dev/`, `Cargo.toml`) stands in for the rest of the
-/// monorepo that `stamp` must tolerate and ignore.
 fn fake_repo(root: &Path) {
     fs::create_dir_all(root).unwrap();
     for name in ROOT_SOURCE_FILES {
@@ -90,7 +65,6 @@ fn fake_repo(root: &Path) {
     )
     .unwrap();
 
-    // Non-shipped noise that must be tolerated and excluded from the receipt.
     fs::create_dir_all(root.join("src")).unwrap();
     fs::write(root.join("src/lib.rs"), b"// noise, not shipped\n").unwrap();
     fs::create_dir_all(root.join("docs/dev")).unwrap();
@@ -98,7 +72,6 @@ fn fake_repo(root: &Path) {
     fs::write(root.join("Cargo.toml"), b"[package]\nname = \"noise\"\n").unwrap();
 }
 
-/// Read `version` back out of the fixture's copied real manifest.json.
 fn manifest_version(repo_root: &Path) -> String {
     let bytes = fs::read(repo_root.join("manifest.json")).unwrap();
     let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
@@ -108,10 +81,7 @@ fn manifest_version(repo_root: &Path) -> String {
         .to_string()
 }
 
-/// A stand-in for the compiled helper binary. `validate_tree` runs it with
-/// `version` (BUNDLE-006), so it has to actually execute; what this test
-/// checks is tree shape, not the helper's real machine code, so a tiny
-/// script filling the same contract is enough.
+/// BUNDLE-006
 fn fake_helper(path: &Path, version: &str) {
     fs::write(
         path,
@@ -155,11 +125,6 @@ const KIND_ENTRY_POINTS: &[(&str, &str)] = &[
     ("service", "service"),
 ];
 
-/// `find`-equivalent walk: every symlink under `root`. Unlike the shell
-/// tool's `find $DIR -name .git -prune -o -type l -print`, which prunes any
-/// `.git` directory in the tree, this walk only skips a `.git` at the root,
-/// matching `BundleValidator`'s deliberately narrower tolerance (see
-/// `is_root_git_dir` in `src/plugin/bundle.rs`).
 fn find_symlinks(root: &Path) -> Vec<PathBuf> {
     let mut hits = Vec::new();
     let mut stack = vec![root.to_path_buf()];
@@ -202,10 +167,8 @@ fn stamped_root_mirrors_omarchy_plugin_validate() {
     let manifest_bytes = fs::read(root.join("manifest.json")).unwrap();
     let manifest: serde_json::Value = serde_json::from_slice(&manifest_bytes).unwrap();
 
-    // schemaVersion must be exactly the JSON number 1.
     assert_eq!(manifest["schemaVersion"], serde_json::json!(1));
 
-    // id grammar and the reserved omarchy.* namespace.
     let id = manifest["id"].as_str().expect("id must be a string");
     assert!(
         matches_omarchy_id_grammar(id),
@@ -216,13 +179,11 @@ fn stamped_root_mirrors_omarchy_plugin_validate() {
         "id '{id}' uses the reserved omarchy.* namespace"
     );
 
-    // kinds must be a non-empty array.
     let kinds = manifest["kinds"]
         .as_array()
         .expect("kinds must be an array");
     assert!(!kinds.is_empty(), "kinds must be non-empty");
 
-    // Every entry point is a safe relative path that exists on disk.
     let entry_points = manifest["entryPoints"]
         .as_object()
         .expect("entryPoints must be an object");
@@ -242,11 +203,6 @@ fn stamped_root_mirrors_omarchy_plugin_validate() {
         );
     }
 
-    // A kind is a promise to supply something to load: for every kind the
-    // real script's table maps to an entry point key, that key must be
-    // present. Claiming a kind without its entry point installs and enables
-    // fine, then does nothing -- exactly the "mirror passes, real tool
-    // fails" gap this test exists to close.
     for kind in kinds {
         let kind_str = kind.as_str().expect("kind must be a string");
         if let Some((_, ep_key)) = KIND_ENTRY_POINTS.iter().find(|(k, _)| *k == kind_str) {
@@ -257,8 +213,6 @@ fn stamped_root_mirrors_omarchy_plugin_validate() {
         }
     }
 
-    // barWidget.defaultSection, when present, is one of the enum values the
-    // shell accepts.
     let default_section = manifest["barWidget"]["defaultSection"]
         .as_str()
         .expect("barWidget.defaultSection must be present");
@@ -267,14 +221,11 @@ fn stamped_root_mirrors_omarchy_plugin_validate() {
         "barWidget.defaultSection must be left, center, or right, got {default_section}"
     );
 
-    // No symlinks anywhere within the shipped scope of a freshly stamped root.
     assert!(
         find_symlinks(&root.join("components")).is_empty(),
         "freshly stamped components/ must contain zero symlinks"
     );
 
-    // README/LICENSE/preview at root, and every one of them accounted for
-    // in the receipt inventory.
     for name in ["README.md", "LICENSE", "preview.png"] {
         assert!(
             root.join(name).is_file(),
@@ -286,7 +237,6 @@ fn stamped_root_mirrors_omarchy_plugin_validate() {
         );
     }
 
-    // Receipt inventories the shipped scope only -- never the source tree.
     for f in &receipt.files {
         assert!(
             agent_bar::plugin::bundle::SHIPPED_ROOT_FILES.contains(&f.path.as_str())
@@ -301,7 +251,6 @@ fn stamped_root_mirrors_omarchy_plugin_validate() {
     assert!(receipt.files.iter().any(|f| f.path == "bin/agent-bar"));
     assert!(receipt.files.iter().any(|f| f.path == "preview.png"));
 
-    // The tree also satisfies our own receipt/filesystem contract.
     BundleValidator::validate_tree(&root).unwrap();
 }
 
@@ -310,15 +259,10 @@ fn validate_tree_tolerates_root_git_but_not_symlinks() {
     let dir = tempfile::tempdir().unwrap();
     let (root, _receipt) = stamp_fake_root(dir.path());
 
-    // A root `.git`, like the one an installed clone carries, does not
-    // break validation.
     fs::create_dir_all(root.join(".git")).unwrap();
     fs::write(root.join(".git/config"), b"[core]\n\tbare = false\n").unwrap();
     BundleValidator::validate_tree(&root).unwrap();
 
-    // A symlink inside the shipped scope still fails, .git tolerance or
-    // not. A symlink under `src/` is not `validate_tree`'s job -- the
-    // shell's own validator covers the full tree at install time.
     std::os::unix::fs::symlink("/etc/passwd", root.join("components/evil-link")).unwrap();
     assert!(BundleValidator::validate_tree(&root).is_err());
 }

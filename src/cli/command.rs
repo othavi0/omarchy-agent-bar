@@ -1,8 +1,5 @@
-//! Closed v10 CLI command types.
-
 use std::path::PathBuf;
 
-/// Supported provider identifiers (closed catalog).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ProviderId {
     Claude,
@@ -49,28 +46,24 @@ impl std::fmt::Display for ProviderId {
     }
 }
 
-/// Status stdout format.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StatusFormat {
     Human,
     Json,
 }
 
-/// Cache mode for status collection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CacheMode {
     Use,
     Bypass,
 }
 
-/// Notification evaluation mode for status.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NotificationMode {
     Evaluate,
     Skip,
 }
 
-/// Options for `status` (and bare `agent-bar`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StatusOptions {
     pub format: StatusFormat,
@@ -90,17 +83,12 @@ impl Default for StatusOptions {
     }
 }
 
-/// Config subcommands backed by the canonical settings store (schema v1).
-///
-/// `show` is read-only. `apply` accepts exactly one complete document, validates
-/// before taking the shared maintenance lock, and returns the stored JSON.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConfigCommand {
     Show,
     Apply(ConfigInput),
 }
 
-/// Input source for `config apply` (complete-document only).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConfigInput {
     Stdin,
@@ -108,11 +96,6 @@ pub enum ConfigInput {
     Json(String),
 }
 
-/// Update subcommands. `Apply` takes no argument: `update apply` starts a
-/// detached unit and returns (git-plugin-distribution Task 2), not a
-/// version-gated apply of a specific release. `Run` is that unit's body: it
-/// delegates to `omarchy plugin update othavi0.agent-bar --yes` and restarts
-/// the shell when the tree changed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UpdateCommand {
     Interactive,
@@ -121,14 +104,12 @@ pub enum UpdateCommand {
     Run,
 }
 
-/// Doctor subcommands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DoctorCommand {
     Scan,
     Clean,
 }
 
-/// Accepted `help <topic>` values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HelpTopic {
     Status,
@@ -185,10 +166,6 @@ impl HelpTopic {
     }
 }
 
-/// Top-level parsed command. `Setup` is settings-migration only
-/// (git-plugin-distribution Task 4): `omarchy plugin add`/`update`/`remove`
-/// own the plugin tree now, so there is no injected-install-target variant
-/// to carry — it takes no payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
     Status(StatusOptions),

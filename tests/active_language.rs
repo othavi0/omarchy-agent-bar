@@ -1,6 +1,4 @@
-//! Active-surface language gate.
-//!
-//! Rule: no tracked text file may contain an alphabetic non-ASCII character.
+//! No tracked text file may contain an alphabetic non-ASCII character.
 //! "Alphabetic" is load-bearing — it flags accented letters while ignoring the
 //! Nerd Font glyphs (Private Use Area) and the punctuation this project uses
 //! on purpose.
@@ -8,13 +6,11 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// Deliberate non-ASCII, with the reason it stays.
 const ALLOWLIST: &[(&str, &str)] = &[(
     "src/support/redact.rs",
     "accented fixture for the ANSI and control-character stripper",
 )];
 
-/// Empty, and it stays empty. See `translation_backlog_is_empty`.
 const PENDING_TRANSLATION: &[&str] = &[];
 
 const BINARY_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "svg", "ico", "lock"];
@@ -60,7 +56,6 @@ fn is_scannable(rel: &str) -> bool {
     }
 }
 
-/// file:line:offending characters:trimmed line
 fn offenders(root: &Path, rel: &str) -> Vec<String> {
     let Ok(text) = std::fs::read_to_string(root.join(rel)) else {
         return Vec::new();

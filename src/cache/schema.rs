@@ -1,5 +1,3 @@
-//! Normalized status-v2 cache document (CACHE schema).
-
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
@@ -102,6 +100,3 @@ impl std::fmt::Display for CacheSchemaError {
 }
 
 impl std::error::Error for CacheSchemaError {}
-
-// ProviderStatus needs a public validate_state_shape - it's private today.
-// We'll add a thin public wrapper on ProviderStatus.

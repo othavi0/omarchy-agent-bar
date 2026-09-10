@@ -1,11 +1,6 @@
 import QtQuick
 import "../CoreScroll.js" as Core
 
-// Ordered focus ring for popup actions (A11Y-003/010/011).
-// Targets are plain Items that may expose:
-//   - forceActiveFocus()
-//   - focusActivate()  → typed activation callback
-//   - enabled / visible
 Item {
   id: root
 
@@ -76,7 +71,6 @@ Item {
       index = -1
       return null
     }
-    // Map current into live list
     var curLive = -1
     if (current) {
       for (var i = 0; i < live.length; i++) {
@@ -88,7 +82,6 @@ Item {
     }
     var nextLive = Core.focusNextIndex(curLive, direction, live.length)
     var item = live[nextLive]
-    // Sync index into full targets array
     for (var j = 0; j < targets.length; j++) {
       if (targets[j] === item) {
         index = j
@@ -117,13 +110,11 @@ Item {
       return true
     }
     if (typeof item.clicked === "function") {
-      // Prefer typed callback; Qt Quick Controls often expose clicked as signal.
     }
     if (item.Accessible && typeof item.Accessible.pressAction === "function") {
       item.Accessible.pressAction()
       return true
     }
-    // Fall back to Accessible.onPressAction via pressAction if present
     if (typeof item.pressAction === "function") {
       item.pressAction()
       return true
@@ -134,7 +125,6 @@ Item {
   function ensureVisible(item) {
     if (!flickable || !item)
       return
-    // Prefer mapToItem when available; else item.y relative to content item.
     var y = 0
     var h = item.height || 0
     try {

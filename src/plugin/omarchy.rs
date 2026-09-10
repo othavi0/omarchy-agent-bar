@@ -1,11 +1,3 @@
-//! Process execution seam for the omarchy CLI (MIG-019A/B lineage).
-//!
-//! `update apply` / `uninstall` build their own detached-unit argv inline
-//! (git-plugin-distribution Tasks 2-3) and run it through [`CommandRunner`];
-//! the argv-builder/`OmarchyClient` wrapper that used to sit in front of that
-//! is gone with it — nothing calls `omarchy plugin enable|rescan` from this
-//! helper anymore (`omarchy plugin add` is the install now).
-
 use thiserror::Error;
 
 #[derive(Debug, Error, PartialEq, Eq)]

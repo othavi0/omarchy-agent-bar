@@ -4,11 +4,6 @@ import qs.Commons
 import qs.Ui
 import "CoreView.js" as Core
 
-// Left rail — stack: providers → spacer → Settings.
-// No own frame (§6): the card border already bounds the popup, so the slot
-// stack shares the popup's inset token and fits the rail width exactly.
-// Selected = brainstorming “A” plate (soft fill + thin border), only on the
-// active provider id — never a sticky focus ring on Claude.
 Item {
   id: root
 
@@ -26,13 +21,12 @@ Item {
   readonly property int stackGap: Style.space(8)
   readonly property int spacerMin: Style.space(4)
 
-  // No own frame (§6) — the slot fits exactly, horizontal inset is 0.
   readonly property int railWidth: slotSize
 
   readonly property int minStackHeight: {
     var n = providers && providers.length ? providers.length : 0
     var slots = n + 1
-    var gaps = n + 1 // n providers + spacer + settings → n+2 items → n+1 gaps
+    var gaps = n + 1
     return Style.spacing.popupPadding * 2
         + slots * slotSize
         + gaps * stackGap
@@ -91,7 +85,6 @@ Item {
 
       Item {
         id: railItem
-        // Prefer index lookup — more reliable than modelData.id for JS arrays.
         required property int index
         required property var modelData
 
@@ -123,7 +116,6 @@ Item {
         Component.onCompleted: root.registerRailItem(railItem)
         Component.onDestruction: root.unregisterRailItem(railItem)
 
-        // Active provider: soft fill + neutral border only (no accent tick).
         Rectangle {
           anchors.fill: parent
           radius: Style.cornerRadius

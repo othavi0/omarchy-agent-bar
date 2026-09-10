@@ -1,7 +1,5 @@
-// Test-only palette + screenshot inventory fixtures.
 .pragma library
 
-// Screenshot inventory required by TEST/CP2 (exact basenames).
 function requiredScreenshotNames() {
   return [
     "ready-light.png",

@@ -1,5 +1,3 @@
-//! Injectable HTTP client for provider collection (Claude).
-
 use std::time::Duration;
 
 pub use super::adapter::HttpResponse;
@@ -43,16 +41,15 @@ impl HttpClient for ReqwestHttpClient {
             for (k, v) in &headers {
                 req = req.header(k.as_str(), v.as_str());
             }
-            let response = req.send().await.map_err(|err| {
-                // Never include authorization-bearing error details.
-                HttpError::Network(err.without_url().to_string())
-            })?;
+            let response = req
+                .send()
+                .await
+                .map_err(|err| HttpError::Network(err.without_url().to_string()))?;
             let status = response.status().as_u16();
             let final_url = response.url().to_string();
             if response.status().is_redirection() {
                 return Err(HttpError::RedirectRefused(final_url));
             }
-            // Cap body before buffering the full payload.
             let mut body = Vec::new();
             let mut stream = response.bytes_stream();
             use futures::StreamExt;

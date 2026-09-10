@@ -22,7 +22,6 @@ TestCase {
   property string fakeHelper: repoRoot + "/tests/qml/fixtures/fake-agent-bar"
   property string manifestPath: repoRoot + "/manifest.json"
 
-  // Harness mirrors Service.qml state machine without Quickshell.Io Process.
   Item {
     id: h
     property string helperVersion: ""
@@ -92,7 +91,6 @@ TestCase {
       statusBusy = true
       refreshing = true
       statusStartCount++
-      // argv available for assertions
       lastArgv = Core.statusArgv("/helper", taken.captured)
     }
     property var lastArgv: []
@@ -127,7 +125,6 @@ TestCase {
         settingsGen++
         settingsState = Settings.settingsBeginLoad(settingsGen)
         settingsDraft = null
-        // Harness completes load immediately with defaults (production uses config show).
         settingsState = Settings.settingsFinishLoad(settingsState, settingsGen, Core.defaultSettings())
         settingsDraft = settingsState.draft
       }
@@ -206,8 +203,6 @@ TestCase {
     return JSON.parse(xhr.responseText)
   }
 
-  // ---- Task 8 carry-over ----
-
   function test_manifest_shape() {
     var m = loadManifest()
     compare(m.id, "othavi0.agent-bar")
@@ -236,19 +231,16 @@ TestCase {
   function test_refresh_closed_providers() {
     reset()
     h.applyVersion("10.0.0\n")
-    h.statusBusy = false // clear auto kick
+    h.statusBusy = false
     h.statusStartCount = 0
     compare(h.refresh("claude"), "ok")
     compare(h.refresh("nope"), "unknown")
     compare(h.refreshRequestCount, 1)
   }
 
-  // ---- Task 9 ----
-
   function test_status_argv_shape_cache_use() {
     reset()
     h.applyVersion("10.0.0\n")
-    // First kick uses empty pending → cache use
     verify(h.lastArgv.indexOf("status") >= 0)
     verify(h.lastArgv.indexOf("format") >= 0)
     verify(h.lastArgv.indexOf("json") >= 0)
@@ -261,7 +253,6 @@ TestCase {
   function test_force_refresh_uses_bypass() {
     reset()
     h.applyVersion("10.0.0\n")
-    // complete in-flight
     h.applyStatus(h.activeStatusGeneration, validEnvelope("10.0.0"), 0)
     h.statusStartCount = 0
     h.refreshAll(true)
@@ -304,9 +295,7 @@ TestCase {
     h.kickStatus()
     var newGen = h.activeStatusGeneration
     verify(newGen !== oldGen)
-    // Late callback from old generation must not clobber.
     h.applyStatus(oldGen, validEnvelope("10.0.0"), 0)
-    // Still refreshing / busy from new gen until applied
     h.applyStatus(newGen, validEnvelope("10.0.0"), 0)
     compare(h.snapshot.schemaVersion, 2)
   }
@@ -315,7 +304,6 @@ TestCase {
     reset()
     h.applyVersion("10.0.0\n")
     var starts = h.statusStartCount
-    // While busy, kick must not start another.
     h.kickStatus()
     compare(h.statusStartCount, starts)
   }
@@ -352,7 +340,6 @@ TestCase {
     reset()
     h.requestPopup("mon-a", "claude", "usage")
     verify(h.popupOwner !== null)
-    // Foreign monitor cannot same-owner close, but dismiss always clears.
     h.closePopup("mon-b")
     verify(h.popupOwner !== null)
     h.dismissPopup()
@@ -520,8 +507,6 @@ TestCase {
   }
 
   // Live Quattro createObject sets manifest after construction completes.
-  // Service must retry production start when helper path appears, and must not
-  // mark versionFailed merely because the path was empty on first attempt.
   function test_service_qml_defers_probe_until_helper_path() {
     var xhr = new XMLHttpRequest()
     xhr.open("GET", serviceUrl, false)
@@ -533,13 +518,11 @@ TestCase {
     verify(src.indexOf("tryStartProduction()") >= 0)
     // The host strips __sourceDir from third-party manifests (Omarchy 4.0.3).
     verify(src.indexOf("__sourceDir") < 0)
-    // Empty helper path must wait, not finishVersionProbeFailure.
     var emptyBranch = src.indexOf("if (!helper.length)")
     verify(emptyBranch >= 0)
     var nextFail = src.indexOf("finishVersionProbeFailure", emptyBranch)
     var nextReturn = src.indexOf("return", emptyBranch)
     verify(nextReturn >= 0)
-    // The immediate empty-path branch must return without permanent failure.
     if (nextFail >= 0)
       verify(nextReturn < nextFail)
   }

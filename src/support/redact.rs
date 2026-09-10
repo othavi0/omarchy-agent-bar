@@ -1,5 +1,3 @@
-//! Sanitization of external process and provider strings.
-
 /// Strip ANSI CSI/OSC sequences and non-whitespace C0 control characters.
 ///
 /// Keeps TAB/LF/CR. Used at the process and adapter boundary so raw control
@@ -10,7 +8,6 @@ pub fn strip_ansi_and_controls(input: &str) -> String {
     let mut i = 0usize;
     while i < bytes.len() {
         let b = bytes[i];
-        // ESC ... ANSI / OSC sequences
         if b == 0x1b {
             i += 1;
             if i >= bytes.len() {
@@ -50,7 +47,6 @@ pub fn strip_ansi_and_controls(input: &str) -> String {
             }
             continue;
         }
-        // Allow printable UTF-8 via chars for multi-byte; handle ASCII controls.
         if b < 0x20 {
             if matches!(b, b'\t' | b'\n' | b'\r') {
                 out.push(b as char);
@@ -62,7 +58,6 @@ pub fn strip_ansi_and_controls(input: &str) -> String {
             i += 1;
             continue;
         }
-        // Copy one UTF-8 character starting at i.
         let rest = &input[i..];
         if let Some(ch) = rest.chars().next() {
             out.push(ch);
@@ -74,7 +69,6 @@ pub fn strip_ansi_and_controls(input: &str) -> String {
     out
 }
 
-/// Redact bytes as lossy UTF-8 then strip controls/ANSI.
 pub fn redact_process_bytes(bytes: &[u8]) -> String {
     strip_ansi_and_controls(&String::from_utf8_lossy(bytes))
 }

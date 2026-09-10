@@ -21,11 +21,8 @@ WidgetButton {
   property bool severityUrgent: false
   property string cueLabel: ""
 
-  // The host tooltip is intentionally never set; this label exists for
-  // assistive tech only and must stay single-line.
   property string accessibleLabel: ""
 
-  // §7: Color.urgent is the single severity colour; no new colour exists.
   readonly property color numeralColor: root.severityUrgent ? Color.urgent : root.foreground
 
   readonly property int paintedIconSize: Math.round(Style.bar.iconCanvas * iconScale)
@@ -112,11 +109,4 @@ WidgetButton {
       Accessible.role: Accessible.StaticText
     }
   }
-
-  // §5: the numeral box is tight — width follows the text (amended
-  // 2026-08-04). The reserved box sized on the widest numeral parked ~2
-  // digits of slack in the inter-chip gap when every numeral was short,
-  // reading as disproportionate spacing with an inflated right edge. Chips
-  // may shift when a value crosses a digit boundary; the state cues (! / ln)
-  // already resized them, so width stability was never absolute.
 }

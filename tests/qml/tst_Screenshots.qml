@@ -2,7 +2,6 @@ import QtQuick
 import QtTest
 import "TestPalette.js" as Core
 
-// Deterministic UI evidence captures for CP2 (TEST screenshot inventory).
 TestCase {
   id: testCase
   name: "AgentBarScreenshots"
@@ -19,10 +18,8 @@ TestCase {
   }
 
   property string evidenceDir: {
-    // Prefer env from verify-v10-ui; fallback to repo target path.
     var env = ""
     try {
-      // Qt 6: no portable env in pure QML; verify script also passes via file.
       env = ""
     } catch (e) {}
     return repoRoot + "/target/v10-ui-evidence"
@@ -32,7 +29,6 @@ TestCase {
   property int capturesExpected: 0
   property var pendingNames: []
 
-  // Stage that renders state-labelled panels for grabToImage.
   Rectangle {
     id: stage
     width: 480
@@ -41,9 +37,6 @@ TestCase {
     property string titleText: ""
     property string bodyText: ""
     property string badgeText: ""
-    // UX-028 (amended): the age is its own neutral caption, never merged into
-    // the usage text. Modelled separately so the evidence cannot approve a
-    // presentation the pane does not produce.
     property string captionText: ""
     property color fg: "#e4e4e7"
     property color muted: "#a1a1aa"
@@ -103,21 +96,16 @@ TestCase {
     var p = Core.themePalette(mode)
     stage.color = p.background
     stage.fg = p.foreground
-    // Derived from this palette's own foreground at the supporting-text level,
-    // which is what the shipped components compute through Util.alpha. The
-    // literal 0.72 is pinned by tst_Tokens.qml's test_no_third_alpha_value;
-    // Util itself is unreachable here because qs.Commons will not compile
-    // under the bare Qt6 runner.
+    // tst_Tokens.qml pins the 0.72 supporting-text alpha. Util.alpha itself is
+    // unreachable here because qs.Commons will not compile under the bare Qt6
+    // runner.
     var fg = Qt.color(p.foreground)
     stage.muted = Qt.rgba(fg.r, fg.g, fg.b, 0.72)
     stage.badgeColor = p.urgent
   }
 
   function paintState(name) {
-    // Clear per-state fields first: the stage is reused across captures, so an
-    // unset field would leak the previous panel's value into this one.
     stage.captionText = ""
-    // Map evidence basename → deterministic fixture panel
     if (name.indexOf("ready-light") === 0) {
       applyTheme("light")
       stage.titleText = "Claude"
@@ -146,10 +134,6 @@ TestCase {
       stage.badgeText = "Connected · refreshing"
       stage.bodyText = "Weekly (7d) · resets in 23h 1m · 74% left (prior data kept)"
     } else if (name.indexOf("stale-dark") === 0) {
-      // UX-028 (amended): a retained reading is presented as a reading. This
-      // panel is ready-dark plus one neutral age caption — same title, same
-      // badge, same usage text. Any other difference would be evidence of a
-      // presentation the pane no longer produces.
       stage.titleText = "Claude"
       stage.badgeText = "Connected"
       stage.captionText = "Updated 14m ago"
@@ -171,13 +155,10 @@ TestCase {
       stage.badgeText = "Rate limited"
       stage.bodyText = "Codex hit a rate limit. Try again in a few minutes. Retry"
     } else if (name.indexOf("network-error-dark") === 0) {
-      // Provider swapped Grok -> Amp to keep the fixture internally
-      // consistent with the shipped copy (task brief names Amp here).
       stage.titleText = "Amp"
       stage.badgeText = "Network error"
       stage.bodyText = "Cannot reach Amp. Check your connection. Retry"
     } else if (name.indexOf("provider-error-dark") === 0) {
-      // Provider swapped Amp -> Grok to match, same reason as above.
       stage.titleText = "Grok"
       stage.badgeText = "Provider error"
       stage.bodyText = "Grok returned no limits. Retry"
@@ -221,7 +202,6 @@ TestCase {
       capturesDone++
       finished = true
     })
-    // Wait for async grab
     for (var i = 0; i < 50 && !finished; i++)
       wait(20)
     verify(finished, "grab timed out for " + name)

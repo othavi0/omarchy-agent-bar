@@ -89,7 +89,6 @@ TestCase {
     var src = read("Popup.qml")
     verify(src.indexOf("scrollShortcuts") >= 0)
     verify(src.indexOf("id: scrollShortcuts") >= 0)
-    // Shortcuts must appear after PanelKeyCatcher opens, not as bare panel children.
     var keyCatcherAt = src.indexOf("id: keyCatcher")
     var firstShortcutAt = src.indexOf("Shortcut {")
     verify(keyCatcherAt >= 0)

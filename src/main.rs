@@ -5,7 +5,6 @@
 use agent_bar::cli::{self, SUCCESS};
 
 fn main() {
-    // RUST_LOG controls diagnostics (CLI-008); no verbose flag. Stderr only.
     let _ = env_logger::Builder::new()
         .filter_level(log::LevelFilter::Warn)
         .target(env_logger::Target::Stderr)

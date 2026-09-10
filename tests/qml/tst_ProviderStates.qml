@@ -53,21 +53,12 @@ TestCase {
     verify(Core.stateBody(p).indexOf("does not publish a usage percentage") >= 0)
   }
 
-  // UX-028 (amended): stale renders through the ready path. The dedicated
-  // "stale_windows" mode is gone — retained data is data, so the pane draws
-  // the same windows it would draw for a fresh reading.
   function test_stale_retains_windows_and_label() {
     var p = firstProvider("valid-stale.json")
     compare(Core.contentMode(p), "windows")
     compare(Core.stateTitle(p), "")
     compare(Core.stateBody(p), "")
-    // The typed error survives in the JSON for `agent-bar status`; the pane
-    // simply stops rendering it.
     verify(Core.errorMessage(p).length > 0)
-    // No recovery action either: a repair button beside a good number is the
-    // fault impression this change removes. The fixture still carries
-    // action.kind === "retry", so this proves the view filters it, not that
-    // the helper stopped sending it.
     compare(String(p.action && p.action.kind || ""), "retry")
     compare(Core.stateActions(p).length, 0)
     var lines = Core.windowDisplayLines(p, "used")
@@ -76,8 +67,6 @@ TestCase {
     compare(lines[0].percent, 90)
   }
 
-  // A stale provider whose retained reading carries no window must not fall
-  // back to the error pane: it takes the same empty-windows path as ready.
   function test_stale_without_windows_uses_empty_windows_mode() {
     var p = { id: "amp", name: "Amp", state: "stale", windows: [],
               lastSuccessAt: "2026-07-26T18:42:00Z",
@@ -93,8 +82,6 @@ TestCase {
     var acts = Core.stateActions(p)
     var kinds = acts.map(function (a) { return a.kind })
     verify(kinds.indexOf("view_installation") >= 0)
-    // Fixture's error is retryable: false — "Check again" (a Retry action)
-    // must not be offered for a non-retryable error (JSON-025 addendum).
     verify(kinds.indexOf("retry") < 0)
   }
 
@@ -105,7 +92,6 @@ TestCase {
     verify(acts.length >= 1)
     var kind = acts[0].kind
     verify(kind === "login" || kind === "view_installation")
-    // Label should be user-facing Sign in when login
     if (kind === "login")
       verify(acts[0].label.length > 0)
   }
@@ -148,9 +134,6 @@ TestCase {
     verify(h.plan.length > 0)
     verify(h.connection === undefined)
     compare(h.refreshing, true)
-    // showStale was computed, passed to ProviderHeader and asserted here, but
-    // never rendered by anything. UX-028 (amended) retired the concept it
-    // stood for, so the dead field goes with it.
     verify(h.showStale === undefined)
     verify(h.lastSuccessAt.length > 0)
   }
@@ -203,8 +186,6 @@ TestCase {
     compare(Core.severityLevel("nope"), "")
   }
 
-  // The Warning level renders as "Low" (visual design §7); "warning" is the
-  // internal name it shares with Rust.
   function test_severity_tag_words() {
     compare(Core.severityTagText("critical"), "Critical")
     compare(Core.severityTagText("warning"), "Low")
@@ -220,8 +201,6 @@ TestCase {
             "critical")
   }
 
-  // §7: severity is computed from usedPercent, so switching the displayed
-  // metric never changes what counts as critical.
   function test_severity_ignores_the_display_metric() {
     var provider = readyWith([{ id: "s", label: "S", usedPercent: 96, remainingPercent: 4,
                                 resetsAt: "2026-07-28T18:00:00Z" }])
@@ -230,8 +209,6 @@ TestCase {
     compare(Core.windowLayout(provider, "used", now).lead.severity, "critical")
   }
 
-  // Among non-session windows severity still outranks the nearest reset
-  // (a session window would pin the lead first; see the 2026-09-04 tests).
   function test_lead_election_critical_beats_nearest_reset() {
     var layout = layoutOf([
       { id: "daily", label: "Daily (1d)", usedPercent: 10, remainingPercent: 90,
@@ -255,9 +232,6 @@ TestCase {
     compare(layout.lead.id, "b")
   }
 
-  // UX-020D step 2 (amended 2026-08-07): plan windows outrank non-plan
-  // windows when nothing is critical, so a subscriber leads with the
-  // subscription instead of the daily free window's nearer reset.
   function test_lead_election_plan_beats_nearest_reset() {
     var layout = layoutOf([
       { id: "daily", label: "Daily (1d)", usedPercent: 31, remainingPercent: 69,
@@ -268,7 +242,6 @@ TestCase {
         resetsAt: null }
     ], "2026-08-07T15:00:00Z")
     compare(layout.lead.id, "plan-other")
-    // The rest keeps delivered order: free first, then the healthier bucket.
     compare(layout.rest.length, 2)
     compare(layout.rest[0].id, "daily")
     compare(layout.rest[1].id, "plan-orb")
@@ -294,8 +267,6 @@ TestCase {
     compare(layout.lead.id, "plan-other")
   }
 
-  // A critical plan window leads through rule 1 (severity), not rule 2 —
-  // same lead either way, but the severity tag must say Critical.
   function test_lead_election_critical_plan_leads_by_severity() {
     var layout = layoutOf([
       { id: "daily", label: "Daily (1d)", usedPercent: 31, remainingPercent: 69,
@@ -309,8 +280,6 @@ TestCase {
     compare(layout.lead.severity, "critical")
   }
 
-  // Severity is the one signal plan preference never displaces: an exhausted
-  // free window still takes the lead over a healthy subscription.
   function test_lead_election_critical_free_beats_healthy_plan() {
     var layout = layoutOf([
       { id: "daily", label: "Daily (1d)", usedPercent: 96, remainingPercent: 4,
@@ -322,8 +291,6 @@ TestCase {
     compare(layout.lead.severity, "critical")
   }
 
-  // Non-session ids on purpose: a session window would be pinned before this
-  // step ever ran (see the 2026-09-04 tests).
   function test_lead_election_nearest_future_reset_when_healthy() {
     var layout = layoutOf([
       { id: "weekly", label: "Weekly (7d)", usedPercent: 40, remainingPercent: 60,
@@ -332,7 +299,6 @@ TestCase {
         resetsAt: "2026-07-28T18:00:00Z" }
     ], "2026-07-28T15:00:00Z")
     compare(layout.lead.id, "daily")
-    // The rest keeps delivered order, not election order.
     compare(layout.rest.length, 1)
     compare(layout.rest[0].id, "weekly")
   }
@@ -400,8 +366,6 @@ TestCase {
     compare(layout.rest.length, 0)
   }
 
-  // A window id outside the old allowlist is now electable — the exact bug
-  // the allowlist caused (it silently demoted anything unknown).
   function test_unknown_window_id_can_lead() {
     var layout = layoutOf([
       { id: "weekly-model:opus", label: "Opus", usedPercent: 97, remainingPercent: 3,
@@ -412,9 +376,6 @@ TestCase {
     compare(layout.lead.id, "weekly-model:opus")
   }
 
-  // UX-020D (amended 2026-09-04): a session window leads whenever present.
-  // Live data from 2026-09-03: overnight the session reset elapsed, so the
-  // old election handed the chip to the weekly window every morning.
   function test_session_window_leads_over_sooner_weekly_reset() {
     var windows = [
       { id: "session", label: "Session (5h)", usedPercent: 21, remainingPercent: 79,
@@ -428,7 +389,6 @@ TestCase {
     compare(Core.windowLayout(readyWith(windows), "remaining", morning).lead.id, "session")
     compare(Core.chipPercentText(readyWith(windows), "used", morning), "21%")
 
-    // An active session whose reset comes after the weekly reset still leads.
     var active = layoutOf([
       { id: "session", label: "Session (5h)", usedPercent: 3, remainingPercent: 97,
         resetsAt: "2026-09-04T16:00:00Z" },
@@ -440,8 +400,6 @@ TestCase {
     compare(active.rest[0].id, "weekly")
   }
 
-  // A critical weekly window keeps the urgent tint and the "!" cue but never
-  // takes the chip number away from the session.
   function test_session_window_leads_over_critical_weekly() {
     var provider = readyWith([
       { id: "session", label: "Session (5h)", usedPercent: 10, remainingPercent: 90,
@@ -454,12 +412,9 @@ TestCase {
     compare(Core.chipPercentText(provider, "remaining", now), "90%")
     compare(Core.chipSeverityUrgent(provider), true)
     compare(Core.chipStateCue(provider), "!")
-    // The urgent numeral is not the critical number, so the word carried by
-    // the cue is what keeps this from being a colour-only signal (UX-020C).
     compare(Core.chipCueLabel(provider), "critical")
   }
 
-  // Antigravity's five-hour bucket is the same kind of window under its own id.
   function test_gemini_5h_window_leads_like_session() {
     var layout = layoutOf([
       { id: "gemini-weekly", label: "Gemini · 7d", usedPercent: 40,
@@ -470,9 +425,6 @@ TestCase {
     compare(layout.lead.id, "gemini-5h")
   }
 
-  // Antigravity meters Gemini and Claude/GPT on separate quotas. The family in
-  // use is the one draining its five-hour window, so the lowest remaining
-  // session leads; an idle family sits at 100 % and only wins a tie.
   function antigravityWindows(geminiSession, thirdPartySession) {
     return [
       { id: "gemini-weekly", label: "Gemini · 7d", usedPercent: 20,
@@ -519,13 +471,10 @@ TestCase {
     compare(layout.lead.resetPhrase, "resets in")
   }
 
-  // UX-012 (amended): the clock glyph is retired. Stale earns no cue, and no
-  // file may reintroduce one — the bar must stay silent about staleness.
   function test_chip_state_cue_stale_is_silent() {
     compare(Core.chipStateCue({ state: "stale" }), "")
     var view = read("CoreView.js")
     var pane = read("ProviderView.qml")
-    // Guard against a vacuous pass: read() returns "" for a bad path.
     verify(view.length > 0)
     verify(pane.length > 0)
     verify(view.indexOf("󰅐") < 0)
@@ -638,9 +587,6 @@ TestCase {
         "Popup must drive ProviderView.active from its own open state")
   }
 
-  // JSON-022C: Codex's rate-limit reset count renders as a muted popup line,
-  // singular/plural, and stays empty for absent or zero (byte-identical
-  // popup for every other provider).
   function test_reset_line_visible_only_when_positive() {
     var withResets = { id: "codex", name: "Codex", state: "ready", windows: [],
                         rateLimitResetsAvailable: 2 }

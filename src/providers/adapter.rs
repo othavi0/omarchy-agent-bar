@@ -1,5 +1,3 @@
-//! v10 provider adapter interface and collection context.
-
 use std::future::Future;
 use std::path::Path;
 use std::pin::Pin;
@@ -80,10 +78,6 @@ pub trait ProviderAdapter: Send + Sync {
     }
 
     fn login_command(&self, discovery: &Discovery) -> Result<ProcessSpec, LoginError> {
-        // Two different answers share one `None` from `login_process_argv`:
-        // no executable to run, and a provider that publishes no login argv
-        // at all. Installing a CLI fixes the first and can never fix the
-        // second, so they must not report the same failure.
         if self.descriptor().login_argv.is_empty() {
             return Err(LoginError::UnsupportedProvider);
         }
@@ -188,7 +182,6 @@ pub async fn run_login<R: ProcessRunner + ?Sized, I: ProcessRunner + ?Sized>(
     )
     .with_timeout(std::time::Duration::from_secs(5))
     .with_max_output(64 * 1024);
-    // Best-effort: ignore errors and non-zero.
     let _ = ipc_runner.run(&refresh_spec).await;
 
     Ok(LoginOutcome {
@@ -268,9 +261,6 @@ mod tests {
 
     #[test]
     fn unsupported_login_wins_over_missing_executable_from_real_discovery() {
-        // `discover()` never reports login as available for an empty argv, so
-        // the unsupported answer must come before the executable check or it
-        // is unreachable in production.
         let env = ExecutionEnvironment {
             home: PathBuf::from("/nonexistent"),
             path_dirs: vec![],
@@ -299,8 +289,6 @@ mod tests {
 
     #[test]
     fn absent_login_executable_is_cli_missing() {
-        // Grok publishes a login argv, so a missing executable is the only
-        // reason login cannot run.
         assert_eq!(
             GROK_ADAPTER
                 .login_command(&discovery_with_login(None))

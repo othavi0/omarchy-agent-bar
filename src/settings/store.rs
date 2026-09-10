@@ -1,5 +1,3 @@
-//! Read-pure show and atomic complete-document apply for settings v1.
-
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -45,7 +43,6 @@ impl From<io::Error> for StoreError {
     }
 }
 
-/// Canonical settings.json store.
 #[derive(Debug, Clone)]
 pub struct SettingsStore {
     path: PathBuf,
@@ -60,7 +57,6 @@ impl SettingsStore {
         }
     }
 
-    /// Convenience constructor: settings path + sibling maintenance lock path.
     pub fn with_paths(
         settings_path: impl Into<PathBuf>,
         lock_path: impl Into<PathBuf>,
@@ -79,13 +75,6 @@ impl SettingsStore {
 
     /// Read-only show: missing file returns defaults without creating anything.
     /// Existing file is never rewritten, migrated, or touched (mtime preserved).
-    ///
-    /// A document that predates a catalog addition is completed in memory from
-    /// the catalog ([`MissingProviders::FillFromCatalog`]) so a settings.json
-    /// written by an older build still yields a usable document. The injection
-    /// is deliberately not persisted: SET-007 forbids a read from writing, and
-    /// only the explicit migration may rewrite the file. Unknown IDs,
-    /// duplicates, and every other validation failure stay hard errors.
     pub fn show(&self) -> Result<Settings, StoreError> {
         match fs::read(&self.path) {
             Ok(bytes) => {
@@ -104,7 +93,6 @@ impl SettingsStore {
         document.validate()?;
         let canonical = document.clone();
         let bytes = canonical.to_canonical_json_line()?;
-        // Shared gate: blocks behind exclusive maintenance without writing first.
         let _guard = self.gate.lock_shared()?;
         replace_atomically(&self.path, bytes.as_bytes(), 0o600)?;
         Ok(canonical)
@@ -136,7 +124,6 @@ impl SettingsStore {
     }
 }
 
-/// Snapshot mtime for purity tests.
 pub fn file_mtime(path: &Path) -> io::Result<Option<SystemTime>> {
     match fs::metadata(path) {
         Ok(meta) => Ok(Some(meta.modified()?)),
@@ -210,14 +197,10 @@ mod tests {
         assert_eq!(file_mtime(store.path()).unwrap().unwrap(), before_mtime);
     }
 
-    /// A settings.json written before Antigravity joined the catalog.
     const FOUR_PROVIDER_DOCUMENT: &[u8] = br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":true},{"id":"grok","enabled":true}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true}}"#;
 
     #[test]
     fn show_fills_a_missing_provider_in_memory_without_writing() {
-        // A document from an older build must still read; SET-007 means the
-        // repair happens in memory only, so the file keeps its exact bytes and
-        // mtime and the explicit migration remains the only writer.
         let dir = tempfile::tempdir().unwrap();
         let store = store_in(dir.path());
         fs::write(store.path(), FOUR_PROVIDER_DOCUMENT).unwrap();
@@ -238,9 +221,6 @@ mod tests {
 
     #[test]
     fn show_rejects_a_truncated_provider_list() {
-        // Tolerance covers "the catalog grew", never "the user deleted rows":
-        // filling codex/amp/grok back in would re-enable providers the user
-        // removed. Such a file stays a hard error, exactly as on master.
         let dir = tempfile::tempdir().unwrap();
         let store = store_in(dir.path());
         fs::write(
@@ -262,7 +242,6 @@ mod tests {
 
     #[test]
     fn show_still_rejects_an_unknown_or_duplicated_provider() {
-        // Tolerance is scoped to "the catalog grew", not to a corrupt file.
         let dir = tempfile::tempdir().unwrap();
         let store = store_in(dir.path());
 
@@ -291,8 +270,6 @@ mod tests {
 
     #[test]
     fn apply_raw_still_demands_every_provider() {
-        // SET-006: `config apply` replaces the whole document, so accepting a
-        // partial one would silently drop the caller's intent for the rest.
         let dir = tempfile::tempdir().unwrap();
         let store = store_in(dir.path());
         match store.apply_raw(FOUR_PROVIDER_DOCUMENT).unwrap_err() {
@@ -361,7 +338,6 @@ mod tests {
             assert!(matches!(err, StoreError::Io(_)));
             assert_eq!(fs::read(store.path()).unwrap(), previous_bytes);
         }
-        // Control: success still works.
         store.try_apply_with(&next, &StdFileMutator).unwrap();
         assert_eq!(store.show().unwrap().refresh_interval_seconds, 90);
     }
@@ -376,7 +352,6 @@ mod tests {
         let previous_mtime = file_mtime(store.path()).unwrap().unwrap();
 
         let exclusive = store.gate().lock_exclusive().unwrap();
-        // Non-blocking path proves we do not write while exclusive is held.
         let mut next = Settings::defaults();
         next.refresh_interval_seconds = 180;
         let err = store.try_apply_with(&next, &StdFileMutator).unwrap_err();
@@ -394,14 +369,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let store = store_in(dir.path());
         let fixture = include_str!("../../tests/fixtures/settings-v1/valid-defaults.json");
-        // Fixture may lack trailing newline; apply_raw accepts object body.
         let mut raw = fixture.trim().to_owned();
         let stored = store.apply_raw(raw.as_bytes()).unwrap();
         assert_eq!(stored, Settings::defaults());
         let line = stored.to_canonical_json_line().unwrap();
         assert!(line.ends_with('\n'));
         raw.push('\n');
-        // Canonical encoding may differ in spacing; semantic equality is enough.
         assert_eq!(Settings::parse_strict(line.as_bytes()).unwrap(), stored);
     }
 }

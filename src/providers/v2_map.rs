@@ -1,8 +1,3 @@
-//! Pure parsers that map provider fixtures/payloads into schema-v2 domain results.
-//!
-//! Adapters never serialize schema v2; they only produce [`ProviderResult`].
-//! Monetary fields, credits, and arbitrary extras are discarded here.
-
 use std::path::Path;
 
 use regex::Regex;
@@ -17,8 +12,6 @@ use crate::support::redact::strip_ansi_and_controls;
 
 use super::catalog::{AMP, ANTIGRAVITY, CLAUDE, CODEX, GROK};
 
-/// Display labels for the shared window ids. Every provider mapper uses these;
-/// QML renders them verbatim and never re-derives.
 const LABEL_SESSION: &str = "Session (5h)";
 const LABEL_DAILY: &str = "Daily (1d)";
 const LABEL_WEEKLY: &str = "Weekly (7d)";
@@ -30,11 +23,6 @@ const LABEL_GEMINI_SESSION: &str = "Gemini · 5h";
 const LABEL_THIRD_PARTY_WEEKLY: &str = "Claude/GPT · 7d";
 const LABEL_THIRD_PARTY_SESSION: &str = "Claude/GPT · 5h";
 
-// ---------------------------------------------------------------------------
-// Amp
-// ---------------------------------------------------------------------------
-
-/// Parse `amp usage` text into a domain result. Credits/dollar lines are ignored.
 pub fn amp_from_usage_text(stdout: &str, now: OffsetDateTime) -> ProviderResult {
     let text = strip_ansi_and_controls(stdout);
     let account = Regex::new(r"Signed in as (\S+)")
@@ -42,7 +30,6 @@ pub fn amp_from_usage_text(stdout: &str, now: OffsetDateTime) -> ProviderResult 
         .and_then(|re| re.captures(&text))
         .and_then(|c| c.get(1).map(|m| m.as_str().to_owned()));
 
-    // Prefer percentage form; never emit spend/credits windows.
     let free_pct = Regex::new(r"Amp Free:\s*([0-9.]+)%\s*remaining")
         .ok()
         .and_then(|re| re.captures(&text))
@@ -137,10 +124,6 @@ fn next_utc_midnight(now: OffsetDateTime) -> OffsetDateTime {
         .unwrap_or(now)
 }
 
-// ---------------------------------------------------------------------------
-// Grok
-// ---------------------------------------------------------------------------
-
 #[derive(Debug, Deserialize)]
 struct GrokSignals {
     #[serde(default, rename = "contextTokensUsed")]
@@ -161,13 +144,10 @@ struct GrokBillingDoc {
     subscription_tiers: Option<String>,
     /// Monthly-limit shape (`/v1/billing` without `format=credits`): only the
     /// `used / monthlyLimit` ratio survives; the amounts are never emitted.
-    /// Kept as raw values (like the discarded fields below) so an unexpected
-    /// shape can never fail the whole payload.
     #[serde(default, rename = "monthlyLimit")]
     monthly_limit: Option<Value>,
     #[serde(default)]
     used: Option<Value>,
-    /// Discarded monetary fields.
     #[serde(default, rename = "prepaidBalance")]
     prepaid_balance: Option<Value>,
     #[serde(default, rename = "onDemandCap")]
@@ -226,7 +206,6 @@ pub fn grok_from_billing_json(
         }
     };
 
-    // prepaid_balance / on_demand_* are deserialized only to document discard.
     let _ = (
         &doc.prepaid_balance,
         &doc.on_demand_cap,
@@ -291,8 +270,6 @@ fn parse_grok_billing_doc(bytes: &[u8]) -> Result<GrokBillingDoc, serde_json::Er
     serde_json::from_value(payload)
 }
 
-/// `used / monthlyLimit` as a percentage. A zero, negative, or absent limit,
-/// or an absent `used`, is "no quota published", never a fabricated 0 %.
 /// The live shape is `{"val": N}`; a bare number is tolerated.
 fn grok_monthly_used_percent(doc: &GrokBillingDoc) -> Option<f64> {
     let limit = grok_amount(doc.monthly_limit.as_ref()?)?;
@@ -322,10 +299,6 @@ fn grok_billing_resets_at(doc: &GrokBillingDoc) -> Option<OffsetDateTime> {
         .map(|ts| ts.to_offset(UtcOffset::UTC))
 }
 
-/// Build Grok result from auth flag + optional signals JSON bytes.
-///
-/// Legacy helper retained for unauthenticated/auth fixtures. Product collect
-/// uses [`grok_from_billing_json`] (weekly only); do not treat context as primary.
 pub fn grok_from_auth_and_signals(
     logged_in: bool,
     account_label: Option<String>,
@@ -375,10 +348,6 @@ pub fn grok_from_auth_and_signals(
     }
 }
 
-// ---------------------------------------------------------------------------
-// Codex
-// ---------------------------------------------------------------------------
-
 #[derive(Debug, Deserialize)]
 struct CodexWindowRaw {
     #[serde(rename = "usedPercent", alias = "used_percent")]
@@ -397,7 +366,6 @@ struct CodexRateLimitsDoc {
     secondary: Option<CodexWindowRaw>,
     #[serde(default)]
     plan_type: Option<String>,
-    /// Explicitly ignored monetary field.
     #[serde(default)]
     credits: Option<Value>,
     #[serde(default, rename = "individualLimit")]
@@ -492,7 +460,7 @@ pub fn codex_from_rate_limits_json(bytes: &[u8], now: OffsetDateTime) -> Provide
         }
     }
 
-    let _ = doc.credits; // discarded
+    let _ = doc.credits;
 
     ProviderResult::Ready {
         id: ProviderId::Codex,
@@ -509,8 +477,6 @@ pub fn codex_from_rate_limits_json(bytes: &[u8], now: OffsetDateTime) -> Provide
     }
 }
 
-/// Lowercase ASCII letters/digits/hyphens; empty input falls back to `bucket`.
-/// Mirrors the sanitization in [`weekly_model_id`].
 fn sanitize_bucket_id(raw: &str) -> String {
     let sanitized: String = raw
         .chars()
@@ -524,7 +490,6 @@ fn sanitize_bucket_id(raw: &str) -> String {
     }
 }
 
-/// Display label for a Codex extra rate-limit bucket window.
 fn codex_extra_bucket_label(sanitized: &str, window_minutes: Option<i64>) -> String {
     let name = format_plan_label(sanitized);
     match window_minutes {
@@ -534,11 +499,6 @@ fn codex_extra_bucket_label(sanitized: &str, window_minutes: Option<i64>) -> Str
     }
 }
 
-/// Map a Codex rate-limit duration to window id and display label.
-///
-/// Known durations: 300 → session, 10080 → weekly. Other positive minutes use
-/// `other:{n}:{ordinal}`. Missing duration falls back by slot ordinal (primary
-/// → session, secondary → weekly) for incomplete payloads.
 fn codex_window_identity(window_minutes: Option<i64>, ordinal: usize) -> (String, String) {
     match window_minutes {
         Some(10080) => ("weekly".into(), LABEL_WEEKLY.into()),
@@ -568,10 +528,6 @@ fn codex_window(id: &str, label: &str, raw: &CodexWindowRaw) -> Option<UsageWind
     UsageWindow::try_new(id, label, used, remaining, resets).ok()
 }
 
-// ---------------------------------------------------------------------------
-// Claude
-// ---------------------------------------------------------------------------
-
 #[derive(Debug, Deserialize, Default)]
 struct ClaudeUsageDoc {
     #[serde(default)]
@@ -588,7 +544,6 @@ struct ClaudeUsageDoc {
     error: Option<ClaudeErrorRaw>,
     #[serde(default)]
     limits: Vec<ClaudeLimitRaw>,
-    /// Discarded monetary block.
     #[serde(default)]
     spend: Option<Value>,
     #[serde(default)]
@@ -597,7 +552,6 @@ struct ClaudeUsageDoc {
 
 #[derive(Debug, Deserialize)]
 struct ClaudeWindowRaw {
-    /// Utilization is already a percentage 0..=100 (never treat as 0..=1).
     utilization: f64,
     #[serde(default)]
     resets_at: Option<String>,
@@ -641,12 +595,6 @@ struct ClaudeLimitModel {
     id: Option<String>,
 }
 
-/// Map Claude usage JSON to a domain result.
-///
-/// - `token_expired` → unauthenticated
-/// - utilization is percent (double-division regression guard)
-/// - spend/extra_usage discarded
-/// - unknown limits without usable windows → ready with empty windows
 pub fn claude_from_usage_json(
     bytes: &[u8],
     now: OffsetDateTime,
@@ -685,7 +633,7 @@ pub fn claude_from_usage_json(
         };
     }
 
-    let _ = (doc.spend, doc.extra_usage); // discarded
+    let _ = (doc.spend, doc.extra_usage);
 
     let mut windows = Vec::new();
     if let Some(w) = doc.five_hour.as_ref() {
@@ -710,7 +658,7 @@ pub fn claude_from_usage_json(
         };
         let kind = limit.kind.as_deref().unwrap_or("");
         if kind == "five_hour" || kind == "seven_day" || kind == "seven_day_oauth_apps" {
-            continue; // legacy vocabulary: dedicated fields own these
+            continue;
         }
         let raw = ClaudeWindowRaw {
             utilization: util,
@@ -768,8 +716,6 @@ pub fn claude_from_usage_json(
     }
 }
 
-/// Insert keeping window ids unique; first occurrence wins (dynamic limits[]
-/// entries are pushed before legacy seven_day_* fields on purpose).
 fn push_window_unique(windows: &mut Vec<UsageWindow>, window: UsageWindow) {
     if windows.iter().any(|w| w.id() == window.id()) {
         return;
@@ -793,7 +739,6 @@ fn parse_reset_timestamp(raw: &str) -> Option<OffsetDateTime> {
     if numeric <= 0 {
         return None;
     }
-    // < 1e12 → seconds; otherwise milliseconds (mirrors the reference widget).
     let nanos = if numeric < 1_000_000_000_000 {
         numeric.checked_mul(1_000_000_000)?
     } else {
@@ -808,14 +753,12 @@ fn claude_window(id: &str, label: &str, raw: &ClaudeWindowRaw) -> Option<UsageWi
     if !raw.utilization.is_finite() {
         return None;
     }
-    // Utilization is already percent scale (1.0 == 1%); clamp only.
     let used = raw.utilization.clamp(0.0, 100.0);
     let remaining = (100.0 - used).clamp(0.0, 100.0);
     let resets = raw.resets_at.as_deref().and_then(parse_reset_timestamp);
     UsageWindow::try_new(id, label, used, remaining, resets).ok()
 }
 
-/// Lowercase ASCII letters/digits/hyphens, prefixed with `weekly-model:`.
 pub fn weekly_model_id(raw: &str, ordinal: usize) -> String {
     let mut sanitized: String = raw
         .chars()
@@ -833,11 +776,6 @@ pub fn weekly_model_id(raw: &str, ordinal: usize) -> String {
     }
 }
 
-/// Title-case a raw plan/tier id for display: "pro" → "Pro",
-/// "self_serve_business_usage_based" → "Self Serve Business Usage Based".
-///
-/// Amp keeps its own label verbatim; Grok (Task 3) and Codex (PR2 Task 9)
-/// consume this for their raw tier ids.
 pub(crate) fn format_plan_label(raw: &str) -> String {
     raw.split('_')
         .filter(|s| !s.is_empty())
@@ -861,7 +799,6 @@ fn sanitize_account_label(raw: &str) -> String {
     cleaned
 }
 
-/// Assert a domain result never carries monetary residue in Debug form.
 pub fn assert_no_money(result: &ProviderResult) {
     let text = format!("{result:?}");
     for banned in ["spend", "credits", "balance", "currency", "usd", "BRL"] {
@@ -872,7 +809,6 @@ pub fn assert_no_money(result: &ProviderResult) {
     }
 }
 
-/// Walk limits for Grok/Codex filesystem discovery tests.
 pub fn path_is_absolute_home(path: &Path) -> bool {
     path.is_absolute()
 }
@@ -923,7 +859,6 @@ struct AntigravityBucket {
     reset_time: Option<String>,
 }
 
-/// Typed refusal with a fixed message; provider output never reaches the user.
 fn antigravity_error(message: &str) -> ProviderResult {
     ProviderResult::ProviderError {
         id: ProviderId::Antigravity,
@@ -944,10 +879,6 @@ fn antigravity_error(message: &str) -> ProviderResult {
 /// A window starts on first use. A full bucket has none running, and `agy`
 /// reports its `reset_time` as now plus the whole window, a moving target, so
 /// a full bucket carries no reset.
-///
-/// The logged-out banner is not handled here: `Unauthenticated` needs to know
-/// whether login is available, which is discovery state the adapter owns, so
-/// [`super::adapters`] checks the marker on raw stdout before calling this.
 pub fn antigravity_from_usage_json(stdout: &str, now: OffsetDateTime) -> ProviderResult {
     let text = strip_ansi_and_controls(stdout);
 
@@ -958,9 +889,6 @@ pub fn antigravity_from_usage_json(stdout: &str, now: OffsetDateTime) -> Provide
         return antigravity_error("Antigravity usage command failed.");
     }
 
-    // Named slots rather than a push list: they give the fixed family, then
-    // weekly -> 5h, order and the per-id dedupe (first bucket wins) in one
-    // move.
     let mut gemini_weekly: Option<UsageWindow> = None;
     let mut gemini_session: Option<UsageWindow> = None;
     let mut third_party_weekly: Option<UsageWindow> = None;
@@ -1073,7 +1001,6 @@ mod tests {
                 assert!((windows[1].used_percent() - 8.0).abs() < 0.01);
                 assert_eq!(windows[2].label(), "Plan · orbs");
                 assert!((windows[2].remaining_percent() - 100.0).abs() < 0.01);
-                // Amp exposes no subscription reset timestamp ("monthly" only).
                 assert!(windows[1].resets_at().is_none());
                 assert!(windows[2].resets_at().is_none());
                 let plan = plan.expect("plan from Subscription line");
@@ -1099,7 +1026,6 @@ mod tests {
 
     #[test]
     fn amp_individual_credits_line_never_emits_window() {
-        // Only the monetary line plus account: Ready with zero windows, no money.
         let text = "Signed in as user@email.com (nick)\nIndividual credits: $4.19 remaining (replenishes automatically)\n";
         let result = amp_from_usage_text(text, datetime!(2026-08-07 12:00:00 UTC));
         assert_no_money(&result);
@@ -1147,13 +1073,10 @@ mod tests {
     fn parse_reset_timestamp_accepts_iso_and_epoch() {
         let iso = parse_reset_timestamp("2026-08-01T00:00:00Z");
         assert!(iso.is_some());
-        // Epoch seconds (10 digits).
         let secs = parse_reset_timestamp("1785272823");
         assert_eq!(secs.map(|t| t.unix_timestamp()), Some(1_785_272_823));
-        // Epoch milliseconds (13 digits).
         let millis = parse_reset_timestamp("1785272823412");
         assert_eq!(millis.map(|t| t.unix_timestamp()), Some(1_785_272_823));
-        // Garbage and non-positive are rejected.
         assert!(parse_reset_timestamp("soon").is_none());
         assert!(parse_reset_timestamp("0").is_none());
         assert!(parse_reset_timestamp("-5").is_none());
@@ -1180,7 +1103,6 @@ mod tests {
 
     #[test]
     fn claude_utilization_one_means_one_percent() {
-        // The endpoint reports percent scale: 1.0 is 1%, never 100%.
         let body = br#"{"five_hour":{"utilization":1.0,"resets_at":"2026-07-28T22:00:00Z"}}"#;
         let result =
             claude_from_usage_json(body, datetime!(2026-07-28 18:00:00 UTC), None, None, true);
@@ -1337,10 +1259,6 @@ mod tests {
 
     #[test]
     fn codex_dedupes_extra_bucket_window_ids_across_case_variants() {
-        // Two limitId keys that differ only by case sanitize to the same
-        // window id ("codex:team-a"); the second must be dropped, not
-        // silently pushed twice (duplicate window ids make
-        // ensure_unique_window_ids reject the entire status).
         let json = serde_json::json!({
             "primary": {"usedPercent": 36.0, "windowDurationMins": 10080, "resetsAt": 1791000000},
             "extraBuckets": [
@@ -1505,8 +1423,6 @@ mod tests {
 
     #[test]
     fn grok_scalar_amounts_never_fail_the_credits_payload() {
-        // The same struct parses both endpoints: an unexpected scalar for
-        // `used`/`monthlyLimit` must not turn a SuperGrok reading into an error.
         let json = br#"{"creditUsagePercent": 33.0, "used": 12.5, "monthlyLimit": 200}"#;
         let result = grok_from_billing_json(json, None, datetime!(2026-08-26 12:00:00 UTC), true);
         match result {
@@ -1541,8 +1457,6 @@ mod tests {
 
     #[test]
     fn claude_dedupes_model_window_ids_across_sources() {
-        // limits[] entry AND legacy seven_day_opus for the same model must not
-        // produce duplicate window ids (schema rejects the whole row otherwise).
         let body = br#"{
             "five_hour": {"utilization": 10.0},
             "limits": [{"kind": "seven_day_model", "utilization": 20.0,
@@ -1551,8 +1465,6 @@ mod tests {
         }"#;
         let result =
             claude_from_usage_json(body, datetime!(2026-07-28 18:00:00 UTC), None, None, true);
-        // The whole row must survive schema validation downstream (duplicate
-        // window ids make ensure_unique_window_ids reject the entire status).
         let status = crate::status::collect::provider_status_from_result(result.clone());
         assert!(status.is_ok(), "row failed schema validation: {status:?}");
         match result {
@@ -1562,7 +1474,6 @@ mod tests {
                     .filter(|w| w.id() == "weekly-model:opus")
                     .collect();
                 assert_eq!(opus.len(), 1, "duplicate weekly-model:opus windows");
-                // limits[] (dynamic) wins over the legacy field.
                 assert!((opus[0].used_percent() - 20.0).abs() < 0.01);
             }
             other => panic!("expected ready, got {other:?}"),
@@ -1571,11 +1482,6 @@ mod tests {
 
     #[test]
     fn claude_reads_current_limits_shape_with_fable() {
-        // Captured live 2026-08-01: limits[] entries carry `percent` (not
-        // `utilization`), kinds are session/weekly_all/weekly_scoped, the
-        // scoped entry names the model only via display_name, and
-        // seven_day_oauth_apps is null. The Fable window must come through
-        // and the grouped entries must not duplicate session/weekly.
         let body = br#"{
             "five_hour": {"utilization": 10.0, "resets_at": "2026-08-02T02:00:00+00:00"},
             "seven_day": {"utilization": 12.0, "resets_at": "2026-08-07T12:00:00+00:00"},
@@ -1613,9 +1519,6 @@ mod tests {
 
     #[test]
     fn claude_limits_only_payload_still_yields_windows() {
-        // The API already retired seven_day_oauth_apps once; if the legacy
-        // top-level fields go next, limits[] must be able to carry the
-        // canonical windows alone.
         let body = br#"{
             "limits": [
                 {"kind": "session", "percent": 7.0, "resets_at": "2026-08-02T02:00:00+00:00"},
@@ -1687,8 +1590,6 @@ mod tests {
                     Some(datetime!(2026-08-23 04:25:14 UTC))
                 );
 
-                // The Claude/GPT pair is untouched in this capture: full, so
-                // no window is running and its reset is dropped.
                 assert_eq!(windows[2].id(), "3p-weekly");
                 assert_eq!(windows[2].label(), "Claude/GPT · 7d");
                 assert!((windows[2].remaining_percent() - 100.0).abs() < 0.01);
@@ -1708,8 +1609,6 @@ mod tests {
 
     #[test]
     fn antigravity_ignores_unknown_bucket_ids() {
-        // Only the four ids `agy` 1.2.0 reports are mapped. Guessed aliases
-        // such as `claude-5h` stay unknown and never become a window.
         let payload = r#"{"status":"SUCCESS","command":{"name":"usage","data":{"groups":[
             {"name":"Claude and GPT models","buckets":[
               {"id":"claude-weekly","window":"weekly","remaining_fraction":0.5},
@@ -1722,10 +1621,6 @@ mod tests {
 
     #[test]
     fn antigravity_full_bucket_carries_no_reset() {
-        // A window starts on first use. Until then `agy` reports the bucket
-        // full with `reset_time` = now + the whole window, a moving target
-        // that never arrives, so a full bucket carries no reset. A bucket
-        // with any use keeps the fixed reset `agy` reports.
         let payload = r#"{"status":"SUCCESS","command":{"name":"usage","data":{"groups":[
             {"name":"Gemini Models","buckets":[
               {"id":"gemini-weekly","window":"weekly","remaining_fraction":1.4,
@@ -1751,9 +1646,6 @@ mod tests {
 
     #[test]
     fn antigravity_zero_windows_is_ready_not_an_error() {
-        // Same rule as Amp: a connected provider without a percentage window
-        // is valid and renders "—" (CLAUDE.md, provider rules). An account
-        // whose buckets carry no id Agent Bar maps is exactly this case.
         let payload = r#"{"status":"SUCCESS","command":{"name":"usage","data":{"groups":[
             {"name":"Other models","buckets":[
               {"id":"other-weekly","window":"weekly","remaining_fraction":1,
@@ -1805,9 +1697,6 @@ mod tests {
 
     #[test]
     fn antigravity_logged_out_payload_carries_no_windows() {
-        // The banner itself is classified by the adapter, which knows whether
-        // login is available; the parser only has to refuse to invent windows
-        // out of the empty group list that comes with it.
         let fixture = include_str!("../../tests/fixtures/antigravity/unauthorized.json");
         let result = antigravity_from_usage_json(fixture, datetime!(2026-08-21 12:00:00 UTC));
         assert_no_money(&result);
@@ -1819,9 +1708,6 @@ mod tests {
 
     #[test]
     fn antigravity_ignores_a_repeated_bucket_id() {
-        // Idempotence against repeated records: whatever makes a bucket id
-        // appear twice, the first occurrence wins, so a duplicated group can
-        // never double the window list.
         let payload = r#"{"status":"SUCCESS","command":{"name":"usage","data":{"groups":[
             {"name":"Gemini Models","buckets":[
               {"id":"gemini-weekly","window":"weekly","remaining_fraction":0.86,
@@ -1840,8 +1726,6 @@ mod tests {
 
     #[test]
     fn antigravity_orders_windows_by_family_then_weekly_first() {
-        // The CLI is free to reorder groups and buckets; the rendered order
-        // is not: Gemini weekly, Gemini 5h, Claude/GPT weekly, Claude/GPT 5h.
         let payload = r#"{"status":"SUCCESS","command":{"name":"usage","data":{"groups":[
             {"name":"Claude and GPT models","buckets":[
               {"id":"3p-5h","window":"5h","remaining_fraction":1},
@@ -1853,7 +1737,6 @@ mod tests {
             ProviderResult::Ready { windows, .. } => {
                 let ids: Vec<&str> = windows.iter().map(|w| w.id()).collect();
                 assert_eq!(ids, ["gemini-weekly", "gemini-5h", "3p-weekly", "3p-5h"]);
-                // A bucket without `reset_time` is still a window.
                 assert_eq!(windows[0].resets_at(), None);
             }
             other => panic!("expected ready, got {other:?}"),
@@ -1880,8 +1763,6 @@ mod tests {
 
     #[test]
     fn antigravity_never_echoes_provider_prose() {
-        // `description` and `response` carry human text (and, on a logged-out
-        // run, an account hint); none of it may reach a domain result.
         let fixture = include_str!("../../tests/fixtures/antigravity/usage.json");
         let result = antigravity_from_usage_json(fixture, datetime!(2026-08-21 12:00:00 UTC));
         let debug = format!("{result:?}");

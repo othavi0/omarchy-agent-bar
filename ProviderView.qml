@@ -4,12 +4,6 @@ import qs.Ui
 import "CoreView.js" as Core
 import "components"
 
-// Single selected-provider content pane, visual design §3.4/§8:
-// header -> [age line] -> lead window (large) -> compact rows
-// -> state message (non-window modes). Plan 03 removed the meta footer;
-// last-success age now lives in one neutral caption shown while the reading
-// is retained (UX-028 amended). Staleness changes no colour, no opacity, and
-// no layout — only that caption's presence.
 Item {
   id: root
 
@@ -18,17 +12,12 @@ Item {
   property bool refreshing: false
   property color foreground: Color.foreground
   property string fontFamily: Style.font.family
-  // Popup open state (Popup.qml's contentLoader keeps this instance alive
-  // across close/open, so a child `visible` prop never gates the tick —
-  // the owner must drive this explicitly).
   property bool active: true
 
   signal refreshRequested(string providerId)
   signal actionRequested(string providerId, string kind, var target)
 
-  // Re-humanize countdowns while the popup stays open.
   property double nowMs: Date.now()
-  // Test hook: expose whether the tick is actually running.
   property alias nowTickRunning: nowTimer.running
   onActiveChanged: if (active) nowMs = Date.now()
   Timer {
@@ -44,10 +33,6 @@ Item {
   readonly property var windows: Core.windowLayout(provider, displayMetric, nowMs)
   readonly property string severity: Core.providerSeverity(provider)
   readonly property var actions: Core.stateActions(provider)
-  // UX-028 (amended): staleness is reported as a fact, never as a fault. The
-  // pane states when the reading was taken and stops there — no glyph, no
-  // urgent colour, no error text, no Retry (the header's own refresh control
-  // already covers the action).
   readonly property bool showsAge: String(root.provider && root.provider.state || "") === "stale"
   readonly property string ageText: {
     var age = Core.formatAgoText(
@@ -86,10 +71,6 @@ Item {
       foreground: root.foreground
     }
 
-    // Age line (UX-028 amended): one caption in the pane's own foreground at
-    // the same 0.72 alpha the header tags use. Plain statement of when the
-    // reading was taken — the eye reads it as metadata, not as an alert, and
-    // assistive tech hears exactly the same words (A11Y-012).
     Text {
       visible: root.showsAge && root.ageText.length > 0
       width: parent.width
@@ -102,9 +83,6 @@ Item {
       Accessible.name: text
     }
 
-    // §3.4/§8: one elected lead window rendered large, every other window as
-    // a compact row in delivered order. No rule between them — the size
-    // difference is the hierarchy (approved mockup).
     Column {
       width: parent.width
       spacing: Style.spacing.xxxl
@@ -175,9 +153,6 @@ Item {
 
     StateMessage {
       width: parent.width
-      // No stale exception is needed: contentMode routes stale through the
-      // ready branch, so it lands on "windows"/"empty_windows" like any other
-      // provider holding a reading.
       visible: root.mode === "skeleton" || root.mode === "empty_windows" || root.mode === "state"
       skeleton: root.mode === "skeleton"
       title: root.mode === "skeleton" ? "" : Core.stateTitle(root.provider)

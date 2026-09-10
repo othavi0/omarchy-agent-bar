@@ -7,8 +7,6 @@ import "CoreView.js" as Core
 import "CoreScroll.js" as Scroll
 import "components"
 
-// Monitor-local consolidated popup (UX-013..025, A11Y-001..023).
-//
 // Do NOT redeclare KeyboardPanel's required anchorItem/bar here. Redeclaring
 // them as required on this derived type makes Loader/createObject treat the
 // base required props as unset (createObject returns null; chip click is a
@@ -21,12 +19,10 @@ KeyboardPanel {
 
   property int maxContentWidth: Style.space(540)
   property int maxContentHeight: Style.space(560)
-  // Compact floor: header + one window row + rail stack — not a 280px void.
   property int minContentHeight: Style.space(160)
   property int contentLineHeight: Style.font.body + Style.space(8)
   property int contentMargins: Style.spacing.popupPadding
 
-  // A11Y-008: Settings/NumberField can raise this while editing.
   property bool editorActive: contentLoader.item && contentLoader.item.editorOwnsFocus
       ? !!contentLoader.item.editorOwnsFocus
       : false
@@ -47,8 +43,6 @@ KeyboardPanel {
   readonly property string selectedId: {
     if (!agentService)
       return ""
-    // Prefer the open popup's provider so the rail plate matches the pane
-    // (selectedProviderId alone could lag / fallback to Claude).
     if (agentService.popupOwner && agentService.popupOwner.providerId
         && String(agentService.popupOwner.providerId).length)
       return String(agentService.popupOwner.providerId)
@@ -72,7 +66,6 @@ KeyboardPanel {
     owner
   )
 
-  // Prefer real content height; rail min height prevents icon crush/overlap.
   readonly property int measuredBodyHeight: {
     var col = contentColumn ? contentColumn.implicitHeight : 0
     var margins = contentMargins * 2
@@ -197,7 +190,6 @@ KeyboardPanel {
     scheduleFocusRebuild()
   }
   onSelectedIdChanged: Qt.callLater(function () {
-    // FocusController may not be ready on the first selectedId emission.
     if (focusController && typeof focusController.clampScroll === "function")
       focusController.clampScroll()
     if (typeof root.rebuildFocusTargets === "function")
@@ -260,7 +252,6 @@ KeyboardPanel {
       ProviderRail {
         id: rail
         width: rail.railWidth
-        // Fill panel height so ColumnLayout spacer can expand; min via measuredBodyHeight.
         height: parent.height
         providers: root.railProviders
         selectedProviderId: root.selectedId
@@ -271,7 +262,6 @@ KeyboardPanel {
         onSettingsClicked: root.openSettings()
       }
 
-      // Gutter between bordered rail and content (must match content width math).
       Item {
         id: railGutter
         width: Style.space(8)
@@ -279,8 +269,6 @@ KeyboardPanel {
       }
 
       Item {
-        // Exact remaining width — previous `- 1` made content too wide and
-        // clipped the first glyphs of titles / body / action labels.
         width: Math.max(0, parent.width - rail.width - railGutter.width)
         height: parent.height
         clip: true

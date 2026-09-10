@@ -1,5 +1,3 @@
-//! Provider catalog, process seams, adapters, and v2 domain mapping.
-
 pub mod adapter;
 pub mod adapters;
 pub mod catalog;

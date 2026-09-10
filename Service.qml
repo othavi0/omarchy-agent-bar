@@ -6,11 +6,9 @@ import "CoreSettings.js" as Settings
 import "CoreMaintenance.js" as Maintenance
 import "CoreView.js" as View
 
-// Shared Agent Bar service — one instance per shell (ARCH-023 / ARCH-024).
 Item {
   id: root
 
-  // --- Quattro injection ---
   property string omarchyPath: ""
   property var shell: null
   property var manifest: null
@@ -21,9 +19,7 @@ Item {
   // no source path for third-party plugins (Omarchy 4.0.3).
   readonly property string pluginRoot: Core.pluginRootFromUrl(Qt.resolvedUrl("."))
 
-  // Test harness: absolute helper path. Production uses pluginRoot/bin/agent-bar.
   property string helperPath: ""
-  // Skip auto Process start; tests drive apply* methods.
   property bool testMode: false
   property int versionProbeTimeoutMs: 2000
   property int statusTimeoutMs: 60000
@@ -32,35 +28,28 @@ Item {
   property int maintenanceHandoffTimeoutMs: 120000
   property int pollIntervalMs: Core.pollIntervalMs(appliedSettings)
   property int collectionDelayMs: 0
-  // Automatic updates: first check shortly after the helper answers, then
-  // every six hours while the shell runs.
   property int autoUpdateFirstDelayMs: 120000
   property int autoUpdateIntervalMs: 21600000
   readonly property bool autoUpdateScheduled: autoUpdateTimer.running
   readonly property int autoUpdateDelayMs: autoUpdateTimer.interval
-  // True while the in-flight update check was started by the timer.
   property bool automaticCheck: false
 
-  // --- Public service surface (Task 9 / Task 10) ---
   property var snapshot: null
   property bool refreshing: false
   property string selectedProviderId: ""
-  property var popupOwner: null // { owner, providerId, view } or null
+  property var popupOwner: null
   property var settingsState: Settings.settingsClosed()
   property var settingsDraft: null
-  // Applied product settings for bar chips (order / metric). Null → defaults.
   property var appliedSettings: null
   property var maintenanceState: Maintenance.maintenanceIdle()
   property var maintenanceUi: Maintenance.maintenanceUiIdle("")
   property var pendingForcedTargets: Core.emptyPending()
-  // Login bookkeeping + last detached argv (testable without exec).
   property int loginRequestCount: 0
   property string lastLoginProviderId: ""
   property var lastLoginArgv: null
   property var lastRestartShellArgv: null
   property int restartShellRequestCount: 0
   property string lastViewInstallationUrl: ""
-  // Pending maintenance intention after confirm (update apply / uninstall).
   property var pendingMaintenanceIntention: null
   property string pendingMaintenancePayload: ""
   property var timedOutLanes: ({})
@@ -68,14 +57,12 @@ Item {
   property int completedCallbackCount: 0
   readonly property string runtimeHealth: Core.runtimeHealth(timedOutLanes)
 
-  // Version probe
   property string helperVersion: ""
   property bool versionReady: false
   property bool versionFailed: false
   property bool versionProbeRunning: false
   property bool collectionStarted: false
 
-  // Lane busy flags (one Process per lane; never re-exec while running)
   property bool statusBusy: false
   property bool settingsReadBusy: false
   property bool settingsBootstrapBusy: false
@@ -83,7 +70,6 @@ Item {
   property bool maintenanceCheckBusy: false
   property bool maintenanceHandoffBusy: false
 
-  // Generation counters for stale-callback rejection
   property int statusGeneration: 0
   property int settingsGeneration: 0
   property int versionProbeGeneration: 0
@@ -104,11 +90,9 @@ Item {
   property int settingsWriteStartedGeneration: 0
   property int maintenanceCheckStartedGeneration: 0
   property int maintenanceHandoffStartedGeneration: 0
-  // Immutable captured JSON for the in-flight config apply (SET-018).
   property string pendingSettingsPayload: ""
   property int pendingSettingsPayloadGeneration: 0
 
-  // Bookkeeping
   property int refreshRequestCount: 0
   property string lastRefreshProviderId: ""
   property int statusStartCount: 0
@@ -118,10 +102,6 @@ Item {
   readonly property string manifestVersion: manifest && manifest.version
       ? String(manifest.version)
       : ""
-
-  // -------------------------------------------------------------------------
-  // Paths / IPC
-  // -------------------------------------------------------------------------
 
   function resolvedHelperPath() {
     if (helperPath && helperPath.length > 0)
@@ -176,10 +156,6 @@ Item {
     return "ok"
   }
 
-  // -------------------------------------------------------------------------
-  // Public methods
-  // -------------------------------------------------------------------------
-
   function refreshAll(force) {
     if (maintenanceState.blocked)
       return
@@ -206,14 +182,12 @@ Item {
 
   function closePopup(owner) {
     popupOwner = Core.closePopup(popupOwner, owner)
-    // SET-019: closing never fabricates load/save completion.
     if (!popupOwner && !Settings.settingsShouldRetainOnClose(settingsState)) {
       settingsState = Settings.settingsClosed()
       settingsDraft = null
     }
   }
 
-  // Outside-click on any monitor (including foreign-monitor dismiss layer).
   function dismissPopup() {
     popupOwner = Core.dismissPopup(popupOwner)
     if (!popupOwner && !Settings.settingsShouldRetainOnClose(settingsState)) {
@@ -226,7 +200,6 @@ Item {
     if (maintenanceState.blocked)
       return
     requestPopup(owner, selectedProviderId || null, "settings")
-    // SET-014/020: only start a new load when closed; reopen during save keeps busy.
     if (!settingsState || settingsState.phase === "closed") {
       settingsGeneration++
       activeSettingsReadGeneration = settingsGeneration
@@ -235,8 +208,6 @@ Item {
       kickSettingsRead()
     }
   }
-
-  // ---- Draft mutations (dirty only when unlocked) ----
 
   function settingsLocked() {
     return Settings.settingsControlsLocked(settingsState)
@@ -249,7 +220,6 @@ Item {
       return
     settingsDraft = mutator(settingsDraft)
     settingsState = Settings.settingsMarkDirty(settingsState)
-    // Keep draft pointer on state for consumers that read settingsState.draft.
     if (settingsState && settingsState.phase !== "closed") {
       var next = Settings.cloneState(settingsState)
       next.draft = settingsDraft
@@ -324,12 +294,10 @@ Item {
       return false
     if (!Core.canStartLane(settingsWriteBusy))
       return false
-    // SET-018: capture immutable payload before process start.
     var payloadObj = JSON.parse(JSON.stringify(settingsDraft))
     var validation = Settings.validateSettingsDraft(payloadObj)
     if (!validation.ok)
       return false
-    // SET-016: every save gets a new generation id.
     settingsGeneration++
     var gen = settingsGeneration
     pendingSettingsPayload = JSON.stringify(payloadObj)
@@ -342,7 +310,6 @@ Item {
     return true
   }
 
-  // JSON-025: map closed action kinds to typed service methods.
   function retryProvider(providerId) {
     refreshProvider(providerId, true)
   }
@@ -363,7 +330,6 @@ Item {
     loginRequestCount++
     if (testMode)
       return
-    // Exact argv array — never shell-string construction (UX-048).
     Quickshell.execDetached(argv)
   }
 
@@ -375,8 +341,6 @@ Item {
       return
     Quickshell.execDetached(argv)
   }
-
-  // ---- Maintenance UI (update / uninstall) ----
 
   function syncMaintenanceVersion() {
     var ver = helperVersion || manifestVersion || ""
@@ -395,8 +359,6 @@ Item {
     startUpdateCheck(false)
   }
 
-  // Timer entry point. Reschedules itself, then checks when the gate allows;
-  // returns whether a check started.
   function automaticUpdateTick() {
     autoUpdateTimer.interval = autoUpdateIntervalMs
     autoUpdateTimer.restart()
@@ -415,8 +377,6 @@ Item {
   function startUpdateCheck(automatic) {
     if (maintenanceState.blocked)
       return false
-    // A click during a silent automatic check adopts it: the result will be
-    // painted like any manual check, and never applied without a click.
     if (!automatic && maintenanceCheckBusy && automaticCheck) {
       automaticCheck = false
       maintenanceUi = Maintenance.maintenanceUiChecking(maintenanceUi)
@@ -428,7 +388,6 @@ Item {
     maintenanceCheckGeneration++
     activeMaintenanceCheckGeneration = maintenanceCheckGeneration
     automaticCheck = !!automatic
-    // An automatic check stays invisible until it has something to show.
     if (!automaticCheck)
       maintenanceUi = Maintenance.maintenanceUiChecking(maintenanceUi)
     maintenanceCheckBusy = true
@@ -469,8 +428,6 @@ Item {
       maintenanceUi = next
       return
     }
-    // A failed automatic check retries on the next tick without painting an
-    // error nobody asked for, and never repaints an update already handed off.
     if (next.phase === "error" || maintenanceState.blocked)
       return
     maintenanceUi = next
@@ -515,7 +472,6 @@ Item {
     maintenanceUi = Maintenance.maintenanceUiSetPurge(maintenanceUi, purge)
   }
 
-  // UX-047: first click arms, second confirms.
   function armOrConfirmUninstall() {
     var result = Maintenance.maintenanceUiArmOrConfirmUninstall(maintenanceUi)
     maintenanceUi = result.ui
@@ -567,10 +523,6 @@ Item {
     }
   }
 
-  // -------------------------------------------------------------------------
-  // Version probe lane
-  // -------------------------------------------------------------------------
-
   function applyVersionProbeResult(generation, stdout, stderr, exitCode, fromTimeout) {
     if (!Core.shouldApplyGeneration(activeVersionProbeGeneration, generation))
       return
@@ -582,9 +534,6 @@ Item {
       finishVersionProbeFailure()
   }
 
-  // pluginRoot resolves at construction. It is empty only when Service.qml was
-  // loaded from a non-file URL; say so instead of idling silently, and keep
-  // retrying if a helperPath arrives later.
   function tryStartProduction() {
     if (testMode)
       return
@@ -606,7 +555,6 @@ Item {
       return
     var helper = resolvedHelperPath()
     if (!helper.length) {
-      // Wait for onHelperPathChanged rather than locking out.
       return
     }
     versionProbeRunning = true
@@ -654,10 +602,6 @@ Item {
     kickStatus()
   }
 
-  // -------------------------------------------------------------------------
-  // Status lane
-  // -------------------------------------------------------------------------
-
   function kickStatus() {
     if (!versionReady || versionFailed)
       return
@@ -689,7 +633,6 @@ Item {
     statusProcess.command = argv
     statusStartedGeneration = gen
     if (testMode) {
-      // Tests call applyStatusResult(gen, stdout, stderr, code)
       return
     }
     statusProcess.running = true
@@ -702,22 +645,17 @@ Item {
     statusBusy = false
     refreshing = false
     recordCompletedCallback(!!fromTimeout, "status")
-    // A handoff that began while this run was in flight waits for the free
-    // lane; without this retry it waits forever with polling stopped.
     tryMaintenanceDetach()
 
     if (exitCode !== 0) {
-      // Keep last snapshot (CACHE-021 / malformed retention).
       maybeFollowUpStatus()
       return
     }
     var parsed = Core.parseStatusEnvelope(stdout, helperVersion)
     if (!parsed.ok) {
-      // Malformed envelope: retain previous snapshot.
       maybeFollowUpStatus()
       return
     }
-    // Immutable replacement.
     snapshot = parsed.envelope
     maybeFollowUpStatus()
   }
@@ -731,12 +669,6 @@ Item {
     return Core.pendingIsEmpty(pendingForcedTargets)
   }
 
-  // -------------------------------------------------------------------------
-  // Settings lanes (read / write)
-  // -------------------------------------------------------------------------
-
-  // SET-023: adopt persisted settings at service start. Reads only — the
-  // dialog state machine (SET-014..022) keeps its own snapshot untouched.
   function kickSettingsBootstrap() {
     if (appliedSettings || settingsBootstrapBusy || maintenanceState.blocked)
       return
@@ -765,7 +697,6 @@ Item {
   }
 
   function kickSettingsRead() {
-    // ARCH-024: maintenance rejects new writes/polling; reads may still start.
     if (!Core.canStartLane(settingsReadBusy))
       return
     var helper = resolvedHelperPath()
@@ -789,9 +720,6 @@ Item {
     recordCompletedCallback(!!fromTimeout, "settingsRead")
     if (!settingsState || settingsState.phase === "closed")
       return
-    // SET-026: any failure is a visible terminal state, never an endless
-    // locked "Loading". The helper's message is not shown (plain-text rule);
-    // the dialog renders its own fixed copy.
     if (exitCode !== 0) {
       settingsState = Settings.settingsFailLoad(settingsState, generation)
       settingsDraft = null
@@ -823,7 +751,6 @@ Item {
       return
     settingsWriteBusy = true
     settingsWriteTimeout.restart()
-    // Re-arm stdin: each save closes it after writing (EOF delivery below).
     settingsWriteProcess.stdinEnabled = true
     settingsWriteProcess.command = Settings.settingsArgvApplyStdin(helper)
     settingsWriteStartedGeneration = activeSettingsWriteGeneration
@@ -849,10 +776,6 @@ Item {
       appliedSettings = canonical
     tryMaintenanceDetach()
   }
-
-  // -------------------------------------------------------------------------
-  // Maintenance handoff
-  // -------------------------------------------------------------------------
 
   function beginMaintenanceHandoff() {
     maintenanceState = Maintenance.maintenanceBeginHandoff(maintenanceState)
@@ -884,7 +807,6 @@ Item {
       maintenanceHandoffBusy = false
       return
     }
-    // Uninstall confirmation document is written on stdin (BUNDLE-036).
     if (intention && intention.kind === "uninstall" && pendingMaintenancePayload.length) {
       maintenanceHandoffProcess.stdinEnabled = true
     } else {
@@ -914,8 +836,6 @@ Item {
     if (intention && intention.kind === "update_apply") {
       if (exitCode === 0) {
         maintenanceUi = Maintenance.maintenanceUiIdle(helperVersion || intention.version)
-        // `update apply` returns once the unit is queued; the unit restarts
-        // the shell when the new tree is in place.
         maintenanceUi.message = "Update started. The shell reloads when it finishes."
       } else {
         maintenanceUi = Maintenance.cloneMaintenanceUi(maintenanceUi)
@@ -1011,10 +931,6 @@ Item {
     applyMaintenanceHandoffDone(gen, exitCode)
   }
 
-  // -------------------------------------------------------------------------
-  // Processes (isolated lanes)
-  // -------------------------------------------------------------------------
-
   Process {
     id: versionProbe
     stdout: StdioCollector { id: versionOut; waitForEnd: true }
@@ -1049,7 +965,6 @@ Item {
     stdout: StdioCollector { id: settingsWriteOut; waitForEnd: true }
     stderr: StdioCollector { id: settingsWriteErr; waitForEnd: true }
     onStarted: {
-      // Write the immutable captured payload; never re-read live draft (SET-018).
       // config apply stdin reads until EOF — write() alone does not deliver it;
       // stdinEnabled=false closes the write channel (same as maintenance handoff).
       if (root.pendingSettingsPayloadGeneration === root.settingsWriteStartedGeneration
@@ -1074,7 +989,6 @@ Item {
     stdout: StdioCollector { id: maintenanceHandoffOut; waitForEnd: true }
     stderr: StdioCollector { id: maintenanceHandoffErr; waitForEnd: true }
     onStarted: {
-      // BUNDLE-036 / UX-048: non-TTY uninstall confirmation uses read_to_end.
       // write() alone does not deliver EOF; stdinEnabled=false closes the write channel.
       if (root.pendingMaintenancePayload && root.pendingMaintenancePayload.length
           && maintenanceHandoffProcess.stdinEnabled) {
@@ -1084,9 +998,6 @@ Item {
     }
     onExited: function (exitCode) { root.maintenanceHandoffExited(exitCode) }
   }
-
-  // Single completed handler — QML rejects duplicate assignments of this
-  // handler (live Quattro: "Property value set multiple times" at service load).
 
   Timer {
     id: versionTimeout
@@ -1192,7 +1103,6 @@ Item {
     onTriggered: root.beginCollection()
   }
 
-  // One automatic poll timer (CACHE-005).
   Timer {
     id: pollTimer
     interval: root.pollIntervalMs

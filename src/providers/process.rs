@@ -1,5 +1,3 @@
-//! Argv-only process execution with timeout, output limits, and no shell.
-
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::Duration;
@@ -117,7 +115,6 @@ impl ProcessRunner for TokioProcessRunner {
 
 /// Execute `spec` without a shell, enforcing timeout and output caps.
 pub async fn run_process(spec: &ProcessSpec) -> Result<ProcessOutput, ProcessError> {
-    // Hard guard: program path must not be a shell used with -c.
     let program_name = spec
         .program
         .file_name()
@@ -132,8 +129,6 @@ pub async fn run_process(spec: &ProcessSpec) -> Result<ProcessOutput, ProcessErr
     }
 
     let mut command = Command::new(&spec.program);
-    // No terminal: a CLI that would fall back to an interactive prompt hits
-    // EOF at once instead of waiting for the timeout's SIGKILL.
     command
         .args(&spec.args)
         .stdin(Stdio::null())
@@ -240,7 +235,6 @@ pub async fn run_process(spec: &ProcessSpec) -> Result<ProcessOutput, ProcessErr
         }
         Ok(Err(err)) => Err(ProcessError::Io(err)),
         Err(_elapsed) => {
-            // Timeout: kill and reap.
             let _ = child.kill().await;
             let _ = child.wait().await;
             Ok(ProcessOutput {
@@ -260,9 +254,6 @@ mod tests {
     use super::*;
     use std::path::Path;
 
-    /// Every one-shot provider command runs without a terminal: a CLI that
-    /// falls back to an interactive prompt must hit EOF, never a waiting
-    /// stdin that the timeout later kills with SIGKILL.
     #[tokio::test]
     async fn stdin_is_closed_for_every_process() {
         let spec =
@@ -292,8 +283,6 @@ mod tests {
 
     #[tokio::test]
     async fn enforces_stdout_limit() {
-        // Print more than the cap via printf-like python or yes | head.
-        // Use a small shell-free generator: /usr/bin/printf if available.
         let program = if Path::new("/usr/bin/printf").exists() {
             "/usr/bin/printf"
         } else {
@@ -321,7 +310,7 @@ mod tests {
         let program = if Path::new("/usr/bin/printf").exists() {
             "/usr/bin/printf"
         } else {
-            return; // environment without printf; skip
+            return;
         };
         let spec = ProcessSpec::new(program, [r"%b", r"\033[31mred\033[0m"]);
         let out = TokioProcessRunner.run(&spec).await.unwrap();

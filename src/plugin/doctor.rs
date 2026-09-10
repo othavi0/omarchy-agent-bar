@@ -1,5 +1,3 @@
-//! v10 doctor scan/clean using ownership classification (CLEAN-001..007).
-
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -40,21 +38,15 @@ pub fn default_legacy_candidates(home: &Path) -> Vec<PathBuf> {
     let config = home.join(".config");
     let cache = home.join(".cache");
     let local = home.join(".local");
-    // Legacy history DB filename (split so the active-legacy gate stays clean).
     let legacy_usage_db = concat!("usage", ".", "re", "db");
     vec![
-        // Pre-Quickshell bar integration leftovers
         config.join("waybar/agent-bar"),
         config.join("waybar/scripts/agent-bar-open-terminal"),
-        // History database from the removed local-usage engine
         cache.join("agent-bar").join(legacy_usage_db),
         cache.join("agent-bar/history"),
-        // Old notification state filenames (v9, and v1 superseded by v2)
         cache.join("agent-bar/notify-state.json"),
         cache.join("agent-bar/notification-state-v1.json"),
-        // Standalone install leftovers
         local.join("share/agent-bar"),
-        // Old global bin is not auto-removed without hash proof — listed for scan only
         local.join("bin/agent-bar"),
     ]
 }
@@ -76,7 +68,6 @@ pub fn default_ownership_rules(home: &Path) -> OwnershipRules {
 pub fn doctor_scan(home: &Path, extra: &[PathBuf], rules: &OwnershipRules) -> DoctorReport {
     let mut paths = default_legacy_candidates(home);
     paths.extend(extra.iter().cloned());
-    // Dedup
     paths.sort();
     paths.dedup();
 
@@ -95,7 +86,6 @@ pub fn doctor_scan(home: &Path, extra: &[PathBuf], rules: &OwnershipRules) -> Do
                 retained.push(path.clone());
             }
             OwnershipClass::OwnedCurrent | OwnershipClass::Unrelated => {
-                // Unrelated not listed beyond minimum — skip Unrelated from findings.
                 if ev.class == OwnershipClass::Unrelated {
                     continue;
                 }
@@ -129,7 +119,6 @@ pub fn doctor_clean(
 
     let mut removed = Vec::new();
     for path in &scan.removable {
-        // Double-check classification at clean time.
         let ev = classify_artifact(path, rules);
         if !ev.class.may_auto_remove() {
             continue;
@@ -212,7 +201,6 @@ mod tests {
         let home = Path::new("/home/example");
         let candidates = default_legacy_candidates(home);
         assert!(candidates.contains(&home.join(".cache/agent-bar/notification-state-v1.json")));
-        // The v9 filename stays listed; v1 joins it rather than replacing it.
         assert!(candidates.contains(&home.join(".cache/agent-bar/notify-state.json")));
     }
 
@@ -249,7 +237,6 @@ mod tests {
             report.retained.iter().any(|p| p == &ambiguous)
                 || !report.removable.contains(&ambiguous)
         );
-        // Backup of removed file
         assert!(
             backup
                 .join(".cache/agent-bar")
@@ -270,7 +257,6 @@ mod tests {
         let path = home.join(".config/waybar/agent-bar/style.css");
         let original = b"/* agent-bar generated */\noriginal";
         let h = seed_file(&path, original).unwrap();
-        // User edits file
         fs::write(&path, b"user changed").unwrap();
         let rules = OwnershipRules {
             legacy_hashes: vec![(path.clone(), h)],

@@ -4,7 +4,6 @@ import qs.Ui
 import "CoreMaintenance.js" as Core
 import "components"
 
-// Maintenance section: version, update check/apply, uninstall (UX-040..047).
 Item {
   id: root
 
@@ -119,7 +118,6 @@ Item {
       foreground: root.foreground
     }
 
-    // Danger zone — visually separated (UX-044)
     Column {
       width: parent.width
       spacing: Style.space(6)
@@ -149,7 +147,6 @@ Item {
     }
   }
 
-  // Update confirmation (UX-043)
   ConfirmDialog {
     opened: !!ui.updateConfirmOpen
     title: "Confirm update"
@@ -169,7 +166,6 @@ Item {
     }
   }
 
-  // Uninstall confirmation (UX-045..047)
   ConfirmDialog {
     opened: !!ui.uninstallConfirmOpen
     title: "Uninstall Agent Bar"
@@ -192,7 +188,6 @@ Item {
         root.agentService.armOrConfirmUninstall()
     }
 
-    // UX-046: purge checkbox default unchecked
     Toggle {
       label: "Also delete saved settings and backups"
       description: "Unchecked by default. Standard uninstall preserves settings."

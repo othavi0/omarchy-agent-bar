@@ -1,11 +1,5 @@
 name: Auto release
 
-# Every product merge to master cuts an official release. The release
-# commit itself carries the stamped plugin artifacts (bin/agent-bar,
-# bundle.json, manifest version), so the repository root is always the
-# complete installable plugin tree and `omarchy plugin update` receives
-# exactly one fast-forward commit per release.
-
 on:
   push:
     branches: [master]

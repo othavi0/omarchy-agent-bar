@@ -1,9 +1,4 @@
-//! Active documentation gates (DOC-001–DOC-004 / TEST-032 / TEST-033).
-//!
-//! - Every executable helper command example parses under the v10 grammar.
-//! - Every status/settings JSON example validates against checked-in schemas.
-//! - Every relative Markdown link resolves inside the repository.
-//! - Active product docs no longer carry pre-implementation target-only banners.
+//! DOC-001–DOC-004 / TEST-032 / TEST-033
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -16,7 +11,6 @@ fn workspace_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
-/// Product and engineering documentation under the active language/legacy gate.
 fn active_doc_paths(root: &Path) -> Vec<PathBuf> {
     let mut paths = Vec::new();
     let top_level = [
@@ -34,7 +28,6 @@ fn active_doc_paths(root: &Path) -> Vec<PathBuf> {
         }
     }
 
-    // Active docs under docs/, excluding historical cuts and the specification package.
     let docs_root = root.join("docs");
     if docs_root.is_dir() {
         let mut stack = vec![docs_root];
@@ -56,7 +49,7 @@ fn active_doc_paths(root: &Path) -> Vec<PathBuf> {
                 if !path.is_file() || !name.ends_with(".md") {
                     continue;
                 }
-                // ADR bodies 0001–0003 remain historical (DOC-003).
+                // DOC-003
                 let rel = path
                     .strip_prefix(root)
                     .map(|p| p.to_string_lossy().replace('\\', "/"))
@@ -89,7 +82,7 @@ fn read_text(path: &Path) -> String {
     })
 }
 
-/// CHANGELOG: only the Unreleased section is active (DOC-003).
+/// DOC-003
 fn changelog_active_slice(content: &str) -> String {
     let mut active = String::new();
     let mut in_unreleased = false;
@@ -162,8 +155,6 @@ fn extract_fences(content: &str) -> Vec<Fence> {
     out
 }
 
-/// Non-helper commands / shell tools that appear in bash fences but are not
-/// private-helper grammar.
 fn is_non_helper_line(line: &str) -> bool {
     let t = line.trim();
     if t.is_empty() || t.starts_with('#') {
@@ -196,7 +187,6 @@ fn is_non_helper_line(line: &str) -> bool {
         || t.starts_with("export ")
 }
 
-/// Lines that are grammar synopsis, not executable examples.
 fn is_synopsis_placeholder(line: &str) -> bool {
     let t = line.trim();
     t.contains('|')
@@ -207,13 +197,6 @@ fn is_synopsis_placeholder(line: &str) -> bool {
         || t.contains("...")
 }
 
-/// Extract private-helper argv from one documentation line.
-///
-/// Accepts:
-/// - `"$PLUGIN" status format json`
-/// - `$PLUGIN status …`
-/// - `agent-bar status …`
-/// - bare synopsis forms without placeholders
 fn extract_helper_argv(line: &str) -> Option<Vec<String>> {
     let trimmed = line.trim();
     if trimmed.is_empty() || is_non_helper_line(trimmed) {
@@ -224,14 +207,11 @@ fn extract_helper_argv(line: &str) -> Option<Vec<String>> {
     }
 
     let mut rest = trimmed;
-    // Strip optional surrounding shell prefixes such as env assignments on the
-    // same line (none expected). Handle quoted/unquoted plugin path forms.
     if rest.starts_with("\"$PLUGIN\"") {
         rest = rest["\"$PLUGIN\"".len()..].trim_start();
     } else if rest.starts_with("$PLUGIN") {
         rest = rest["$PLUGIN".len()..].trim_start();
     } else if let Some(after) = rest.strip_prefix("agent-bar") {
-        // Reject archive/product filenames like `othavi0.agent-bar-10.0.0-…`.
         if !after.is_empty() && !after.starts_with(char::is_whitespace) {
             return None;
         }
@@ -245,14 +225,12 @@ fn extract_helper_argv(line: &str) -> Option<Vec<String>> {
     }
 
     if rest.is_empty() {
-        // Bare `agent-bar` / `"$PLUGIN"` equals default status.
         return Some(Vec::new());
     }
 
     Some(shell_split(rest))
 }
 
-/// Minimal shell-word split supporting single-quoted and double-quoted tokens.
 fn shell_split(input: &str) -> Vec<String> {
     let mut words = Vec::new();
     let mut cur = String::new();
@@ -315,7 +293,7 @@ fn looks_like_settings_v1(value: &Value) -> bool {
         && value.get("display").is_some()
 }
 
-/// Phrases that mark pre-implementation target-only documentation (DOC-005 → DOC-004).
+/// DOC-005 / DOC-004
 const TARGET_ONLY_BANNERS: &[&str] = &[
     "Target documentation for v10",
     "Target product contract for v10",
@@ -352,8 +330,6 @@ fn active_docs_command_examples_parse() {
             if fence.lang != "bash" && fence.lang != "text" && !fence.lang.is_empty() {
                 continue;
             }
-            // Only parse bash fences and plain `agent-bar` text synopsis that are
-            // fully concrete. Skip pure path/text blocks without helper tokens.
             if fence.lang == "text" && !fence.body.contains("agent-bar") {
                 continue;
             }
@@ -405,7 +381,6 @@ fn active_docs_json_examples_validate() {
             if trimmed.is_empty() {
                 continue;
             }
-            // Incomplete placeholder JSON must not appear in active docs.
             if trimmed.contains("...") {
                 failures.push(format!(
                     "{rel}:{}: JSON example contains ellipsis placeholder",
@@ -451,7 +426,6 @@ fn active_docs_json_examples_validate() {
                     ));
                 }
             }
-            // Other JSON (manifest shapes, partial objects) is structural prose only.
         }
     }
 
@@ -471,7 +445,6 @@ fn active_docs_internal_links_resolve() {
     let root = workspace_root();
     let mut checked = 0usize;
     let mut failures = Vec::new();
-    // [text](target) — ignore images that use the same form when target is URL.
     let link_re = regex_lite_links();
 
     for path in active_doc_paths(&root) {
@@ -488,14 +461,12 @@ fn active_docs_internal_links_resolve() {
                 {
                     continue;
                 }
-                // Strip anchor fragments.
                 let path_part = target.split('#').next().unwrap_or(target.as_str());
                 if path_part.is_empty() {
                     continue;
                 }
                 checked += 1;
                 let resolved = if path_part.starts_with('/') {
-                    // Repo-root absolute style is not used; treat as relative miss.
                     root.join(path_part.trim_start_matches('/'))
                 } else {
                     parent.join(path_part)
@@ -524,14 +495,12 @@ fn active_docs_internal_links_resolve() {
     );
 }
 
-/// Lightweight Markdown link extractor without an extra dependency.
 fn regex_lite_links() -> impl Fn(&str) -> Vec<String> {
     |line: &str| {
         let mut out = Vec::new();
         let bytes = line.as_bytes();
         let mut i = 0;
         while i < bytes.len() {
-            // Find "]("
             if bytes[i] == b']' && i + 1 < bytes.len() && bytes[i + 1] == b'(' {
                 let start = i + 2;
                 let mut j = start;
@@ -540,9 +509,7 @@ fn regex_lite_links() -> impl Fn(&str) -> Vec<String> {
                 }
                 if j < bytes.len() {
                     let target = &line[start..j];
-                    // Skip reference-style empty and image titles with spaces only if pure URL.
                     if !target.is_empty() && !target.starts_with('<') {
-                        // Drop optional title: url "title"
                         let url = target
                             .split_whitespace()
                             .next()
@@ -567,11 +534,9 @@ fn active_docs_no_target_only_banners() {
     let mut failures = Vec::new();
     for path in active_doc_paths(&root) {
         let rel = rel_str(&root, &path);
-        // Spec package and historical cuts are excluded by active_doc_paths.
         let body = active_body(&root, &path);
         for banner in TARGET_ONLY_BANNERS {
             if body.contains(banner) {
-                // Locate first line for a useful message.
                 let line_no = body
                     .lines()
                     .position(|l| l.contains(banner) || banner.lines().any(|b| l.contains(b)))
@@ -602,8 +567,6 @@ fn active_docs_release_notes_10_0_0_exist() {
         body.contains("10.0.0"),
         "release notes must mention version 10.0.0"
     );
-    // Historical document: 10.0.0 shipped under the original plugin ID and
-    // keeps it (the ID became othavi0.agent-bar on 2026-08-06).
     assert!(
         body.contains("agent-bar.usage"),
         "release notes must name the plugin product agent-bar.usage"

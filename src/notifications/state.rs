@@ -1,5 +1,3 @@
-//! Persisted notification deduplication state (schema v2).
-
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -62,22 +60,15 @@ impl NotificationLevel {
 pub struct NotificationEntry {
     pub provider_id: String,
     pub window_id: String,
-    /// Last observed reset for this window. Evidence, not identity: see
-    /// `RESET_JITTER_TOLERANCE`.
     #[serde(with = "time::serde::rfc3339::option")]
     pub reset_at: Option<OffsetDateTime>,
     pub level: NotificationLevel,
-    /// When the last successful dispatch happened; drives the reminder.
     #[serde(with = "time::serde::rfc3339")]
     pub notified_at: OffsetDateTime,
 }
 
 impl NotificationEntry {
     /// The one definition of a notification's identity.
-    ///
-    /// v1 spelled this comparison out by hand in four places; `validate`
-    /// truncated the reset to whole seconds while the other three compared
-    /// nanoseconds, and the disagreement blocked every write.
     pub fn key(&self) -> (&str, &str) {
         (self.provider_id.as_str(), self.window_id.as_str())
     }
@@ -120,7 +111,6 @@ impl NotificationState {
         self.entries.sort_by(|a, b| a.key().cmp(&b.key()));
     }
 
-    /// True when two observed resets describe the same quota window.
     pub fn same_window(saved: Option<OffsetDateTime>, observed: Option<OffsetDateTime>) -> bool {
         match (saved, observed) {
             (None, None) => true,
@@ -325,10 +315,6 @@ mod tests {
 
     #[test]
     fn sub_second_reset_jitter_is_the_same_window() {
-        // The Claude usage endpoint derives resets_at from its own clock per
-        // response, so the same window returns with millisecond drift. v1
-        // treated that as a new key, which is what produced the notification
-        // loop this test exists to prevent.
         let a = datetime!(2026-08-21 11:59:59.707742 UTC);
         let b = datetime!(2026-08-21 11:59:59.854947 UTC);
         let c = datetime!(2026-08-21 12:00:00.024238 UTC);
@@ -344,7 +330,6 @@ mod tests {
         assert!(!NotificationState::same_window(Some(now), Some(next_week)));
         assert!(!NotificationState::same_window(Some(now), None));
         assert!(!NotificationState::same_window(None, Some(now)));
-        // Just outside the tolerance, so the boundary is pinned, not implied.
         let just_past = datetime!(2026-08-21 12:01:00.001 UTC);
         assert!(!NotificationState::same_window(Some(now), Some(just_past)));
     }
@@ -368,8 +353,6 @@ mod tests {
         });
         assert_eq!(state.entries.len(), 1);
         assert_eq!(state.entries[0].level, NotificationLevel::Critical);
-        // The exact document that made save() fail with "duplicate
-        // notification key" on the reporting install.
         state.validate().unwrap();
     }
 
@@ -397,10 +380,6 @@ mod tests {
 
     #[test]
     fn prune_keeps_elapsed_rows_when_the_reading_came_from_cache() {
-        // A Ready provider can be served straight from cache for up to its
-        // TTL (300s for Claude) while still reporting the pre-reset
-        // timestamp. Treating that as proof the window restarted would rearm
-        // against a reading the provider never confirmed.
         let now = datetime!(2026-08-21 12:00:00 UTC);
         let mut state = NotificationState::empty();
         state.upsert(NotificationEntry {

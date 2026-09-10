@@ -1,5 +1,3 @@
-//! Canonical settings schema v1 domain types and validation.
-
 use std::collections::HashSet;
 use std::fmt;
 
@@ -13,15 +11,12 @@ const MIN_REFRESH: u32 = 30;
 const MAX_REFRESH: u32 = 3600;
 const MIN_REMINDER_MINUTES: u32 = 15;
 const MAX_REMINDER_MINUTES: u32 = 1440;
-/// Two hours. Hourly was judged too frequent by the product owner; the field
-/// exists so this is a default, not a floor.
 const DEFAULT_REMINDER_MINUTES: u32 = 120;
 
 pub(crate) fn default_reminder_minutes() -> u32 {
     DEFAULT_REMINDER_MINUTES
 }
 
-/// Display metric for chips and windows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum DisplayMetric {
@@ -29,7 +24,6 @@ pub enum DisplayMetric {
     Remaining,
 }
 
-/// One provider membership row.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProviderSetting {
@@ -37,7 +31,6 @@ pub struct ProviderSetting {
     pub enabled: bool,
 }
 
-/// Serde adapter for closed provider IDs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ProviderIdJson(pub ProviderId);
 
@@ -62,14 +55,12 @@ impl<'de> Deserialize<'de> for ProviderIdJson {
     }
 }
 
-/// Display block.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DisplaySettings {
     pub metric: DisplayMetric,
 }
 
-/// Notifications block.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct NotificationSettings {
@@ -94,7 +85,6 @@ impl Default for UpdateSettings {
     }
 }
 
-/// Canonical settings document (schema v1).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Settings {
@@ -134,18 +124,6 @@ impl fmt::Display for SettingsError {
 impl std::error::Error for SettingsError {}
 
 /// Whether a provider is on by default in a freshly written document.
-///
-/// Single source for "which providers start enabled": `Settings::defaults`
-/// and every v9 → v10 migration path read it instead of re-testing IDs.
-///
-/// A first run enables only Claude and Codex (SET-027). Every other provider
-/// ships opt-in: its CLI is not installed for most users, so enabling it by
-/// default would show a permanent CLI-missing chip nobody asked for. Users
-/// turn the rest on from Settings.
-///
-/// The exhaustive `match` is deliberate. An exclusion list would let a new
-/// catalog entry inherit a default nobody decided; this way adding a
-/// `ProviderId` fails to compile until someone picks its arm.
 pub fn default_enabled(id: ProviderId) -> bool {
     match id {
         ProviderId::Claude | ProviderId::Codex => true,
@@ -228,19 +206,11 @@ impl Settings {
             .map_err(|err| SettingsError::new(format!("invalid settings document: {err}")))?;
 
         let mut injected = false;
-        // Only a document that already lists every provider v10 shipped with
-        // is a real v10 file that merely predates a later catalog addition.
-        // Anything shorter (hand-edited, truncated) is rejected by
-        // `validate` below exactly as SET-006 demands: filling it from the
-        // catalog would invent an enablement set the user never chose.
         if policy == MissingProviders::FillFromCatalog
             && carries_original_v10_providers(&settings.providers)
         {
             for id in ProviderId::ALL {
                 if !settings.providers.iter().any(|p| p.id.0 == id) {
-                    // `default_enabled` is the single source for "which
-                    // providers start enabled": a filled-in row must look
-                    // exactly like the one `Settings::defaults` would write.
                     settings.providers.push(ProviderSetting {
                         id: ProviderIdJson(id),
                         enabled: default_enabled(id),
@@ -273,9 +243,6 @@ impl Settings {
                 "reminderMinutes must be in {MIN_REMINDER_MINUTES}..={MAX_REMINDER_MINUTES}"
             )));
         }
-        // Name the offending provider before falling back to the cardinality
-        // message: a document written before a catalog addition fails here,
-        // and the operator needs the ID to fix it by hand.
         let mut seen = HashSet::new();
         for item in &self.providers {
             if !seen.insert(item.id.0) {
@@ -407,9 +374,6 @@ mod tests {
 
     #[test]
     fn missing_provider_is_rejected_only_under_the_strict_policy() {
-        // SET-006 keeps `config apply` strict: it writes the whole document,
-        // so it must be handed the whole document. Reads and the migration
-        // fill the gap from the catalog instead.
         let four = br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":true},{"id":"grok","enabled":true}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true}}"#;
         let err = Settings::parse_strict(four).unwrap_err();
         assert!(err.message().contains("antigravity"), "{}", err.message());
@@ -425,7 +389,6 @@ mod tests {
             .expect("antigravity injected");
         assert!(!antigravity.enabled);
 
-        // A complete document reports no injection under either policy.
         let complete = Settings::defaults().to_canonical_json_line().unwrap();
         let (parsed, injected) =
             Settings::parse_with_policy(complete.as_bytes(), MissingProviders::FillFromCatalog)
@@ -436,16 +399,6 @@ mod tests {
 
     #[test]
     fn filled_rows_come_from_default_enabled_not_a_hard_coded_false() {
-        // A document with the four original providers but without the later
-        // addition. Two things are being pinned. The rows the user already has
-        // are theirs: a read never rewrites them to the default (SET-007),
-        // which is why amp and grok stay on here while a fresh install ships
-        // them off. And the filled row reads `default_enabled` rather than a
-        // hard-coded false, so a future provider that ships enabled is not
-        // silently turned off by a read. Only the second half is weakly
-        // covered today: antigravity is the sole injectable row and its
-        // default is already false, so the two spellings agree by accident.
-        // Adding a provider that ships enabled is what makes this bite.
         let four = br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":true},{"id":"grok","enabled":true}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true}}"#;
         let (filled, injected) =
             Settings::parse_with_policy(four, MissingProviders::FillFromCatalog).unwrap();
@@ -472,9 +425,6 @@ mod tests {
 
     #[test]
     fn fill_from_catalog_never_repairs_a_truncated_document() {
-        // Missing one of the original v10 providers means the user removed a
-        // row (or the file is corrupt); completing it would re-enable
-        // providers they never chose. SET-006 applies on every path.
         let truncated = br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true}}"#;
         let err =
             Settings::parse_with_policy(truncated, MissingProviders::FillFromCatalog).unwrap_err();
@@ -503,9 +453,6 @@ mod tests {
 
     #[test]
     fn only_claude_and_codex_start_enabled() {
-        // SET-027: a first run shows the two providers nearly every user has a
-        // CLI for. Amp, Grok, and Antigravity are opt-in from Settings, so a
-        // missing CLI never renders as a permanent chip nobody asked for.
         assert!(default_enabled(ProviderId::Claude));
         assert!(default_enabled(ProviderId::Codex));
         assert!(!default_enabled(ProviderId::Amp));
@@ -515,8 +462,6 @@ mod tests {
 
     #[test]
     fn reminder_minutes_defaults_when_absent() {
-        // Settings reads never rewrite (SET-007), so an existing settings.json
-        // predating this field must parse and take the default silently.
         let doc = br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":true},{"id":"grok","enabled":true},{"id":"antigravity","enabled":false}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true}}"#;
         let parsed = Settings::parse_strict(doc).unwrap();
         assert_eq!(
@@ -544,9 +489,6 @@ mod tests {
 
     #[test]
     fn reminder_minutes_survives_the_hand_written_allowlist() {
-        // deny_unknown_fields is not the only gate: reject_unknown_top_level
-        // walks raw JSON before deserialization and would reject the key on
-        // its own.
         let doc = br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":true},{"id":"grok","enabled":true},{"id":"antigravity","enabled":false}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true,"reminderMinutes":240}}"#;
         let parsed = Settings::parse_strict(doc).unwrap();
         assert_eq!(parsed.notifications.reminder_minutes, 240);
@@ -554,8 +496,6 @@ mod tests {
 
     #[test]
     fn automatic_updates_default_on_when_absent() {
-        // Every settings.json written before this block must keep parsing
-        // (SET-007), and it takes the product default: updates are automatic.
         let doc = br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":true},{"id":"grok","enabled":true},{"id":"antigravity","enabled":false}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true}}"#;
         let parsed = Settings::parse_strict(doc).unwrap();
         assert!(parsed.updates.automatic);

@@ -1,5 +1,3 @@
-//! Ownership classification and before-hash evidence (CLEAN-001..005).
-
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -123,7 +121,6 @@ pub fn classify_artifact(path: &Path, rules: &OwnershipRules) -> OwnershipEviden
     let size = Some(meta.len());
     let mode = mode_of(&meta);
 
-    // Symlinks are never auto-owned without following policy: treat as ambiguous.
     if file_type == FileKind::Symlink {
         return OwnershipEvidence {
             class: OwnershipClass::Ambiguous,
@@ -169,7 +166,6 @@ pub fn classify_artifact(path: &Path, rules: &OwnershipRules) -> OwnershipEviden
                 };
             }
         }
-        // Same path as known legacy/current but different hash → modified legacy.
         for (p, _) in rules
             .legacy_hashes
             .iter()
@@ -219,7 +215,6 @@ pub fn classify_artifact(path: &Path, rules: &OwnershipRules) -> OwnershipEviden
         }
     }
 
-    // Path looks agent-bar-ish but no proof → ambiguous (report, do not remove).
     let name = path
         .file_name()
         .and_then(|s| s.to_str())

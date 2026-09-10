@@ -49,7 +49,6 @@ TestCase {
     var files = v10QmlFiles()
     for (var i = 0; i < files.length; i++) {
       var src = read(files[i])
-      // Strip // comments before checking tokens. Avoid matching boundsBehavior.
       var code = src.replace(/\/\/[^\n]*/g, "")
       verify(!/\bBehavior\b/.test(code), files[i] + " has Behavior")
       verify(!/\bTransition\b/.test(code), files[i] + " has Transition")
@@ -81,14 +80,9 @@ TestCase {
   }
 
   function test_state_cues_not_color_only() {
-    // Chip and state message use text cues beyond color. UX-012 (amended)
-    // scopes this to states with no usable reading; stale keeps showing its
-    // retained number and is deliberately unmarked on the bar.
     verify(Core.chipStateCue({ state: "cli_missing" }).length > 0)
     verify(Core.chipStateCue({ state: "network_error" }).length > 0)
     verify(Core.stateTitle({ state: "network_error", windows: [] }).length > 0)
-    // The qualifier table stays a pure translator — the chip simply stops
-    // asking it about stale (CoreView.js chipCueLabel/chipAccessibleLabel).
     compare(Core.stateQualifier("stale"), "stale")
     compare(Core.chipCueLabel({ state: "stale", windows: [] }), "")
   }

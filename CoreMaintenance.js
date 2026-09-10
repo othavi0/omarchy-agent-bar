@@ -1,10 +1,5 @@
-// Maintenance state: handoff/lane guard, login, update, uninstall UI.
 .pragma library
 .import "CoreService.js" as Kernel
-
-// ---------------------------------------------------------------------------
-// Maintenance state
-// ---------------------------------------------------------------------------
 
 function maintenanceIdle() {
   return { phase: "idle", blocked: false }
@@ -18,16 +13,11 @@ function maintenanceCanStartWrite(maint) {
   return !maint || !maint.blocked
 }
 
-// Drain rule: handoff waits while status or settingsWrite busy.
 function maintenanceCanDetach(maint, statusBusy, settingsWriteBusy) {
   if (!maint || maint.phase !== "handoff")
     return false
   return !statusBusy && !settingsWriteBusy
 }
-
-// ---------------------------------------------------------------------------
-// Login / maintenance UI (Task 13 — UX-040..048)
-// ---------------------------------------------------------------------------
 
 function loginDetachedArgv(pluginRoot, providerId) {
   if (!pluginRoot || !String(pluginRoot).length)
@@ -74,7 +64,6 @@ function uninstallArgv(helperPath, purge) {
   return [String(helperPath), "uninstall"]
 }
 
-// Non-TTY uninstall confirmation document (CLI contract).
 function uninstallConfirmation(purge) {
   return {
     schemaVersion: 1,
@@ -120,12 +109,6 @@ function cloneMaintenanceUi(ui) {
   }
 }
 
-// Parse `update check` stdout: the BUNDLE-021 document
-// { schemaVersion, checkedAt, current, available, latestCompatible }.
-// A successful check always writes exactly that JSON, so exit 0 with
-// anything else is a failed check, not an implied answer. The fixtures in
-// tests/fixtures/update-check/ are pinned byte-exactly to the Rust
-// serializer by tests/update_check_parity.rs.
 function maintenanceUiFromCheck(ui, stdout, exitCode, fallbackVersion) {
   var next = cloneMaintenanceUi(ui)
   next.updateConfirmOpen = false
@@ -153,9 +136,6 @@ function maintenanceUiFromCheck(ui, stdout, exitCode, fallbackVersion) {
           next.message = "Update to " + next.targetVersion + " is available."
           return next
         }
-        // latestCompatible may be null (nothing fits this target/contract)
-        // or describe the installed version; either way there is nothing
-        // to offer.
         if (doc.available === false) {
           next.phase = "up_to_date"
           next.targetVersion = ""
@@ -165,7 +145,6 @@ function maintenanceUiFromCheck(ui, stdout, exitCode, fallbackVersion) {
         }
       }
     } catch (e) {
-      // unusable stdout falls through to the single failure exit
     }
   }
   next.phase = "error"
@@ -212,12 +191,10 @@ function maintenanceUiCloseUninstallConfirm(ui) {
 function maintenanceUiSetPurge(ui, purge) {
   var next = cloneMaintenanceUi(ui)
   next.purgeSettings = !!purge
-  // Changing purge resets the second destructive arm (UX-047 safety).
   next.uninstallArmed = false
   return next
 }
 
-// First destructive click arms; second confirms (UX-047).
 function maintenanceUiArmOrConfirmUninstall(ui) {
   var next = cloneMaintenanceUi(ui)
   if (!next.uninstallConfirmOpen)
@@ -229,10 +206,6 @@ function maintenanceUiArmOrConfirmUninstall(ui) {
   return { ui: next, confirmed: true }
 }
 
-// Automatic update check gate: settings loaded and the setting is on (the
-// default is on, so an unread settings file must not count as consent), the
-// helper answered, no maintenance or check is in flight, and the popup is
-// closed when the update starts.
 function automaticUpdateCheckAllowed(context) {
   if (!context)
     return false
@@ -244,8 +217,6 @@ function automaticUpdateCheckAllowed(context) {
       && context.popupOpen !== true
 }
 
-// Only a plain available update is applied without a click; reinstall and
-// failures stay for the user to see in Settings.
 function shouldAutoApplyUpdate(ui) {
   return !!ui && ui.phase === "update_available"
       && !!ui.targetVersion && String(ui.targetVersion).length > 0

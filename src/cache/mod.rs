@@ -1,5 +1,3 @@
-//! Status-v2 cache store and coordination.
-
 pub mod coordinator;
 pub mod schema;
 pub mod store;

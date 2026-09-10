@@ -1,9 +1,3 @@
-//! Bounded Codex session-log extraction for rate limits fallback.
-//!
-//! Scans `.codex/sessions/**/*.jsonl` for the latest `token_count` event that
-//! carries a `rate_limits` object, then re-serializes that object for
-//! [`crate::providers::v2_map::codex_from_rate_limits_json`].
-
 use std::path::Path;
 
 use time::format_description::well_known::Rfc3339;
@@ -108,8 +102,6 @@ pub fn find_latest_rate_limits(sessions_dir: &Path) -> Option<(Vec<u8>, Option<O
     });
     candidates.truncate(256);
 
-    // Prefer newest candidate that yields extractable limits (not merely
-    // newest file without limits). Skip files larger than 1 MiB.
     for (_mtime, path) in &candidates {
         let Ok(meta) = fs::metadata(path) else {
             continue;
@@ -194,7 +186,6 @@ mod tests {
         let now = datetime!(2026-07-26 18:00:00 UTC);
         match codex_from_rate_limits_json(&raw, now) {
             ProviderResult::Ready { windows, .. } => {
-                // Reverse scan → last token_count line wins.
                 assert!((windows[0].used_percent() - 99.0).abs() < 0.01);
             }
             other => panic!("{other:?}"),
@@ -206,7 +197,6 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let sessions = dir.path().join("sessions");
         std::fs::create_dir_all(&sessions).expect("mkdir");
-        // File without usable limits (sorts first by path when mtimes match).
         std::fs::write(
             sessions.join("empty.jsonl"),
             b"{\"payload\":{\"type\":\"message\"}}\n",
@@ -234,14 +224,10 @@ mod tests {
         let sessions = dir.path().join("sessions");
         std::fs::create_dir_all(&sessions).expect("mkdir");
 
-        // Oversized candidate sorts first by path ("a-huge.jsonl" < "z-good.jsonl")
-        // when mtimes match; must be skipped due to 1 MiB cap.
         let huge_path = sessions.join("a-huge.jsonl");
         {
             use std::io::Write;
             let mut f = std::fs::File::create(&huge_path).expect("create huge");
-            // Write just over 1 MiB of JSONL-shaped content with a fake rate_limits
-            // so a size-blind reader would succeed — size cap must prevent that.
             let line = concat!(
                 r#"{"payload":{"type":"token_count","rate_limits":{"primary":{"used_percent":1.0,"window_minutes":10080}}}}"#,
                 "\n"
