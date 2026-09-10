@@ -55,6 +55,16 @@
           "maximum": 1440
         }
       }
+    },
+    "updates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["automatic"],
+      "properties": {
+        "automatic": {
+          "type": "boolean"
+        }
+      }
     }
   },
   "$defs": {

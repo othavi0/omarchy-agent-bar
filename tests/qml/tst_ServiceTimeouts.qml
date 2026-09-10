@@ -342,6 +342,100 @@ TestCase {
     compare(s.health("10.3.17"), "stalled")
   }
 
+  function availableCheck() {
+    return JSON.stringify({
+      schemaVersion: 1,
+      current: { version: "10.3.17" },
+      available: true,
+      reinstallRequired: false,
+      latestCompatible: { version: "10.3.18", releaseNotesUrl: "" }
+    })
+  }
+
+  function test_version_ready_schedules_the_first_automatic_check() {
+    var s = createService()
+    verify(s.autoUpdateScheduled)
+    compare(s.autoUpdateDelayMs, s.autoUpdateFirstDelayMs)
+    compare(s.autoUpdateFirstDelayMs, 120000)
+    compare(s.autoUpdateIntervalMs, 21600000)
+  }
+
+  function test_automatic_update_checks_then_applies_without_a_click() {
+    var s = createService()
+    s.applySettingsBootstrapResult(s.activeSettingsBootstrapGeneration, "", 1)
+    compare(s.automaticUpdateTick(), true)
+    compare(s.maintenanceCheckBusy, true)
+    compare(s.maintenanceUi.phase, "idle")
+    compare(s.autoUpdateDelayMs, s.autoUpdateIntervalMs)
+    verify(s.autoUpdateScheduled)
+
+    s.applyUpdateCheckResult(s.activeMaintenanceCheckGeneration, availableCheck(), 0)
+
+    compare(s.pendingMaintenanceIntention.kind, "update_apply")
+    compare(s.pendingMaintenanceIntention.version, "10.3.18")
+    compare(s.maintenanceState.blocked, true)
+    compare(s.maintenanceUi.phase, "applying")
+    compare(s.maintenanceHandoffBusy, true)
+  }
+
+  function test_automatic_update_respects_the_setting() {
+    var s = createService()
+    var settings = validSettings()
+    settings.updates = { automatic: false }
+    s.applySettingsBootstrapResult(s.activeSettingsBootstrapGeneration, JSON.stringify(settings), 0)
+    compare(s.automaticUpdateTick(), false)
+    compare(s.maintenanceCheckBusy, false)
+    verify(s.autoUpdateScheduled)
+  }
+
+  function test_automatic_update_waits_while_the_popup_is_open() {
+    var s = createService()
+    s.applySettingsBootstrapResult(s.activeSettingsBootstrapGeneration, "", 1)
+    s.popupOwner = ({ owner: "monitor-a", providerId: "", view: "provider" })
+    compare(s.automaticUpdateTick(), false)
+    compare(s.maintenanceCheckBusy, false)
+  }
+
+  function test_automatic_check_failure_stays_silent() {
+    var s = createService()
+    s.applySettingsBootstrapResult(s.activeSettingsBootstrapGeneration, "", 1)
+    verify(s.automaticUpdateTick())
+    s.applyUpdateCheckResult(s.activeMaintenanceCheckGeneration, "", 1)
+    compare(s.maintenanceUi.phase, "idle")
+    compare(s.pendingMaintenanceIntention, null)
+    compare(s.maintenanceState.blocked, false)
+  }
+
+  function test_automatic_updates_toggle_saves_with_the_draft() {
+    var s = createService()
+    s.applySettingsBootstrapResult(s.activeSettingsBootstrapGeneration, "", 1)
+    s.openSettings("monitor-a")
+    s.applySettingsReadResult(s.activeSettingsReadGeneration, JSON.stringify(validSettings()), 0)
+    s.setAutomaticUpdates(false)
+    compare(s.settingsDraft.updates.automatic, false)
+    compare(s.settingsState.phase, "dirty")
+    verify(s.saveSettings())
+    verify(s.pendingSettingsPayload.indexOf('"updates":{"automatic":false}') >= 0)
+  }
+
+  function test_settings_view_offers_the_automatic_updates_toggle() {
+    var xhr = new XMLHttpRequest()
+    xhr.open("GET", "file://" + repoRoot + "/SettingsView.qml", false)
+    xhr.send()
+    var src = String(xhr.responseText)
+    verify(src.indexOf("label: \"Update automatically\"") >= 0)
+    verify(src.indexOf("setAutomaticUpdates(!root.automaticUpdatesOn)") >= 0)
+  }
+
+  function test_manual_check_still_waits_for_a_click() {
+    var s = createService()
+    s.applySettingsBootstrapResult(s.activeSettingsBootstrapGeneration, "", 1)
+    s.checkForUpdates()
+    s.applyUpdateCheckResult(s.activeMaintenanceCheckGeneration, availableCheck(), 0)
+    compare(s.maintenanceUi.phase, "update_available")
+    compare(s.pendingMaintenanceIntention, null)
+  }
+
   // Omarchy 4.0.3 (basecamp/omarchy#9618) injects a public manifest copy
   // without the host-only __sourceDir; the plugin tree must still resolve.
   function test_helper_and_login_resolve_from_public_manifest() {

@@ -32,6 +32,14 @@ Item {
   property int maintenanceHandoffTimeoutMs: 120000
   property int pollIntervalMs: Core.pollIntervalMs(appliedSettings)
   property int collectionDelayMs: 0
+  // Automatic updates: first check shortly after the helper answers, then
+  // every six hours while the shell runs.
+  property int autoUpdateFirstDelayMs: 120000
+  property int autoUpdateIntervalMs: 21600000
+  readonly property bool autoUpdateScheduled: autoUpdateTimer.running
+  readonly property int autoUpdateDelayMs: autoUpdateTimer.interval
+  // True while the in-flight update check was started by the timer.
+  property bool automaticCheck: false
 
   // --- Public service surface (Task 9 / Task 10) ---
   property var snapshot: null
@@ -285,6 +293,12 @@ Item {
     })
   }
 
+  function setAutomaticUpdates(enabled) {
+    mutateSettingsDraft(function (d) {
+      return Settings.setAutomaticUpdates(d, enabled)
+    })
+  }
+
   function restoreSettingsDefaults() {
     if (settingsLocked())
       return
@@ -378,28 +392,55 @@ Item {
   }
 
   function checkForUpdates() {
+    startUpdateCheck(false)
+  }
+
+  // Timer entry point. Reschedules itself, then checks when the gate allows;
+  // returns whether a check started.
+  function automaticUpdateTick() {
+    autoUpdateTimer.interval = autoUpdateIntervalMs
+    autoUpdateTimer.restart()
+    if (!Maintenance.automaticUpdateCheckAllowed({
+          automatic: Core.automaticUpdatesEnabled(appliedSettings),
+          versionReady: versionReady,
+          blocked: maintenanceState.blocked,
+          checkBusy: maintenanceCheckBusy,
+          popupOpen: popupOwner !== null
+        }))
+      return false
+    return startUpdateCheck(true)
+  }
+
+  function startUpdateCheck(automatic) {
     if (maintenanceState.blocked)
-      return
+      return false
     if (!Core.canStartLane(maintenanceCheckBusy))
-      return
+      return false
     syncMaintenanceVersion()
     maintenanceCheckGeneration++
     activeMaintenanceCheckGeneration = maintenanceCheckGeneration
-    maintenanceUi = Maintenance.maintenanceUiChecking(maintenanceUi)
+    automaticCheck = !!automatic
+    // An automatic check stays invisible until it has something to show.
+    if (!automaticCheck)
+      maintenanceUi = Maintenance.maintenanceUiChecking(maintenanceUi)
     maintenanceCheckBusy = true
     maintenanceCheckTimeout.restart()
     var helper = resolvedHelperPath()
     if (!helper.length) {
+      maintenanceCheckTimeout.stop()
       maintenanceCheckBusy = false
-      maintenanceUi = Maintenance.maintenanceUiFromCheck(maintenanceUi, "", 1, helperVersion)
-      return
+      if (!automaticCheck)
+        maintenanceUi = Maintenance.maintenanceUiFromCheck(maintenanceUi, "", 1, helperVersion)
+      automaticCheck = false
+      return false
     }
     maintenanceCheckProcess.command = Maintenance.updateCheckArgv(helper)
     maintenanceCheckStartedGeneration = activeMaintenanceCheckGeneration
     if (testMode) {
-      return
+      return true
     }
     maintenanceCheckProcess.running = true
+    return true
   }
 
   function applyUpdateCheckResult(generation, stdout, exitCode, fromTimeout) {
@@ -408,12 +449,29 @@ Item {
     maintenanceCheckTimeout.stop()
     maintenanceCheckBusy = false
     recordCompletedCallback(!!fromTimeout, "maintenanceCheck")
-    maintenanceUi = Maintenance.maintenanceUiFromCheck(
+    var automatic = automaticCheck
+    automaticCheck = false
+    var next = Maintenance.maintenanceUiFromCheck(
       maintenanceUi,
       stdout,
       exitCode,
       helperVersion || manifestVersion
     )
+    if (!automatic) {
+      maintenanceUi = next
+      return
+    }
+    // A failed automatic check retries on the next tick without painting an
+    // error nobody asked for.
+    if (next.phase === "error")
+      return
+    maintenanceUi = next
+    // Re-check the gate: the popup may have opened while the check ran.
+    if (Maintenance.shouldAutoApplyUpdate(next)
+        && Core.automaticUpdatesEnabled(appliedSettings)
+        && popupOwner === null
+        && !maintenanceState.blocked)
+      confirmUpdateApply()
   }
 
   function openUpdateConfirm() {
@@ -562,6 +620,10 @@ Item {
     versionFailed = false
     syncMaintenanceVersion()
     kickSettingsBootstrap()
+    if (!autoUpdateTimer.running) {
+      autoUpdateTimer.interval = autoUpdateFirstDelayMs
+      autoUpdateTimer.start()
+    }
     if (collectionDelayMs > 0) {
       collectionDelay.interval = collectionDelayMs
       collectionDelay.start()
@@ -1130,6 +1192,14 @@ Item {
     }
   }
 
+  Timer {
+    id: autoUpdateTimer
+    interval: root.autoUpdateFirstDelayMs
+    repeat: false
+    running: false
+    onTriggered: root.automaticUpdateTick()
+  }
+
   IpcHandler {
     target: "othavi0.agent-bar"
     function health(expectedVersion: string): string { return root.health(expectedVersion) }
@@ -1158,6 +1228,7 @@ Item {
     maintenanceHandoffTimeout.stop()
     collectionDelay.stop()
     pollTimer.stop()
+    autoUpdateTimer.stop()
     if (versionProbe.running)
       versionProbe.running = false
     if (statusProcess.running)

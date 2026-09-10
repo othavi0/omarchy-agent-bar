@@ -252,6 +252,12 @@ function setReminderMinutes(draft, minutes) {
   return next
 }
 
+function setAutomaticUpdates(draft, enabled) {
+  var next = cloneDraft(draft)
+  next.updates = { automatic: !!enabled }
+  return next
+}
+
 function validateSettingsDraft(draft) {
   if (!draft || typeof draft !== "object")
     return { ok: false, reason: "not an object" }
@@ -268,6 +274,10 @@ function validateSettingsDraft(draft) {
   if (!isFinite(reminder) || reminder !== Math.floor(reminder)
       || reminder < 15 || reminder > 1440)
     return { ok: false, reason: "notifications.reminderMinutes" }
+  // Optional: a helper older than the block omits it (SET-025 skew).
+  if (draft.updates !== undefined
+      && (!draft.updates || typeof draft.updates.automatic !== "boolean"))
+    return { ok: false, reason: "updates.automatic" }
   if (!Array.isArray(draft.providers))
     return { ok: false, reason: "providers length" }
   // SET-025: every provider this QML knows must be present exactly once. A

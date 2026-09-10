@@ -139,7 +139,9 @@ themselves:
    handoff;
 3. run `omarchy plugin update othavi0.agent-bar --yes` or
    `omarchy plugin remove othavi0.agent-bar --yes` as a detached transient
-   `systemd-run --user` unit;
+   `systemd-run --user` unit; the update unit is `oneshot` and restarts the
+   shell (after an optional `notify-send` toast) in `ExecStartPost=`, which
+   runs only when the update succeeded;
 4. return once systemd has accepted and started the unit.
 
 `omarchy plugin update` owns the git fetch, fast-forward, re-validation, and

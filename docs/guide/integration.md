@@ -84,6 +84,9 @@ as a detached transient unit:
 
 ```text
 systemd-run --user --collect --unit=agent-bar-update-<txid>.service \
+  --service-type=oneshot \
+  '--property=ExecStartPost=<notify-send> --app-name="Agent Bar" "Agent Bar updated" "..."' \
+  --property=ExecStartPost=<omarchy-restart-shell> \
   -- <omarchy> plugin update othavi0.agent-bar --yes
 
 systemd-run --user --collect --unit=agent-bar-remove-<txid>.service \
@@ -98,6 +101,13 @@ disabling the bar entry, deleting (or backing up) the plugin directory, and
 rescanning. Both commands hold the shared exclusive maintenance lock only
 for the purge/preflight/handoff step, not for the delegated mutation
 itself.
+
+A rescan does not reload a running `Service.qml`, so the update unit is
+`oneshot` and restarts the shell in `ExecStartPost=` once
+`omarchy plugin update` exits 0. A failed or rolled-back update leaves the
+shell alone. With `updates.automatic` on, the service runs this same path by
+itself: a check two minutes after start and every six hours, applied only
+while the popup is closed.
 
 ## Ownership
 

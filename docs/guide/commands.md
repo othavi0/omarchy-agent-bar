@@ -62,7 +62,7 @@ argv, so `"$PLUGIN" login antigravity` never launches a CLI and fails with
 "$PLUGIN" config show
 "$PLUGIN" config apply stdin
 "$PLUGIN" config apply file /path/to/settings.json
-"$PLUGIN" config apply json '{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":false},{"id":"grok","enabled":false},{"id":"antigravity","enabled":false}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true,"reminderMinutes":120}}'
+"$PLUGIN" config apply json '{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":false},{"id":"grok","enabled":false},{"id":"antigravity","enabled":false}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true,"reminderMinutes":120},"updates":{"automatic":true}}'
 ```
 
 `show` is read-only. `apply` requires one complete valid settings document and
@@ -98,7 +98,9 @@ confirmed owned legacy artifacts.
   `omarchy plugin update othavi0.agent-bar --yes` as a detached transient unit
   and returns as soon as the handoff is accepted; that command owns the
   fast-forward, re-validation, and automatic rollback on a failed
-  validation.
+  validation. After a successful update the unit shows a `notify-send`
+  toast, when available, and runs `omarchy-restart-shell` so the new QML
+  loads.
 
 Normal users use the Maintenance UI.
 

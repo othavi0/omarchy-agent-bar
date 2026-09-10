@@ -80,6 +80,20 @@ pub struct NotificationSettings {
     pub reminder_minutes: u32,
 }
 
+/// Updates block. The whole block is optional on read so documents written
+/// before it stay valid and take the default (automatic updates on).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UpdateSettings {
+    pub automatic: bool,
+}
+
+impl Default for UpdateSettings {
+    fn default() -> Self {
+        Self { automatic: true }
+    }
+}
+
 /// Canonical settings document (schema v1).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -89,6 +103,8 @@ pub struct Settings {
     pub display: DisplaySettings,
     pub refresh_interval_seconds: u32,
     pub notifications: NotificationSettings,
+    #[serde(default)]
+    pub updates: UpdateSettings,
 }
 
 /// Settings validation / parse error (maps to helper exit code 3).
@@ -187,6 +203,7 @@ impl Settings {
                 enabled: true,
                 reminder_minutes: DEFAULT_REMINDER_MINUTES,
             },
+            updates: UpdateSettings::default(),
         }
     }
 
@@ -304,6 +321,7 @@ fn reject_unknown_top_level(value: &Value) -> Result<(), SettingsError> {
         "display",
         "refreshIntervalSeconds",
         "notifications",
+        "updates",
     ];
     for key in obj.keys() {
         if !ALLOWED.contains(&key.as_str()) {
@@ -329,6 +347,16 @@ fn reject_unknown_top_level(value: &Value) -> Result<(), SettingsError> {
                 return Err(SettingsError::new(format!(
                     "unknown notifications key '{key}'"
                 )));
+            }
+        }
+    }
+    if let Some(updates) = obj.get("updates") {
+        let updates = updates
+            .as_object()
+            .ok_or_else(|| SettingsError::new("updates must be an object"))?;
+        for key in updates.keys() {
+            if key != "automatic" {
+                return Err(SettingsError::new(format!("unknown updates key '{key}'")));
             }
         }
     }
@@ -522,5 +550,28 @@ mod tests {
         let doc = br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":true},{"id":"grok","enabled":true},{"id":"antigravity","enabled":false}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true,"reminderMinutes":240}}"#;
         let parsed = Settings::parse_strict(doc).unwrap();
         assert_eq!(parsed.notifications.reminder_minutes, 240);
+    }
+
+    #[test]
+    fn automatic_updates_default_on_when_absent() {
+        // Every settings.json written before this block must keep parsing
+        // (SET-007), and it takes the product default: updates are automatic.
+        let doc = br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":true},{"id":"grok","enabled":true},{"id":"antigravity","enabled":false}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true}}"#;
+        let parsed = Settings::parse_strict(doc).unwrap();
+        assert!(parsed.updates.automatic);
+        assert!(Settings::defaults().updates.automatic);
+    }
+
+    #[test]
+    fn automatic_updates_round_trip_and_reject_unknown_keys() {
+        let doc = br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":true},{"id":"grok","enabled":true},{"id":"antigravity","enabled":false}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true},"updates":{"automatic":false}}"#;
+        let parsed = Settings::parse_strict(doc).unwrap();
+        assert!(!parsed.updates.automatic);
+        let line = parsed.to_canonical_json_line().unwrap();
+        assert!(line.contains(r#""updates":{"automatic":false}"#));
+
+        let unknown = br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":true},{"id":"grok","enabled":true},{"id":"antigravity","enabled":false}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true},"updates":{"automatic":true,"channel":"beta"}}"#;
+        let err = Settings::parse_strict(unknown).unwrap_err();
+        assert!(err.message().contains("unknown updates key 'channel'"));
     }
 }

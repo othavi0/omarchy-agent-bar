@@ -308,7 +308,9 @@ Amended by git-plugin-distribution (2026-08-05):
 plugin directory in-process; each resolves `omarchy` and `systemd-run` to
 absolute paths, then detaches unconditionally to the Omarchy CLI as a
 transient `systemd-run --user` unit and returns once the handoff is
-accepted.
+accepted. The update unit is `oneshot` and also resolves
+`omarchy-restart-shell` (required) and `notify-send` (optional), which run
+as `ExecStartPost=` steps after a successful update (`MIG-020`).
 
 - `CLI-024`: `doctor scan` is read-only.
 - `CLI-025`: `doctor clean` removes only confirmed owned legacy artifacts after

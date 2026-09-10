@@ -373,8 +373,9 @@ What replaces it:
   --unit=agent-bar-<update|remove>-<32-lowercase-hex-txid>.service -- <omarchy>
   plugin <update|remove> othavi0.agent-bar --yes` and return once systemd has
   accepted it, so the operation survives the initiating QML service being
-  torn down by the rescan it triggers. `MIG-020`–`MIG-026` are the current
-  contract.
+  torn down by the rescan it triggers. The update unit adds
+  `--service-type=oneshot` and `ExecStartPost=` steps for a toast and
+  `omarchy-restart-shell`. `MIG-020`–`MIG-026` are the current contract.
 
 ## UI uninstall
 

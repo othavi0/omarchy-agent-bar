@@ -383,6 +383,16 @@ function defaultSettings() {
     ],
     display: { metric: "remaining" },
     refreshIntervalSeconds: 60,
-    notifications: { enabled: true, reminderMinutes: 120 }
+    notifications: { enabled: true, reminderMinutes: 120 },
+    updates: { automatic: true }
   }
+}
+
+// Automatic updates are on unless the applied settings say otherwise. No
+// settings yet, or a document from a helper that predates the block, means
+// the product default.
+function automaticUpdatesEnabled(settings) {
+  if (!settings || !settings.updates || typeof settings.updates.automatic !== "boolean")
+    return true
+  return settings.updates.automatic
 }

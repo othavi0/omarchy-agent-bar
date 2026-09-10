@@ -105,6 +105,29 @@ TestCase {
     compare(Core.validateSettingsDraft(bad).ok, false)
   }
 
+  function test_automatic_updates_setting() {
+    var d = Service.defaultSettings()
+    compare(d.updates.automatic, true)
+    compare(Service.automaticUpdatesEnabled(d), true)
+
+    d = Core.setAutomaticUpdates(d, false)
+    compare(d.updates.automatic, false)
+    compare(Service.automaticUpdatesEnabled(d), false)
+    compare(Core.validateSettingsDraft(d).ok, true)
+
+    // A document from a helper that predates the block, or no settings at
+    // all yet, means the product default: automatic.
+    var legacy = Service.defaultSettings()
+    delete legacy.updates
+    compare(Core.validateSettingsDraft(legacy).ok, true)
+    compare(Service.automaticUpdatesEnabled(legacy), true)
+    compare(Service.automaticUpdatesEnabled(null), true)
+
+    var bad = Service.defaultSettings()
+    bad.updates = { automatic: "yes" }
+    compare(Core.validateSettingsDraft(bad).ok, false)
+  }
+
   function test_notifications_toggle() {
     var d = Service.defaultSettings()
     d = Core.setNotificationsEnabled(d, false)
