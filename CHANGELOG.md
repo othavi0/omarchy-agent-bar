@@ -103,6 +103,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `This plan does not publish a usage percentage.` (PROD-031 / UX-032A
   amended).
 
+## [10.3.25] - 2026-09-10
+
+### Changed
+
+- docs: changelog for the handoff retry
+- fix: retry a waiting handoff when status ends
+
 ## [10.3.24] - 2026-09-10
 
 ### Changed
