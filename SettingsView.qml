@@ -55,6 +55,12 @@ Item {
     return true
   }
 
+  readonly property bool automaticUpdatesOn: {
+    if (draft && draft.updates && typeof draft.updates.automatic === "boolean")
+      return draft.updates.automatic
+    return true
+  }
+
   readonly property int reminderMinutes: {
     if (draft && draft.notifications
         && isFinite(Number(draft.notifications.reminderMinutes)))
@@ -340,6 +346,21 @@ Item {
           textFormat: Text.PlainText
           Accessible.ignored: true
         }
+      }
+    }
+
+    // Updates
+    Toggle {
+      opacity: root.locked ? 0.55 : 1.0
+      enabled: !root.locked
+      label: "Update automatically"
+      description: "Install new versions and reload the shell."
+      checked: root.automaticUpdatesOn
+      foreground: root.foreground
+      fontFamily: root.fontFamily
+      onClicked: {
+        if (root.agentService)
+          root.agentService.setAutomaticUpdates(!root.automaticUpdatesOn)
       }
     }
 

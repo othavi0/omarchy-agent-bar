@@ -368,13 +368,18 @@ What replaces it:
   argv0 dispatch, health-IPC polling, `listPlugins` absence verification,
   monotonic deadline budget, and post-commit garbage collection they
   described are gone with the worker chain. What survives of the
-  "detached transient unit" idea is simpler: `update apply` and `uninstall`
-  each start one `systemd-run --user --collect
-  --unit=agent-bar-<update|remove>-<32-lowercase-hex-txid>.service -- <omarchy>
-  plugin <update|remove> othavi0.agent-bar --yes` and return once systemd has
-  accepted it, so the operation survives the initiating QML service being
-  torn down by the rescan it triggers. `MIG-020`–`MIG-026` are the current
-  contract.
+  "detached transient unit" idea is simpler: `uninstall` starts one
+  `systemd-run --user --collect
+  --unit=agent-bar-remove-<32-lowercase-hex-txid>.service -- <omarchy>
+  plugin remove othavi0.agent-bar --yes`, and `update apply` starts one
+  `systemd-run --user --collect --no-block
+  --unit=agent-bar-update-<32-lowercase-hex-txid>.service
+  --property=RuntimeMaxSec=25h -- <helper> update run`. Both return once
+  systemd has accepted the unit, so the operation outlives the shell process
+  that started it. `update run` wraps `omarchy plugin update othavi0.agent-bar
+  --yes` and restarts the shell only when the fast-forward moved `HEAD`: the
+  rescan that command triggers does not reload a running `Service.qml`.
+  `MIG-020`–`MIG-026` are the current contract.
 
 ## UI uninstall
 

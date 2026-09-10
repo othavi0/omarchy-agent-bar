@@ -62,7 +62,7 @@ argv, so `"$PLUGIN" login antigravity` never launches a CLI and fails with
 "$PLUGIN" config show
 "$PLUGIN" config apply stdin
 "$PLUGIN" config apply file /path/to/settings.json
-"$PLUGIN" config apply json '{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":false},{"id":"grok","enabled":false},{"id":"antigravity","enabled":false}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true,"reminderMinutes":120}}'
+"$PLUGIN" config apply json '{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":false},{"id":"grok","enabled":false},{"id":"antigravity","enabled":false}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true,"reminderMinutes":120},"updates":{"automatic":true}}'
 ```
 
 `show` is read-only. `apply` requires one complete valid settings document and
@@ -94,11 +94,15 @@ confirmed owned legacy artifacts.
 - `update check` returns machine-readable compatibility metadata read from
   this repository's own `bundle.json` git receipt (the repository root is
   the plugin tree; see [ADR 0006](../adr/0006-single-repository-distribution.md)).
-- `update apply` takes no argument. It delegates unconditionally to
-  `omarchy plugin update othavi0.agent-bar --yes` as a detached transient unit
-  and returns as soon as the handoff is accepted; that command owns the
+- `update apply` takes no argument. It queues `update run` as a detached
+  transient unit and returns as soon as systemd accepts it.
+- `update run` is that unit's body; QML never calls it. It runs
+  `omarchy plugin update othavi0.agent-bar --yes`, which owns the
   fast-forward, re-validation, and automatic rollback on a failed
-  validation.
+  validation. When the plugin `HEAD` moved, it shows a `notify-send` toast
+  (when available) and runs `omarchy-restart-shell` so the new QML loads,
+  retrying every minute while the session is locked. It prints
+  `{"schemaVersion":1,"operation":"updateRun","outcome":"..."}`.
 
 Normal users use the Maintenance UI.
 

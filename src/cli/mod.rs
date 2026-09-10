@@ -89,7 +89,8 @@ pub fn help_text(topic: Option<HelpTopic>) -> String {
         }
         Some(HelpTopic::Update) => "update — print usage; no interactive flow\n\
              update check — report whether a newer release exists\n\
-             update apply — delegate to 'omarchy plugin update othavi0.agent-bar'\n"
+             update apply — start 'update run' in a detached unit and return\n\
+             update run — 'omarchy plugin update othavi0.agent-bar', then restart the shell if it changed\n"
             .to_owned(),
         Some(HelpTopic::Uninstall) => {
             "uninstall — remove the plugin (keeps settings and backups)\n\
@@ -124,6 +125,7 @@ pub fn dispatch(command: Command) -> Result<(), CliFailure> {
         Command::Update(UpdateCommand::Interactive) => dispatch_update_interactive(),
         Command::Update(UpdateCommand::Check) => dispatch_update_check(),
         Command::Update(UpdateCommand::Apply) => dispatch_update_apply(),
+        Command::Update(UpdateCommand::Run) => dispatch_update_run(),
         Command::Config(config) => dispatch_config(config),
         Command::Login(provider) => dispatch_login(provider),
         Command::Status(opts) => dispatch_status(opts),
@@ -515,26 +517,36 @@ fn dispatch_update_apply() -> Result<(), CliFailure> {
         .lock_exclusive()
         .map_err(|e| CliFailure::plugin(format!("exclusive maintenance lock: {e}")))?;
 
-    let omarchy_bin =
-        resolve_absolute_executable("omarchy").map_err(|e| CliFailure::plugin(e.to_string()))?;
+    // Fail closed here, where QML sees the error, rather than inside the
+    // detached unit where nobody would: every tool `update run` requires.
+    for tool in ["omarchy", "omarchy-restart-shell", "git", "timeout"] {
+        resolve_absolute_executable(tool).map_err(|e| CliFailure::plugin(e.to_string()))?;
+    }
     let systemd_run = resolve_absolute_executable("systemd-run")
         .map_err(|e| CliFailure::plugin(e.to_string()))?;
+    let helper = std::env::current_exe()
+        .map_err(|e| CliFailure::plugin(format!("cannot locate the helper: {e}")))?;
+    let helper = unit_argv_path(helper.to_string_lossy().into_owned())?;
 
     let clock = SystemClock;
     let txid = txid_from_bytes(format!("update-apply:{}", Clock::now_utc(&clock)).as_bytes());
     let unit = format!("agent-bar-update-{txid}.service");
     let unit_flag = format!("--unit={unit}");
 
+    // The unit runs `update run`, which owns the fast-forward and the shell
+    // restart. `--no-block` returns once systemd queued it, so this process
+    // and its maintenance lock never wait on a `git fetch`; RuntimeMaxSec
+    // bounds the unit, including a day of retries behind a locked session.
     let argv: [&str; 9] = [
         "--user",
         "--collect",
+        "--no-block",
         unit_flag.as_str(),
+        "--property=RuntimeMaxSec=25h",
         "--",
-        omarchy_bin.as_str(),
-        "plugin",
+        helper.as_str(),
         "update",
-        "othavi0.agent-bar",
-        "--yes",
+        "run",
     ];
 
     let runner = ProcessCommandRunner;
@@ -557,6 +569,106 @@ fn dispatch_update_apply() -> Result<(), CliFailure> {
     let json = serde_json::to_string(&doc).map_err(|e| CliFailure::plugin(e.to_string()))?;
     println!("{json}");
     Ok(())
+}
+
+/// `update run` stdout document: one line for the unit's journal.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateRunReport {
+    schema_version: u32,
+    operation: &'static str,
+    outcome: &'static str,
+}
+
+fn print_update_run_report(outcome: &'static str) -> Result<(), CliFailure> {
+    let doc = UpdateRunReport {
+        schema_version: 1,
+        operation: "updateRun",
+        outcome,
+    };
+    let json = serde_json::to_string(&doc).map_err(|e| CliFailure::plugin(e.to_string()))?;
+    println!("{json}");
+    Ok(())
+}
+
+/// `update run`: the detached unit's body (see `plugin::update_run`).
+///
+/// A second run while one is still retrying a restart exits 0 at once: the
+/// run lock, separate from the maintenance lock, is never waited on, so
+/// status and settings keep working during a long fetch or a locked session.
+fn dispatch_update_run() -> Result<(), CliFailure> {
+    use crate::plugin::update_run::{
+        run_update, UpdateRunLimits, UpdateRunOutcome, UpdateRunTools,
+    };
+    use crate::plugin::{resolve_absolute_executable, PluginPaths, ProcessCommandRunner};
+    use crate::support::maintenance_gate::MaintenanceGate;
+
+    let home = std::env::var_os("HOME")
+        .ok_or_else(|| CliFailure::plugin("HOME is required for update run".to_string()))?;
+    let xdg_state = std::env::var_os("XDG_STATE_HOME").map(PathBuf::from);
+    let paths = PluginPaths::production(PathBuf::from(home), xdg_state);
+
+    std::fs::create_dir_all(&paths.xdg_state)
+        .map_err(|e| CliFailure::plugin(format!("create state directory: {e}")))?;
+    let gate = MaintenanceGate::open(paths.xdg_state.join("update-run.lock"))
+        .map_err(|e| CliFailure::plugin(format!("open update run lock: {e}")))?;
+    let Some(_run) = gate
+        .try_lock_exclusive()
+        .map_err(|e| CliFailure::plugin(format!("update run lock: {e}")))?
+    else {
+        eprintln!("agent-bar: another update run is in progress");
+        return print_update_run_report("alreadyRunning");
+    };
+
+    let resolve = |name: &str| {
+        resolve_absolute_executable(name).map_err(|e| CliFailure::plugin(e.to_string()))
+    };
+    let tools = UpdateRunTools {
+        git: resolve("git")?,
+        timeout: resolve("timeout")?,
+        omarchy: resolve("omarchy")?,
+        restart_shell: resolve("omarchy-restart-shell")?,
+        notify: resolve_absolute_executable("notify-send").ok(),
+    };
+
+    let outcome = run_update(
+        &ProcessCommandRunner,
+        &std::thread::sleep,
+        &tools,
+        &paths.plugin_root,
+        &UpdateRunLimits::default(),
+    )
+    .map_err(|e| CliFailure::plugin(e.to_string()))?;
+
+    let label = match outcome {
+        UpdateRunOutcome::UpToDate => "upToDate",
+        UpdateRunOutcome::Updated => "updated",
+        UpdateRunOutcome::UpdateFailed(_) => "updateFailed",
+        UpdateRunOutcome::RestartGaveUp => "restartGaveUp",
+    };
+    print_update_run_report(label)?;
+    match outcome {
+        UpdateRunOutcome::UpToDate | UpdateRunOutcome::Updated => Ok(()),
+        UpdateRunOutcome::UpdateFailed(code) => Err(CliFailure::plugin(format!(
+            "omarchy plugin update exited {code}"
+        ))),
+        UpdateRunOutcome::RestartGaveUp => Err(CliFailure::plugin(
+            "the shell refused every restart; restart it to load the update".to_string(),
+        )),
+    }
+}
+
+/// An absolute path that systemd-run passes to the unit unchanged. The argv
+/// travels over D-Bus without word splitting, but systemd-run expands `$`
+/// variables and `%` specifiers, so a path carrying either fails closed.
+fn unit_argv_path(path: String) -> Result<String, CliFailure> {
+    if path.starts_with('/') && !path.contains(['$', '%']) {
+        Ok(path)
+    } else {
+        Err(CliFailure::plugin(format!(
+            "helper path cannot be passed to systemd-run: {path}"
+        )))
+    }
 }
 
 /// `update` (no subcommand): the old TTY confirmation flow required a
@@ -788,5 +900,21 @@ mod tests {
         );
         let err = confirm_uninstall(false, false, &mut stdin, &mut stderr).unwrap_err();
         assert_eq!(err.exit_code, VALIDATION);
+    }
+
+    #[test]
+    fn unit_argv_path_rejects_what_systemd_run_would_expand() {
+        for safe in [
+            "/home/u/.config/omarchy/plugins/othavi0.agent-bar/bin/agent-bar",
+            "/home/a b/plugins/othavi0.agent-bar/bin/agent-bar",
+        ] {
+            assert_eq!(unit_argv_path(safe.to_string()).unwrap(), safe);
+        }
+        for unsafe_path in ["bin/agent-bar", "/opt/%h/agent-bar", "/opt/$HOME/agent-bar"] {
+            assert!(
+                unit_argv_path(unsafe_path.to_string()).is_err(),
+                "{unsafe_path}"
+            );
+        }
     }
 }

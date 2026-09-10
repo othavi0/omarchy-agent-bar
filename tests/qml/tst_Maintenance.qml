@@ -278,6 +278,47 @@ TestCase {
     verify(src.indexOf("land in the next task") < 0)
   }
 
+  function test_automatic_update_check_gate() {
+    var ok = { automatic: true, settingsLoaded: true, versionReady: true,
+               blocked: false, checkBusy: false, popupOpen: false }
+    compare(Core.automaticUpdateCheckAllowed(ok), true)
+    // settingsLoaded: a failed boot read must not turn an opt-out into an
+    // update (the default is "on", so unknown settings fail closed here).
+    var keys = ["automatic", "settingsLoaded", "versionReady"]
+    for (var i = 0; i < keys.length; i++) {
+      var off = JSON.parse(JSON.stringify(ok))
+      off[keys[i]] = false
+      compare(Core.automaticUpdateCheckAllowed(off), false, keys[i])
+    }
+    var busy = ["blocked", "checkBusy", "popupOpen"]
+    for (var j = 0; j < busy.length; j++) {
+      var on = JSON.parse(JSON.stringify(ok))
+      on[busy[j]] = true
+      compare(Core.automaticUpdateCheckAllowed(on), false, busy[j])
+    }
+  }
+
+  function test_automatic_update_applies_only_an_available_update() {
+    var idle = Core.maintenanceUiIdle("10.3.23")
+    var available = Core.maintenanceUiFromCheck(idle, JSON.stringify({
+      schemaVersion: 1,
+      current: { version: "10.3.23" },
+      available: true,
+      reinstallRequired: false,
+      latestCompatible: { version: "10.3.24", releaseNotesUrl: "" }
+    }), 0, "10.3.23")
+    compare(Core.shouldAutoApplyUpdate(available), true)
+    compare(Core.shouldAutoApplyUpdate(Core.maintenanceUiFromCheck(idle, "", 1, "10.3.23")), false)
+    compare(Core.shouldAutoApplyUpdate(Core.maintenanceUiFromCheck(idle, JSON.stringify({
+      schemaVersion: 1, current: { version: "10.3.23" }, available: false,
+      reinstallRequired: false, latestCompatible: null
+    }), 0, "10.3.23")), false)
+    compare(Core.shouldAutoApplyUpdate(Core.maintenanceUiFromCheck(idle, JSON.stringify({
+      schemaVersion: 1, current: { version: "10.3.23" }, available: true,
+      reinstallRequired: true, latestCompatible: { version: "10.3.24" }
+    }), 0, "10.3.23")), false)
+  }
+
   function test_helper_script_source_contract() {
     var src = read("scripts/agent-bar-open-terminal")
     verify(src.indexOf("xdg-terminal-exec") >= 0)

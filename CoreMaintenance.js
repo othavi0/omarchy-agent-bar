@@ -229,6 +229,28 @@ function maintenanceUiArmOrConfirmUninstall(ui) {
   return { ui: next, confirmed: true }
 }
 
+// Automatic update check gate: settings loaded and the setting is on (the
+// default is on, so an unread settings file must not count as consent), the
+// helper answered, no maintenance or check is in flight, and the popup is
+// closed when the update starts.
+function automaticUpdateCheckAllowed(context) {
+  if (!context)
+    return false
+  return context.automatic === true
+      && context.settingsLoaded === true
+      && context.versionReady === true
+      && context.blocked !== true
+      && context.checkBusy !== true
+      && context.popupOpen !== true
+}
+
+// Only a plain available update is applied without a click; reinstall and
+// failures stay for the user to see in Settings.
+function shouldAutoApplyUpdate(ui) {
+  return !!ui && ui.phase === "update_available"
+      && !!ui.targetVersion && String(ui.targetVersion).length > 0
+}
+
 function maintenanceUiApplying(ui) {
   var next = cloneMaintenanceUi(ui)
   next.phase = "applying"

@@ -30,6 +30,7 @@ agent-bar setup
 agent-bar update
 agent-bar update check
 agent-bar update apply
+agent-bar update run
 agent-bar uninstall
 agent-bar uninstall purge
 
@@ -308,7 +309,12 @@ Amended by git-plugin-distribution (2026-08-05):
 plugin directory in-process; each resolves `omarchy` and `systemd-run` to
 absolute paths, then detaches unconditionally to the Omarchy CLI as a
 transient `systemd-run --user` unit and returns once the handoff is
-accepted.
+accepted. `update apply` also requires `omarchy-restart-shell`, `git`, and
+`timeout`, and its unit runs `update run`: the fast-forward, then a toast
+and a shell restart only when the plugin `HEAD` moved (`MIG-020`).
+`update run` prints one line,
+`{"schemaVersion":1,"operation":"updateRun","outcome":"<upToDate|updated|updateFailed|restartGaveUp|alreadyRunning>"}`,
+and exits non-zero for `updateFailed` and `restartGaveUp`.
 
 - `CLI-024`: `doctor scan` is read-only.
 - `CLI-025`: `doctor clean` removes only confirmed owned legacy artifacts after
@@ -319,10 +325,16 @@ accepted.
   detached `omarchy plugin remove` handoff.
 - `CLI-028`: QML passes structured intentions; it never concatenates command
   strings.
-- `CLI-029`: `update apply` takes no version argument. It delegates
-  unconditionally to `omarchy plugin update othavi0.agent-bar --yes`, which
-  owns the git fetch, fast-forward, re-validation, and automatic
+- `CLI-029`: `update apply` takes no version argument. It queues `update run`,
+  which delegates unconditionally to
+  `omarchy plugin update othavi0.agent-bar --yes`; that command owns the git
+  fetch, fast-forward, re-validation, and automatic
   `git reset --hard ORIG_HEAD` rollback on a failed validation.
+- `CLI-029A`: `update run` takes no argument and is only the update unit's
+  body. It restarts the shell only when the plugin `HEAD` moved, retries a
+  refused restart every minute for up to a day, and exits at once when
+  another run holds its lock
+  (`docs/specs/v10/amendments/2026-09-10-automatic-updates-design.md`).
 - `CLI-030`: Setup, update, doctor, and uninstall never touch unrelated Omarchy
   plugins or layout entries.
 - `CLI-031`: Notification dispatch failure is reported on stderr, does not

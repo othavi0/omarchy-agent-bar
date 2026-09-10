@@ -165,6 +165,14 @@ Requirements:
 
 - `UX-040`: Show the installed version.
 - `UX-041`: `Check for updates` performs an explicit network request.
+- `UX-041A`: With `updates.automatic` on (`SET-028`), the service also
+  checks two minutes after the helper answers and every six hours after
+  that, and applies a plain available update through the same handoff as
+  the button. It skips a tick until the boot settings read succeeded, while
+  the popup is open, or while maintenance is in flight, never applies
+  `reinstall_required`, and a failed automatic check paints nothing. A click
+  on `Check for updates` during a silent check adopts it. Amended by
+  `docs/specs/v10/amendments/2026-09-10-automatic-updates-design.md`.
 - `UX-042`: When available, show `Update to <version>` and a release-notes
   link.
 - `UX-043`: Update confirmation names current version, target version,

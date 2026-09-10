@@ -34,6 +34,10 @@ contract in `02-target-architecture.md` and Omarchy contract `1` in
 `08-plugin-bundle-and-release.md`:
 [docs/specs/v10/amendments/2026-09-10-plugin-root-from-service-url-design.md](amendments/2026-09-10-plugin-root-from-service-url-design.md).
 
+The automatic-updates design, approved 2026-09-10, adds `UX-041A`,
+`SET-028`, and `CLI-029A` and amends `CLI-029` and `MIG-020`:
+[docs/specs/v10/amendments/2026-09-10-automatic-updates-design.md](amendments/2026-09-10-automatic-updates-design.md).
+
 ## Product statement
 
 Agent Bar v10 is an Omarchy Quattro Quickshell plugin. Its only graphical
@@ -63,7 +67,8 @@ application, an AUR product, or a cargo-binstall product.
    [2026-08-11 monorepo migration](amendments/2026-08-11-monorepo-migration-design.md),
    [2026-08-25 login-state visibility](amendments/2026-08-25-login-state-visibility-design.md),
    [2026-09-04 session window leads](amendments/2026-09-04-session-window-leads-design.md),
-   [2026-09-10 plugin root from Service URL](amendments/2026-09-10-plugin-root-from-service-url-design.md).
+   [2026-09-10 plugin root from Service URL](amendments/2026-09-10-plugin-root-from-service-url-design.md),
+   [2026-09-10 automatic updates](amendments/2026-09-10-automatic-updates-design.md).
 
 When two statements conflict, the earlier contract in this reading order wins
 unless a later file explicitly identifies the requirement ID it refines.

@@ -133,22 +133,27 @@ payload. Generation IDs prevent stale callbacks.
 CLI rather than staging, exchanging, or rolling back the plugin directory
 themselves:
 
-1. resolve `omarchy` and `systemd-run` to absolute executable paths
-   (fails closed before anything destructive if either is missing);
+1. resolve `omarchy` and `systemd-run` (and, for update,
+   `omarchy-restart-shell`, `git`, and `timeout`) to absolute executable
+   paths, failing closed before anything destructive if one is missing;
 2. `uninstall purge` removes Agent Bar's own XDG state here, before the
    handoff;
-3. run `omarchy plugin update othavi0.agent-bar --yes` or
-   `omarchy plugin remove othavi0.agent-bar --yes` as a detached transient
-   `systemd-run --user` unit;
-4. return once systemd has accepted and started the unit.
+3. start a detached transient `systemd-run --user` unit: `omarchy plugin
+   remove othavi0.agent-bar --yes` for uninstall, or `--no-block` with the
+   helper's own `update run` for update;
+4. return once systemd has accepted the unit.
 
-`omarchy plugin update` owns the git fetch, fast-forward, re-validation, and
-`git reset --hard ORIG_HEAD` rollback on a failed validation. `omarchy
-plugin remove` owns disabling the bar entry, deleting (or, for a non-git
-directory, backing up) the plugin directory, and rescanning. Detaching the
-unit lets the operation survive destruction of the initiating QML service
-during rescan; there is no permanent daemon and no verified worker copy of
-the helper.
+`update run` wraps `omarchy plugin update othavi0.agent-bar --yes`, which
+owns the git fetch, fast-forward, re-validation, and `git reset --hard
+ORIG_HEAD` rollback on a failed validation. The rescan it triggers does not
+reload a running `Service.qml`, so `update run` compares the plugin `HEAD`
+before and after and, only when it moved, shows a toast and runs
+`omarchy-restart-shell`, retrying while a locked session refuses it.
+`omarchy plugin remove` owns disabling the bar entry, deleting (or, for a
+non-git directory, backing up) the plugin directory, and rescanning.
+Detaching the unit lets the operation outlive the shell process that
+started it; there is no permanent daemon and no verified worker copy of the
+helper.
 
 `update check` fetches this repository's `bundle.json` receipt directly
 from `master` over HTTPS (the repository root is the plugin tree; see

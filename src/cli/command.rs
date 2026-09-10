@@ -108,15 +108,17 @@ pub enum ConfigInput {
     Json(String),
 }
 
-/// Update subcommands. `Apply` takes no argument: `update apply` is an
-/// unconditional detached delegation to `omarchy plugin update
-/// othavi0.agent-bar --yes` (git-plugin-distribution Task 2), not a
-/// version-gated apply of a specific release.
+/// Update subcommands. `Apply` takes no argument: `update apply` starts a
+/// detached unit and returns (git-plugin-distribution Task 2), not a
+/// version-gated apply of a specific release. `Run` is that unit's body: it
+/// delegates to `omarchy plugin update othavi0.agent-bar --yes` and restarts
+/// the shell when the tree changed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UpdateCommand {
     Interactive,
     Check,
     Apply,
+    Run,
 }
 
 /// Doctor subcommands.

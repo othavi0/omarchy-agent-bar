@@ -165,10 +165,14 @@ After merging:
    ~/.config/omarchy/plugins/othavi0.agent-bar/bin/agent-bar update check
    ```
 
-   Then glance at the bar: chips must render with live data after the
-   automatic shell rescan. Open Settings too: if it stays on "Loading" or
-   reports "could not be loaded", the rescan did not replace the running
-   QML — run `omarchy-restart-shell` and reopen before judging the release.
+   Then glance at the bar: chips must render with live data. The rescan
+   `omarchy plugin update` triggers does not reload a running
+   `Service.qml`, so after this manual command run `omarchy-restart-shell`
+   before judging the release. The Settings button and the automatic update
+   run `update apply`, whose `update run` unit restarts the shell by itself;
+   to prove that path, click `Update to <version>` on an install one release
+   behind and confirm the shell reloads on its own
+   (`journalctl --user -u 'agent-bar-update-*'` shows `"outcome":"updated"`).
 
 `omarchy update` (the system-wide update) does not update plugins by
 design; installs that want it hook `omarchy-plugin-update --yes` into

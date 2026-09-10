@@ -19,6 +19,9 @@
   "notifications": {
     "enabled": true,
     "reminderMinutes": 120
+  },
+  "updates": {
+    "automatic": true
   }
 }
 ```
@@ -102,6 +105,11 @@ closed
   until its default is chosen. Existing documents are untouched, because a
   read never rewrites a row it already has (`SET-007`), and a migrated v9
   choice outranks this default (`MIG-009`, `PROD-024`).
+- `SET-028`: `updates.automatic` is a boolean. The `updates` block is
+  optional on read and defaults to `{ "automatic": true }`, so a document
+  written before it keeps parsing without a rewrite (`SET-007`); any other
+  key inside it is rejected under `SET-006`. It gates `UX-041A` only: the
+  explicit `Check for updates` button works either way.
 
 ## Cache files
 

@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- feat: automatic updates. The service checks for a new release two
+  minutes after start and every six hours, and installs it while the popup
+  is closed. The update unit now runs the helper's new `update run`, which
+  restarts the shell after the fast-forward so the new version actually
+  loads; before, `omarchy plugin update` only rescanned plugins and the old
+  QML kept running until the next restart, whether the update came from the
+  terminal or the Settings button. The restart happens only when the plugin
+  commit moved, waits for a locked session to unlock, and never follows a
+  failed or rolled-back update. Turn it off with the new "Update
+  automatically" toggle (`updates.automatic` in `settings.json`, default on
+  and assumed when absent; ignored until the settings file was read).
+
 - feat: Antigravity usage and quota support via
   `agy --print /usage --output-format json`, reading the `gemini-weekly` and
   `gemini-5h` buckets by id into percentage windows. Disabled by default —

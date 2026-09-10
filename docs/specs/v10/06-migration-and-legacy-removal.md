@@ -226,7 +226,12 @@ service it may be running under.
 - `MIG-020`: `update apply` takes no version argument and detaches
   unconditionally to `omarchy plugin update othavi0.agent-bar --yes`, which
   owns the git fetch, fast-forward, re-validation, and
-  `git reset --hard ORIG_HEAD` rollback on a failed validation.
+  `git reset --hard ORIG_HEAD` rollback on a failed validation. The queued
+  unit runs the helper's `update run`, which wraps that command, and when it
+  moved the plugin `HEAD` toasts through `notify-send` (when present) and
+  runs `omarchy-restart-shell`, retrying while the session is locked. A
+  failed or no-op update leaves the shell alone
+  (`docs/specs/v10/amendments/2026-09-10-automatic-updates-design.md`).
 - `MIG-021`: `update check` reads the distribution repository's
   `bundle.json` receipt over HTTPS and reports `reinstallRequired: true`,
   forcing `available`/`latestCompatible` null, whenever the live plugin root
