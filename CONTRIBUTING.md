@@ -94,8 +94,9 @@ superseded wherever a numbered spec file or the code says otherwise.
 
 ## Release
 
-Merging to `master` triggers an automatic patch release: version bump, Rust
-gates, and a single `release: v{version}` commit that stamps
+Merging to `master` triggers an automatic release: a patch bump (or a minor
+or major version set by hand in the pull request, see
+`docs/dev/releasing.md`), Rust gates, and a single `release: v{version}` commit that stamps
 `bin/agent-bar`, `bundle.json`, and the manifest version straight into the
 repository root — the root IS the plugin tree, per
 [ADR 0006](docs/adr/0006-single-repository-distribution.md) — followed by
