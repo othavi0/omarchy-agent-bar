@@ -33,16 +33,21 @@ through tooltips.
 4. A hairline separates the rail from the content, and another sits above
    the Settings slot.
 5. Settings splits into three tabs, `Providers`, `General`, and `About`,
-   switched by the native `ButtonGroup`. A tab whose fields differ from the
-   saved settings shows `•` after its label.
+   switched by a row of native `Button`s with `PageTab` roles. A tab whose
+   fields differ from the saved settings shows `•` after its label.
 6. Each section opens with its title and a rule running to the right edge.
-   Sections never use a full-width separator between them.
+   Sections never use a full-width separator between them. The title uses
+   the 0.55 caption alpha, not the host section header, whose `Qt.darker`
+   tint turns darker than body text on light themes.
 7. `Providers` lists the providers on the bar under `On the bar` with their
    count, and the rest under `Hidden`. Each row uses the native
-   `ToggleSwitch` and shows the provider's state in words when it has no
-   reading or no percentage. The up and down chevrons appear on the bar
-   section only, and a move swaps with the nearest provider in the same
-   section.
+   `ToggleSwitch`, which the row makes a Tab stop with Space and Enter
+   activation and the host cursor ring. A row shows the provider's state in
+   words when the last status reports no reading or no percentage for it;
+   the helper collects enabled providers only, so a hidden row usually shows
+   none. The up and down chevrons appear on the bar section only, and a move
+   swaps with the nearest provider in the same section. A provider switched
+   on joins the end of the bar.
 8. `General` holds `Bar shows`, with a preview of the first ready provider's
    chip number, and `Refresh and alerts`. `Remind me every` is disabled while
    notifications are off.
@@ -51,11 +56,23 @@ through tooltips.
    `Uninstall Agent Bar`.
 10. `Restore defaults`, the unsaved-change count, `Cancel`, and
     `Save changes` sit in a footer pinned under the scroll surface, visible on
-    every tab once settings have loaded.
+    every tab once settings have loaded. The count covers visibility, the bar
+    order, and every other field; the order of hidden providers never counts.
+    `Cancel` and `Save changes` are available only while the count is above
+    zero.
+11. A hidden tab page is disabled as well as hidden, so no editor on it keeps
+    focus or takes keys. The tab buttons and the footer buttons join the
+    popup focus order. The open tab survives switching to a provider and back
+    while the popup stays open, and a new open starts on `Providers`.
 
 ## Contract changes
 
 - `UX-014` holds for provider slots through the tooltip in decision 2.
+- `UX-019` keeps full-width separators for provider content and gives
+  Settings the titled rules of decision 6.
+- `A11Y-009` and the focus routing contract cover the new controls: the tab
+  buttons carry `PageTab` roles and names, and the tabs, the provider
+  switches, and the footer buttons expose a typed `focusActivate`.
 - `UX-020B` now says the Settings slot carries the plate while Settings owns
   the content.
 - The Settings list and `UX-033` and `UX-034` in `04` describe the tabs,

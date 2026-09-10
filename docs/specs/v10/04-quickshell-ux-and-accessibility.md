@@ -70,8 +70,11 @@ not literal UI.
   structurally (windows render only when a reading exists) and update age
   lives in the pane's neutral age caption (`UX-028`).
 - `UX-018`: Only one provider's content is visible at a time.
-- `UX-019`: Section backgrounds and separators extend through the full content
-  width.
+- `UX-019` (amended 2026-09-10): In provider content, section backgrounds and
+  separators extend through the full content width. Settings sections open
+  with a titled rule that runs to the right edge instead, with no separator
+  between them. See
+  `docs/specs/v10/amendments/2026-09-10-settings-tabs-and-rail-state-design.md`.
 - `UX-020`: Popup dimensions use Quattro fitting helpers and the current screen
   geometry; fixed sizes are maximum intentions, not unconditional dimensions.
   Content-fit height has a small compact floor only; no large empty minimum.
@@ -145,8 +148,8 @@ not literal UI.
 
 ## Settings
 
-Settings (amended 2026-09-10) is split into three tabs switched by the native
-`ButtonGroup`, each section opening with its title and a rule to the right
+Settings (amended 2026-09-10) is split into three tabs switched by a row of
+native `Button`s with `PageTab` roles, each section opening with its title and a rule to the right
 edge instead of a full-width separator:
 
 - `Providers`: the providers on the bar under `On the bar`, the rest under
