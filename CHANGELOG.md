@@ -17,9 +17,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   QML kept running until the next restart, whether the update came from the
   terminal or the Settings button. The restart happens only when the plugin
   commit moved, waits for a locked session to unlock, and never follows a
-  failed or rolled-back update. Turn it off with the new "Update
-  automatically" toggle (`updates.automatic` in `settings.json`, default on
-  and assumed when absent; ignored until the settings file was read).
+  failed or rolled-back update. Turn it off with the new "Install
+  automatically" switch under Updates (`updates.automatic` in
+  `settings.json`, default on and assumed when absent; ignored until the
+  settings file was read).
+- feat: Settings reads by section. Providers, Bar, Alerts, and Updates each
+  get a header, every row puts its label on the left and its control on the
+  right, and the refresh and reminder intervals are menus of fixed choices
+  instead of number fields. `Remind me every` now sits under the alert it
+  belongs to, and the version, update, and uninstall controls moved into
+  Updates. `Restore defaults` sits beside the title, and `Cancel` and
+  `Save changes` appear in a tray only while something changed, with the
+  count and a marker on each changed row. Provider `On/Off` buttons became
+  switches, and every switch works from the keyboard.
 
 - feat: Antigravity usage and quota support via
   `agy --print /usage --output-format json`, reading the `gemini-weekly` and

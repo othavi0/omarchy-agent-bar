@@ -2,9 +2,12 @@ import QtQuick
 import qs.Commons
 import qs.Ui
 import "CoreView.js" as Core
+import "CoreSettings.js" as Settings
 import "components"
 
 // Race-safe Settings UI (SET-014..022, UX-033..039). Mutations go through Service.
+// Layout C3 (2026-09-10 amendment): section headers, label-left rows, interval
+// menus, and a save tray that exists only while the draft differs.
 Item {
   id: root
 
@@ -12,16 +15,13 @@ Item {
   property color foreground: Color.foreground
   property string fontFamily: Style.font.family
   property url iconBase: Qt.resolvedUrl("icons/")
-  // A11Y-008: true while NumberField (or other editor) owns focus.
-  property bool editorOwnsFocus: (intervalField && intervalField.field
-        ? !!intervalField.field.activeFocus
-        : false)
-      || (reminderField && reminderField.field
-        ? !!reminderField.field.activeFocus
-        : false)
+  // A11Y-008: true while an interval menu is open.
+  property bool editorOwnsFocus: (refreshDropdown ? !!refreshDropdown.popupOpen : false)
+      || (reminderDropdown ? !!reminderDropdown.popupOpen : false)
 
   readonly property var state: agentService ? agentService.settingsState : null
   readonly property var draft: agentService ? agentService.settingsDraft : null
+  readonly property var snapshot: state && state.snapshot ? state.snapshot : null
   readonly property string phase: state && state.phase ? String(state.phase) : "closed"
   readonly property bool locked: agentService
       ? agentService.settingsLocked()
@@ -30,6 +30,7 @@ Item {
   readonly property bool loading: phase === "loading"
   readonly property bool loadFailed: phase === "load_failed"
   readonly property bool saving: phase === "saving"
+  readonly property var changes: Settings.settingsChanges(snapshot, draft)
 
   readonly property var providers: {
     if (!draft || !Array.isArray(draft.providers))
@@ -78,6 +79,10 @@ Item {
     return String(root.iconBase) + name
   }
 
+  function changed(key) {
+    return root.changes.indexOf(key) >= 0
+  }
+
   function collectFocusTargets() {
     return root.loadFailed ? [restartShellButton] : []
   }
@@ -85,16 +90,43 @@ Item {
   Column {
     id: col
     width: parent.width
-    spacing: Style.space(12)
+    spacing: Style.space(4)
 
-    Text {
-      text: "Settings"
-      color: root.foreground
-      font.family: root.fontFamily
-      font.pixelSize: Style.font.body
-      font.bold: true
-      textFormat: Text.PlainText
-      Accessible.role: Accessible.Heading
+    // Title with the draft-only reset beside it (SET-022).
+    Item {
+      width: parent.width
+      height: Math.max(title.implicitHeight, restoreButton.implicitHeight)
+
+      Text {
+        id: title
+        anchors.left: parent.left
+        anchors.verticalCenter: parent.verticalCenter
+        text: "Settings"
+        color: root.foreground
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.body
+        font.bold: true
+        textFormat: Text.PlainText
+        Accessible.role: Accessible.Heading
+      }
+
+      Button {
+        id: restoreButton
+        anchors.right: parent.right
+        anchors.verticalCenter: parent.verticalCenter
+        visible: !root.loading && !root.loadFailed
+        text: "Restore defaults"
+        focusable: true
+        enabled: !root.locked
+        foreground: Util.alpha(root.foreground, 0.72)
+        fontFamily: root.fontFamily
+        fontSize: Style.font.caption
+        Accessible.name: "Restore defaults"
+        onClicked: {
+          if (root.agentService)
+            root.agentService.restoreSettingsDefaults()
+        }
+      }
     }
 
     Text {
@@ -139,30 +171,19 @@ Item {
       onClicked: focusActivate()
     }
 
-    Text {
-      visible: root.saving
-      width: parent.width
-      text: "Saving\u2026"
-      color: Util.alpha(root.foreground, 0.72)
-      font.family: root.fontFamily
-      font.pixelSize: Style.font.caption
-      textFormat: Text.PlainText
-    }
-
-    // Providers
     Column {
       width: parent.width
-      spacing: Style.space(4)
+      spacing: Style.space(2)
+      visible: !root.loading && !root.loadFailed
       opacity: root.locked ? 0.55 : 1.0
       enabled: !root.locked
 
-      Text {
+      PanelSectionHeader {
+        width: parent.width
+        topPadding: Style.space(8)
         text: "Providers"
-        color: Util.alpha(root.foreground, 0.55)
-        font.family: root.fontFamily
-        font.pixelSize: Style.font.caption
-        font.bold: true
-        textFormat: Text.PlainText
+        foreground: Util.alpha(root.foreground, 0.55)
+        fontFamily: root.fontFamily
       }
 
       Repeater {
@@ -177,6 +198,7 @@ Item {
           iconSource: root.iconUrl(providerId)
           enabled: !!modelData.enabled
           locked: root.locked
+          changed: Settings.providerChanged(root.snapshot, root.draft, providerId)
           canMoveUp: index > 0
           canMoveDown: index < root.providers.length - 1
           foreground: root.foreground
@@ -195,238 +217,223 @@ Item {
           }
         }
       }
-    }
 
-    PanelSeparator {
-      width: parent.width
-      foreground: root.foreground
-    }
-
-    // Display metric
-    Column {
-      width: parent.width
-      spacing: Style.space(6)
-      opacity: root.locked ? 0.55 : 1.0
-      enabled: !root.locked
-
-      Text {
-        text: "Bar shows"
-        color: Util.alpha(root.foreground, 0.55)
-        font.family: root.fontFamily
-        font.pixelSize: Style.font.caption
-        font.bold: true
-        textFormat: Text.PlainText
+      PanelSectionHeader {
+        width: parent.width
+        topPadding: Style.space(14)
+        text: "Bar"
+        foreground: Util.alpha(root.foreground, 0.55)
+        fontFamily: root.fontFamily
       }
 
-      Row {
-        spacing: Style.space(8)
+      SettingsRow {
+        label: "Bar shows"
+        changed: root.changed("display.metric")
+        foreground: root.foreground
+        fontFamily: root.fontFamily
 
-        Button {
-          text: "Remaining"
-          selected: root.metric === "remaining"
-          bordered: true
-          focusable: true
-          enabled: !root.locked
-          foreground: root.foreground
-          fontFamily: root.fontFamily
-          onClicked: {
-            if (root.agentService)
-              root.agentService.setDisplayMetric("remaining")
+        Row {
+          spacing: Style.space(4)
+
+          Button {
+            text: "Remaining"
+            selected: root.metric === "remaining"
+            bordered: true
+            focusable: true
+            enabled: !root.locked
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            onClicked: {
+              if (root.agentService)
+                root.agentService.setDisplayMetric("remaining")
+            }
           }
-        }
 
-        Button {
-          text: "Used"
-          selected: root.metric === "used"
-          bordered: true
-          focusable: true
-          enabled: !root.locked
-          foreground: root.foreground
-          fontFamily: root.fontFamily
-          onClicked: {
-            if (root.agentService)
-              root.agentService.setDisplayMetric("used")
+          Button {
+            text: "Used"
+            selected: root.metric === "used"
+            bordered: true
+            focusable: true
+            enabled: !root.locked
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            onClicked: {
+              if (root.agentService)
+                root.agentService.setDisplayMetric("used")
+            }
           }
         }
       }
-    }
 
-    // Refresh interval — native NumberField (UX-035)
-    Column {
-      width: parent.width
-      spacing: Style.space(4)
-      opacity: root.locked ? 0.55 : 1.0
-      enabled: !root.locked
+      SettingsRow {
+        label: "Refresh every"
+        changed: root.changed("refreshIntervalSeconds")
+        foreground: root.foreground
+        fontFamily: root.fontFamily
 
-      Row {
-        spacing: Style.spacing.lg
-
-        NumberField {
-          id: intervalField
+        Dropdown {
+          id: refreshDropdown
+          width: Style.space(120)
+          showLabel: false
           label: "Refresh every"
-          value: root.intervalSec
-          from: 30
-          to: 3600
-          stepSize: 5
+          value: String(root.intervalSec)
+          options: Settings.refreshIntervalOptions(root.intervalSec)
           foreground: root.foreground
           fontFamily: root.fontFamily
-          onModified: function (v) {
+          Accessible.name: "Refresh every"
+          onChanged: function (v) {
             if (root.agentService)
-              root.agentService.setRefreshInterval(v)
+              root.agentService.setRefreshInterval(Number(v))
           }
         }
-
-        // The host NumberField exposes no suffix property (measured), so the
-        // unit is a sibling label, and it cannot use anchors, because the
-        // spin box is a child of a sibling, which QML refuses to anchor to.
-        // The y binding composes intervalField's own offset within this Row
-        // with the spin box's offset inside intervalField's Column, so the
-        // label tracks the spin box from whatever frame the Row places the
-        // field in.
-        Text {
-          y: intervalField.y + intervalField.field.y
-             + (intervalField.field.height - height) / 2
-          text: "seconds"
-          color: Util.alpha(root.foreground, 0.72)
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.bodySmall
-          textFormat: Text.PlainText
-          Accessible.ignored: true
-        }
       }
-    }
 
-    // Notifications
-    Column {
-      width: parent.width
-      spacing: Style.space(4)
-      opacity: root.locked ? 0.55 : 1.0
-      enabled: !root.locked
+      PanelSectionHeader {
+        width: parent.width
+        topPadding: Style.space(14)
+        text: "Alerts"
+        foreground: Util.alpha(root.foreground, 0.55)
+        fontFamily: root.fontFamily
+      }
 
-      Toggle {
-        label: "Notifications"
-        description: "Warn me before a quota runs out."
-        checked: root.notificationsOn
+      SettingsRow {
+        label: "Warn me before a quota runs out"
+        changed: root.changed("notifications.enabled")
         foreground: root.foreground
         fontFamily: root.fontFamily
-        onClicked: {
-          if (root.agentService)
-            root.agentService.setNotificationsEnabled(!root.notificationsOn)
+
+        SettingsSwitch {
+          accessibleName: "Warn me before a quota runs out"
+          checked: root.notificationsOn
+          locked: root.locked
+          foreground: root.foreground
+          onToggled: {
+            if (root.agentService)
+              root.agentService.setNotificationsEnabled(!root.notificationsOn)
+          }
         }
       }
 
-      Row {
-        spacing: Style.spacing.lg
+      SettingsRow {
+        label: "Remind me every"
+        subordinate: true
+        opacity: root.notificationsOn ? 1.0 : 0.55
+        changed: root.changed("notifications.reminderMinutes")
+        foreground: root.foreground
+        fontFamily: root.fontFamily
 
-        NumberField {
-          id: reminderField
+        Dropdown {
+          id: reminderDropdown
+          width: Style.space(120)
+          showLabel: false
           label: "Remind me every"
-          value: root.reminderMinutes
-          from: 15
-          to: 1440
-          stepSize: 15
+          value: String(root.reminderMinutes)
+          options: Settings.reminderOptions(root.reminderMinutes)
           foreground: root.foreground
           fontFamily: root.fontFamily
-          onModified: function (v) {
+          Accessible.name: "Remind me every"
+          onChanged: function (v) {
             if (root.agentService)
-              root.agentService.setReminderMinutes(v)
+              root.agentService.setReminderMinutes(Number(v))
           }
         }
-
-        // Same sibling-label technique as the refresh interval above: the
-        // host NumberField exposes no suffix property, and the spin box is a
-        // child of a sibling, which QML refuses to anchor to.
-        Text {
-          y: reminderField.y + reminderField.field.y
-             + (reminderField.field.height - height) / 2
-          text: "minutes"
-          color: Util.alpha(root.foreground, 0.72)
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.bodySmall
-          textFormat: Text.PlainText
-          Accessible.ignored: true
-        }
       }
-    }
 
-    // Updates
-    Toggle {
-      opacity: root.locked ? 0.55 : 1.0
-      enabled: !root.locked
-      label: "Update automatically"
-      description: "Install new versions and reload the shell."
-      checked: root.automaticUpdatesOn
-      foreground: root.foreground
-      fontFamily: root.fontFamily
-      onClicked: {
-        if (root.agentService)
-          root.agentService.setAutomaticUpdates(!root.automaticUpdatesOn)
+      PanelSectionHeader {
+        width: parent.width
+        topPadding: Style.space(14)
+        text: "Updates"
+        foreground: Util.alpha(root.foreground, 0.55)
+        fontFamily: root.fontFamily
       }
-    }
 
-    PanelSeparator {
-      width: parent.width
-      foreground: root.foreground
-    }
-
-    // Actions — English text labels (UX-036..038)
-    Flow {
-      width: parent.width
-      spacing: Style.space(8)
-
-      Button {
-        text: "Restore defaults"
-        bordered: true
-        focusable: true
-        enabled: !root.locked
+      SettingsRow {
+        label: "Install automatically"
+        changed: root.changed("updates.automatic")
         foreground: root.foreground
         fontFamily: root.fontFamily
-        Accessible.name: "Restore defaults"
-        onClicked: {
-          if (root.agentService)
-            root.agentService.restoreSettingsDefaults()
-        }
-      }
 
-      Button {
-        text: "Cancel"
-        bordered: true
-        focusable: true
-        enabled: !root.locked && root.phase === "dirty"
-        foreground: root.foreground
-        fontFamily: root.fontFamily
-        Accessible.name: "Cancel"
-        onClicked: {
-          if (root.agentService)
-            root.agentService.cancelSettings()
-        }
-      }
-
-      Button {
-        text: root.saving ? "Saving\u2026" : "Save changes"
-        bordered: true
-        focusable: true
-        enabled: root.canSave
-        foreground: root.foreground
-        fontFamily: root.fontFamily
-        Accessible.name: "Save changes"
-        onClicked: {
-          if (root.agentService)
-            root.agentService.saveSettings()
+        SettingsSwitch {
+          accessibleName: "Install updates automatically"
+          checked: root.automaticUpdatesOn
+          locked: root.locked
+          foreground: root.foreground
+          onToggled: {
+            if (root.agentService)
+              root.agentService.setAutomaticUpdates(!root.automaticUpdatesOn)
+          }
         }
       }
     }
 
-    PanelSeparator {
-      width: parent.width
-      foreground: root.foreground
-    }
-
+    // Version, check, update, and uninstall act immediately, outside the
+    // draft, so they stay enabled while the draft is locked.
     MaintenanceView {
+      visible: !root.loading && !root.loadFailed
       width: parent.width
       agentService: root.agentService
       foreground: root.foreground
       fontFamily: root.fontFamily
+    }
+
+    Item { width: 1; height: Style.space(6) }
+
+    // Save tray (UX-036..038): exists only while the draft differs from the
+    // saved settings, and names how many changes it holds.
+    Rectangle {
+      visible: root.phase === "dirty" || root.saving
+      width: parent.width
+      height: tray.implicitHeight + Style.space(16)
+      color: Color.menu.selectedBackground
+
+      Text {
+        anchors.left: parent.left
+        anchors.leftMargin: Style.space(10)
+        anchors.verticalCenter: parent.verticalCenter
+        text: root.saving ? "Saving\u2026" : Settings.unsavedChangesLabel(root.changes.length)
+        color: Color.accent
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
+        textFormat: Text.PlainText
+        Accessible.role: Accessible.StaticText
+        Accessible.name: text
+      }
+
+      Row {
+        id: tray
+        anchors.right: parent.right
+        anchors.rightMargin: Style.space(10)
+        anchors.verticalCenter: parent.verticalCenter
+        spacing: Style.space(8)
+
+        Button {
+          text: "Cancel"
+          bordered: true
+          focusable: true
+          enabled: !root.locked && root.phase === "dirty"
+          foreground: root.foreground
+          fontFamily: root.fontFamily
+          Accessible.name: "Cancel"
+          onClicked: {
+            if (root.agentService)
+              root.agentService.cancelSettings()
+          }
+        }
+
+        Button {
+          text: "Save changes"
+          bordered: true
+          focusable: true
+          enabled: root.canSave
+          foreground: Color.accent
+          fontFamily: root.fontFamily
+          Accessible.name: "Save changes"
+          onClicked: {
+            if (root.agentService)
+              root.agentService.saveSettings()
+          }
+        }
+      }
     }
   }
 }

@@ -137,24 +137,33 @@ not literal UI.
 
 ## Settings
 
-Settings contains:
+Settings contains, under the section headers Providers, Bar, Alerts, and
+Updates, with each label on the left and its control on the right:
 
-- provider enable controls;
-- provider order controls;
-- a used/remaining selector;
-- a native numeric refresh interval control;
-- the notification toggle;
-- `Restore defaults`;
-- `Cancel`;
-- `Save changes`;
-- the Maintenance section.
+- provider enable switches and order controls;
+- a used/remaining selector (`Bar shows`);
+- a refresh interval menu (`Refresh every`);
+- the notification switch and its reminder menu (`Remind me every`);
+- the automatic update switch (`Install automatically`) and the maintenance
+  rows;
+- `Restore defaults` beside the title;
+- a save tray with the unsaved-change count, `Cancel`, and `Save changes`.
 
 Requirements:
 
 - `UX-033`: Provider rows use official icons and English names.
 - `UX-034`: Ordering uses verified native up/down chevrons.
-- `UX-035`: The interval uses a native numeric control, not custom plus/minus
-  glyph buttons.
+- `UX-035`: Intervals use the host menu with fixed choices (refresh 30 s,
+  1, 2, 5, 10, 15, 30 min, 1 h; reminder 15, 30 min, 1, 2, 4, 8, 12, 24 h).
+  A saved value outside the list appears as one more choice, so opening a
+  menu never rewrites a setting. Switches wrap the host switch in a
+  Tab-focusable control that toggles on Enter or Space.
+- `UX-035A`: The save tray exists only while the draft differs from the
+  persisted snapshot or is saving. It names the change count (a reorder
+  counts once, each switch or value once), and each differing row carries an
+  accent bar in its gutter. Separation comes from spacing and the tray
+  surface; the view draws no separator lines. Amended by
+  `docs/specs/v10/amendments/2026-09-10-settings-layout-design.md`.
 - `UX-036`: `Restore defaults` changes only the draft.
 - `UX-037`: `Save changes` is unavailable while invalid or saving.
 - `UX-038`: `Cancel` restores the persisted snapshot.
@@ -177,7 +186,8 @@ Requirements:
   link.
 - `UX-043`: Update confirmation names current version, target version,
   settings preservation, and rollback behavior.
-- `UX-044`: `Uninstall Agent Bar` is visually separated as a danger action.
+- `UX-044`: `Uninstall Agent Bar` is visually separated as a danger action:
+  the only red control, alone on the last row of Updates.
 - `UX-045`: Uninstall confirmation defaults to preserving settings.
 - `UX-046`: `Also delete saved settings and backups` is unchecked by default.
 - `UX-047`: A second explicit destructive click is required.
@@ -225,7 +235,8 @@ Requirements:
 - `A11Y-005`: `r` refreshes the selected provider.
 - `A11Y-006`: `s` opens Settings.
 - `A11Y-007`: Escape closes the popup.
-- `A11Y-008`: Panel shortcuts are suspended while a field editor owns input.
+- `A11Y-008`: Panel shortcuts are suspended while a field editor owns input,
+  including while a Settings interval menu is open.
 - `A11Y-009`: Every interactive control has native visible focus,
   `Accessible.name`, role, and action.
 - `A11Y-010`: Focus order excludes hidden and disabled controls.

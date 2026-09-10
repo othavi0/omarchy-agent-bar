@@ -105,6 +105,61 @@ TestCase {
     compare(Core.validateSettingsDraft(bad).ok, false)
   }
 
+  function optionValues(options) {
+    return options.map(function (o) { return o.value }).join(",")
+  }
+
+  function optionLabels(options) {
+    return options.map(function (o) { return o.label }).join(",")
+  }
+
+  function test_refresh_interval_options() {
+    var o = Core.refreshIntervalOptions(60)
+    compare(optionValues(o), "30,60,120,300,600,900,1800,3600")
+    compare(optionLabels(o), "30 s,1 min,2 min,5 min,10 min,15 min,30 min,1 h")
+    // A saved value outside the list stays selectable, in order.
+    var odd = Core.refreshIntervalOptions(45)
+    compare(optionValues(odd), "30,45,60,120,300,600,900,1800,3600")
+    compare(odd[1].label, "45 s")
+    compare(Core.refreshIntervalOptions(90)[2].label, "90 s")
+  }
+
+  function test_reminder_options() {
+    var o = Core.reminderOptions(120)
+    compare(optionValues(o), "15,30,60,120,240,480,720,1440")
+    compare(optionLabels(o), "15 min,30 min,1 h,2 h,4 h,8 h,12 h,24 h")
+    var odd = Core.reminderOptions(90)
+    compare(optionValues(odd), "15,30,60,90,120,240,480,720,1440")
+    compare(odd[3].label, "90 min")
+  }
+
+  function test_settings_changes_against_snapshot() {
+    var snap = Service.defaultSettings()
+    compare(Core.settingsChanges(snap, snap).length, 0)
+    compare(Core.unsavedChangesLabel(0), "")
+
+    var d = Core.setProviderEnabled(snap, "grok", true)
+    d = Core.setRefreshInterval(d, 300)
+    var changes = Core.settingsChanges(snap, d)
+    compare(changes.sort().join(","), "provider:grok,refreshIntervalSeconds")
+    compare(Core.unsavedChangesLabel(changes.length), "2 unsaved changes")
+    compare(Core.unsavedChangesLabel(1), "1 unsaved change")
+
+    // A reorder counts once, and marks every provider that moved.
+    var moved = Core.moveProvider(snap, "codex", -1)
+    compare(Core.settingsChanges(snap, moved).join(","), "providers.order")
+    compare(Core.providerChanged(snap, moved, "codex"), true)
+    compare(Core.providerChanged(snap, moved, "claude"), true)
+    compare(Core.providerChanged(snap, moved, "amp"), false)
+
+    // An absent updates block equals the default, so it is not a change.
+    var legacy = Service.defaultSettings()
+    delete legacy.updates
+    compare(Core.settingsChanges(legacy, Service.defaultSettings()).length, 0)
+    compare(Core.settingsChanges(legacy, Core.setAutomaticUpdates(legacy, false)).join(","),
+            "updates.automatic")
+  }
+
   function test_automatic_updates_setting() {
     var d = Service.defaultSettings()
     compare(d.updates.automatic, true)
@@ -210,8 +265,20 @@ TestCase {
     verify(src.indexOf("Restore defaults") >= 0)
     verify(src.indexOf("Save changes") >= 0)
     verify(src.indexOf("Cancel") >= 0)
-    verify(src.indexOf("NumberField") >= 0)
-    verify(src.indexOf("Notifications") >= 0)
+    // Settings layout C3 (2026-09-10 amendment): section headers, label-left
+    // rows, interval menus, and a save tray that exists only while dirty.
+    verify(src.indexOf("NumberField") < 0)
+    verify(src.indexOf("Dropdown") >= 0)
+    verify(src.indexOf("Settings.refreshIntervalOptions(") >= 0)
+    verify(src.indexOf("Settings.reminderOptions(") >= 0)
+    var headers = ['text: "Providers"', 'text: "Bar"', 'text: "Alerts"', 'text: "Updates"']
+    for (var h = 0; h < headers.length; h++)
+      verify(src.indexOf(headers[h]) >= 0, headers[h])
+    verify(src.indexOf("PanelSectionHeader") >= 0)
+    verify(src.indexOf("Settings.unsavedChangesLabel(") >= 0)
+    verify(src.indexOf('visible: root.phase === "dirty" || root.saving') >= 0)
+    verify(src.indexOf("Color.menu.selectedBackground") >= 0)
+    verify(src.indexOf("PanelSeparator") < 0, "C3 separates with space, not lines")
     verify(src.indexOf("Remaining") >= 0)
     verify(src.indexOf("Used") >= 0)
     verify(src.indexOf("MaintenanceView") >= 0)
@@ -238,15 +305,16 @@ TestCase {
     verify(src.indexOf("Chip number") < 0)
     verify(src.indexOf("Refresh every") >= 0)
     verify(src.indexOf("Refresh interval (seconds)") < 0)
-    verify(src.indexOf("Warn me before a quota runs out.") >= 0)
+    verify(src.indexOf('"Warn me before a quota runs out"') >= 0)
     verify(src.indexOf("Usage threshold alerts") < 0)
     verify(src.indexOf('text: "Loading\\u2026"') >= 0)
     verify(src.indexOf("Loading settings") < 0)
-    // The host NumberField has no suffix property, so the unit is a sibling
-    // label positioned against the spin box.
-    verify(src.indexOf('text: "seconds"') >= 0)
+    // The menus carry the unit in each option, so the sibling unit labels
+    // the NumberField layout needed are gone.
+    verify(src.indexOf('text: "seconds"') < 0)
     verify(src.indexOf("Remind me every") >= 0)
-    verify(src.indexOf('text: "minutes"') >= 0)
+    verify(src.indexOf('text: "minutes"') < 0)
+    verify(src.indexOf('"Install automatically"') >= 0)
   }
 
   function test_settings_row_has_icon_name_chevrons() {
@@ -256,6 +324,20 @@ TestCase {
     verify(src.indexOf("󰅃") >= 0)
     verify(src.indexOf("󰅀") >= 0)
     verify(src.indexOf("enableToggled") >= 0)
+    // The On/Off text button became the same switch every other row uses.
+    verify(src.indexOf("SettingsSwitch") >= 0)
+    verify(src.indexOf('"On"') < 0)
+  }
+
+  function test_settings_switch_is_keyboard_operable() {
+    // The host ToggleSwitch takes no keyboard focus; the wrapper must.
+    var src = read("components/SettingsSwitch.qml")
+    verify(src.indexOf("activeFocusOnTab: true") >= 0)
+    verify(src.indexOf("Keys.onSpacePressed") >= 0)
+    verify(src.indexOf("Keys.onReturnPressed") >= 0)
+    verify(src.indexOf("Accessible.role: Accessible.CheckBox") >= 0)
+    verify(src.indexOf("Accessible.checked: root.checked") >= 0)
+    verify(src.indexOf("hasCursor: root.activeFocus") >= 0)
   }
 
   function test_service_settings_argv_shapes() {

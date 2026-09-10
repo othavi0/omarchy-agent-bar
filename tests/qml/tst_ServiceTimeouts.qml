@@ -467,7 +467,7 @@ TestCase {
     xhr.open("GET", "file://" + repoRoot + "/SettingsView.qml", false)
     xhr.send()
     var src = String(xhr.responseText)
-    verify(src.indexOf("label: \"Update automatically\"") >= 0)
+    verify(src.indexOf("label: \"Install automatically\"") >= 0)
     verify(src.indexOf("setAutomaticUpdates(!root.automaticUpdatesOn)") >= 0)
   }
 

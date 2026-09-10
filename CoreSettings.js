@@ -252,6 +252,120 @@ function setReminderMinutes(draft, minutes) {
   return next
 }
 
+// ---------------------------------------------------------------------------
+// Settings view: interval menus and unsaved-change tracking
+// ---------------------------------------------------------------------------
+
+var REFRESH_CHOICES = [30, 60, 120, 300, 600, 900, 1800, 3600]
+var REMINDER_CHOICES = [15, 30, 60, 120, 240, 480, 720, 1440]
+
+function secondsLabel(seconds) {
+  if (seconds % 3600 === 0)
+    return (seconds / 3600) + " h"
+  if (seconds % 60 === 0)
+    return (seconds / 60) + " min"
+  return seconds + " s"
+}
+
+function minutesLabel(minutes) {
+  if (minutes % 60 === 0)
+    return (minutes / 60) + " h"
+  return minutes + " min"
+}
+
+// Fixed choices plus the current value when a saved document holds one the
+// menu does not list, so opening the menu never rewrites a setting.
+function choiceOptions(choices, current, label) {
+  var values = choices.slice()
+  var n = Number(current)
+  if (isFinite(n) && n === Math.floor(n) && values.indexOf(n) < 0) {
+    values.push(n)
+    values.sort(function (a, b) { return a - b })
+  }
+  return values.map(function (v) {
+    return { value: String(v), label: label(v) }
+  })
+}
+
+function refreshIntervalOptions(currentSeconds) {
+  return choiceOptions(REFRESH_CHOICES, currentSeconds, secondsLabel)
+}
+
+function reminderOptions(currentMinutes) {
+  return choiceOptions(REMINDER_CHOICES, currentMinutes, minutesLabel)
+}
+
+function providerIds(doc) {
+  if (!doc || !Array.isArray(doc.providers))
+    return []
+  return doc.providers.map(function (p) { return String(p.id) })
+}
+
+function providerEnabled(doc, id) {
+  if (!doc || !Array.isArray(doc.providers))
+    return false
+  for (var i = 0; i < doc.providers.length; i++) {
+    if (String(doc.providers[i].id) === id)
+      return !!doc.providers[i].enabled
+  }
+  return false
+}
+
+function automaticUpdatesOf(doc) {
+  return !(doc && doc.updates && doc.updates.automatic === false)
+}
+
+function reminderOf(doc) {
+  return doc && doc.notifications && isFinite(Number(doc.notifications.reminderMinutes))
+      ? Number(doc.notifications.reminderMinutes)
+      : 120
+}
+
+// Keys that differ between the saved snapshot and the draft. A reorder is
+// one change; each provider switch is one change.
+function settingsChanges(snapshot, draft) {
+  if (!snapshot || !draft)
+    return []
+  var changes = []
+  var ids = providerIds(draft)
+  if (providerIds(snapshot).join(",") !== ids.join(","))
+    changes.push("providers.order")
+  for (var i = 0; i < ids.length; i++) {
+    if (providerEnabled(snapshot, ids[i]) !== providerEnabled(draft, ids[i]))
+      changes.push("provider:" + ids[i])
+  }
+  var snapMetric = snapshot.display ? snapshot.display.metric : ""
+  var draftMetric = draft.display ? draft.display.metric : ""
+  if (snapMetric !== draftMetric)
+    changes.push("display.metric")
+  if (Number(snapshot.refreshIntervalSeconds) !== Number(draft.refreshIntervalSeconds))
+    changes.push("refreshIntervalSeconds")
+  var snapNotify = !!(snapshot.notifications && snapshot.notifications.enabled)
+  var draftNotify = !!(draft.notifications && draft.notifications.enabled)
+  if (snapNotify !== draftNotify)
+    changes.push("notifications.enabled")
+  if (reminderOf(snapshot) !== reminderOf(draft))
+    changes.push("notifications.reminderMinutes")
+  if (automaticUpdatesOf(snapshot) !== automaticUpdatesOf(draft))
+    changes.push("updates.automatic")
+  return changes
+}
+
+// A provider row is marked when its switch changed or it moved.
+function providerChanged(snapshot, draft, id) {
+  if (!snapshot || !draft)
+    return false
+  if (providerEnabled(snapshot, id) !== providerEnabled(draft, id))
+    return true
+  return providerIds(snapshot).indexOf(id) !== providerIds(draft).indexOf(id)
+}
+
+function unsavedChangesLabel(count) {
+  if (!count)
+    return ""
+  return count === 1 ? "1 unsaved change" : count + " unsaved changes"
+}
+
 function setAutomaticUpdates(draft, enabled) {
   var next = cloneDraft(draft)
   next.updates = { automatic: !!enabled }

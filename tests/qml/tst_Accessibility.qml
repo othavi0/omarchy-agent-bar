@@ -129,10 +129,10 @@ TestCase {
     var propEnd = src.indexOf("readonly property var state", prop)
     verify(propEnd > prop)
     var body = src.substring(prop, propEnd)
-    // A11Y-008 must cover every NumberField editor, not just the refresh
-    // interval — a user editing the reminder field is entitled to the same
-    // stay-open protection as one editing the refresh interval.
-    verify(body.indexOf("intervalField") >= 0)
-    verify(body.indexOf("reminderField") >= 0)
+    // A11Y-008 must cover every interval menu, not just the refresh
+    // interval: a user picking a reminder is entitled to the same stay-open
+    // protection as one picking the refresh interval.
+    verify(body.indexOf("refreshDropdown.popupOpen") >= 0)
+    verify(body.indexOf("reminderDropdown.popupOpen") >= 0)
   }
 }
