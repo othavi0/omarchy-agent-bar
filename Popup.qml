@@ -66,9 +66,13 @@ KeyboardPanel {
     owner
   )
 
+  readonly property int footerHeight: settingsFooter.shown
+      ? settingsFooter.implicitHeight + Style.space(8)
+      : 0
+
   readonly property int measuredBodyHeight: {
     var col = contentColumn ? contentColumn.implicitHeight : 0
-    var margins = contentMargins * 2
+    var margins = contentMargins * 2 + root.footerHeight
     var railMin = rail && rail.minStackHeight
         ? rail.minStackHeight + Style.space(8)
         : Style.space(160)
@@ -255,6 +259,8 @@ KeyboardPanel {
         height: parent.height
         providers: root.railProviders
         selectedProviderId: root.selectedId
+        settingsActive: root.view === "settings"
+        displayMetric: root.displayMetric
         foreground: Color.foreground
         fontFamily: Style.font.family
         iconBase: Qt.resolvedUrl("icons/")
@@ -266,6 +272,13 @@ KeyboardPanel {
         id: railGutter
         width: Style.space(8)
         height: parent.height
+
+        PanelSeparator {
+          anchors.left: parent.left
+          width: 1
+          height: parent.height
+          foreground: Color.foreground
+        }
       }
 
       Item {
@@ -279,7 +292,7 @@ KeyboardPanel {
           anchors.leftMargin: root.contentMargins
           anchors.rightMargin: root.contentMargins
           anchors.topMargin: root.contentMargins
-          anchors.bottomMargin: root.contentMargins
+          anchors.bottomMargin: root.contentMargins + root.footerHeight
           contentWidth: width
           contentHeight: contentColumn.implicitHeight
           clip: true
@@ -336,6 +349,20 @@ KeyboardPanel {
               onLoaded: root.scheduleFocusRebuild()
             }
           }
+        }
+
+        SettingsFooter {
+          id: settingsFooter
+          anchors.left: parent.left
+          anchors.right: parent.right
+          anchors.bottom: parent.bottom
+          anchors.leftMargin: root.contentMargins
+          anchors.rightMargin: root.contentMargins
+          anchors.bottomMargin: root.contentMargins
+          active: root.view === "settings"
+          agentService: root.agentService
+          foreground: Color.foreground
+          fontFamily: Style.font.family
         }
       }
     }

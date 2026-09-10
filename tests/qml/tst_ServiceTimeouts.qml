@@ -489,9 +489,9 @@ TestCase {
     verify(s.pendingSettingsPayload.indexOf('"updates":{"automatic":false}') >= 0)
   }
 
-  function test_settings_view_offers_the_automatic_updates_toggle() {
+  function test_settings_about_tab_offers_the_automatic_updates_toggle() {
     var xhr = new XMLHttpRequest()
-    xhr.open("GET", "file://" + repoRoot + "/SettingsView.qml", false)
+    xhr.open("GET", "file://" + repoRoot + "/MaintenanceView.qml", false)
     xhr.send()
     var src = String(xhr.responseText)
     verify(src.indexOf("label: \"Update automatically\"") >= 0)

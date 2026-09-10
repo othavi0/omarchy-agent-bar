@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Layouts
 import qs.Commons
 import qs.Ui
 
@@ -7,9 +8,11 @@ Item {
 
   property string providerId: ""
   property string displayName: ""
+  property string statusText: ""
   property url iconSource: ""
   property bool enabled: true
   property bool locked: false
+  property bool movable: true
   property bool canMoveUp: true
   property bool canMoveDown: true
   property color foreground: Color.foreground
@@ -20,18 +23,18 @@ Item {
   signal moveDown()
 
   width: parent ? parent.width : implicitWidth
-  implicitHeight: Style.space(40)
+  implicitHeight: Style.space(36)
   height: implicitHeight
 
-  Row {
+  RowLayout {
     anchors.fill: parent
     spacing: Style.space(8)
 
     Image {
-      anchors.verticalCenter: parent.verticalCenter
+      Layout.alignment: Qt.AlignVCenter
       source: root.iconSource
-      width: 16
-      height: 16
+      Layout.preferredWidth: 16
+      Layout.preferredHeight: 16
       sourceSize.width: 16
       sourceSize.height: 16
       fillMode: Image.PreserveAspectFit
@@ -39,10 +42,9 @@ Item {
     }
 
     Text {
-      anchors.verticalCenter: parent.verticalCenter
-      width: Math.max(Style.space(80), parent.width * 0.35)
+      Layout.alignment: Qt.AlignVCenter
       text: root.displayName
-      color: root.foreground
+      color: root.enabled ? root.foreground : Util.alpha(root.foreground, 0.55)
       font.family: root.fontFamily
       font.pixelSize: Style.font.body
       elide: Text.ElideRight
@@ -50,31 +52,39 @@ Item {
       Accessible.name: root.displayName
     }
 
-    Item { width: Style.space(8); height: 1 }
+    Text {
+      Layout.alignment: Qt.AlignVCenter
+      Layout.fillWidth: true
+      text: root.statusText
+      color: Util.alpha(root.foreground, 0.55)
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
+      elide: Text.ElideRight
+      textFormat: Text.PlainText
+    }
 
-    Button {
-      anchors.verticalCenter: parent.verticalCenter
-      text: root.enabled ? "On" : "Off"
-      selected: root.enabled
-      bordered: true
-      focusable: true
-      enabled: !root.locked
+    ToggleSwitch {
+      Layout.alignment: Qt.AlignVCenter
+      checked: root.enabled
+      interactive: !root.locked
       foreground: root.foreground
-      fontFamily: root.fontFamily
-      Accessible.name: root.displayName + " " + (root.enabled ? "enabled" : "disabled")
-      onClicked: {
+      onToggled: {
+        if (!root.locked)
+          root.enableToggled()
+      }
+      Accessible.role: Accessible.CheckBox
+      Accessible.name: root.displayName + " on the bar"
+      Accessible.checked: root.enabled
+      Accessible.onToggleAction: {
         if (!root.locked)
           root.enableToggled()
       }
     }
 
-    Item {
-      width: Math.max(Style.space(4), parent.width * 0.1)
-      height: 1
-    }
-
     PanelActionButton {
-      anchors.verticalCenter: parent.verticalCenter
+      id: upButton
+      visible: root.movable
+      Layout.alignment: Qt.AlignVCenter
       iconText: "󰅃"
       tooltipText: "Move up"
       foreground: root.foreground
@@ -85,7 +95,9 @@ Item {
     }
 
     PanelActionButton {
-      anchors.verticalCenter: parent.verticalCenter
+      id: downButton
+      visible: root.movable
+      Layout.alignment: Qt.AlignVCenter
       iconText: "󰅀"
       tooltipText: "Move down"
       foreground: root.foreground
@@ -93,6 +105,14 @@ Item {
       focusable: true
       Accessible.name: "Move " + root.displayName + " down"
       onClicked: root.moveDown()
+    }
+
+    // Keeps hidden rows' switches in the same column as the rows above,
+    // which carry two chevrons in this space.
+    Item {
+      visible: !root.movable
+      Layout.preferredWidth: upButton.implicitWidth + downButton.implicitWidth + Style.space(8)
+      Layout.preferredHeight: 1
     }
   }
 }
