@@ -520,22 +520,51 @@ fn dispatch_update_apply() -> Result<(), CliFailure> {
     let systemd_run = resolve_absolute_executable("systemd-run")
         .map_err(|e| CliFailure::plugin(e.to_string()))?;
 
+    // `omarchy plugin update` only rescans plugins, and a rescan does not
+    // reload a running Service.qml: without a shell restart the old QML keeps
+    // running against the new tree. The restart runs from the unit, outside
+    // the shell process it replaces. A missing notifier never blocks it.
+    let restart_shell = unit_command_path(
+        resolve_absolute_executable("omarchy-restart-shell")
+            .map_err(|e| CliFailure::plugin(e.to_string()))?,
+    )?;
+    let notify = match resolve_absolute_executable("notify-send") {
+        Ok(path) => Some(unit_command_path(path)?),
+        Err(_) => None,
+    };
+
     let clock = SystemClock;
     let txid = txid_from_bytes(format!("update-apply:{}", Clock::now_utc(&clock)).as_bytes());
     let unit = format!("agent-bar-update-{txid}.service");
     let unit_flag = format!("--unit={unit}");
 
-    let argv: [&str; 9] = [
-        "--user",
-        "--collect",
-        unit_flag.as_str(),
-        "--",
-        omarchy_bin.as_str(),
-        "plugin",
-        "update",
-        "othavi0.agent-bar",
-        "--yes",
+    // Oneshot: ExecStartPost runs only after `omarchy plugin update` exits 0,
+    // so a failed or rolled-back update never restarts the shell.
+    let mut argv: Vec<String> = vec![
+        "--user".to_string(),
+        "--collect".to_string(),
+        unit_flag,
+        "--service-type=oneshot".to_string(),
     ];
+    if let Some(notify) = notify {
+        argv.push(format!(
+            "--property=ExecStartPost={notify} --app-name=\"Agent Bar\" \
+             \"Agent Bar updated\" \"The shell is reloading to finish the update.\""
+        ));
+    }
+    argv.push(format!("--property=ExecStartPost={restart_shell}"));
+    argv.extend(
+        [
+            "--",
+            omarchy_bin.as_str(),
+            "plugin",
+            "update",
+            "othavi0.agent-bar",
+            "--yes",
+        ]
+        .map(str::to_string),
+    );
+    let argv: Vec<&str> = argv.iter().map(String::as_str).collect();
 
     let runner = ProcessCommandRunner;
     let out = runner
@@ -557,6 +586,23 @@ fn dispatch_update_apply() -> Result<(), CliFailure> {
     let json = serde_json::to_string(&doc).map_err(|e| CliFailure::plugin(e.to_string()))?;
     println!("{json}");
     Ok(())
+}
+
+/// An absolute executable path that is safe to embed in a systemd unit
+/// command line. systemd splits `ExecStartPost=` on whitespace and expands
+/// `%` specifiers and `$` variables, so any other character fails closed.
+fn unit_command_path(path: String) -> Result<String, CliFailure> {
+    let safe = path.starts_with('/')
+        && path
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '/' | '.' | '_' | '-' | '+'));
+    if safe {
+        Ok(path)
+    } else {
+        Err(CliFailure::plugin(format!(
+            "executable path cannot be used in a unit command line: {path}"
+        )))
+    }
 }
 
 /// `update` (no subcommand): the old TTY confirmation flow required a
@@ -788,5 +834,26 @@ mod tests {
         );
         let err = confirm_uninstall(false, false, &mut stdin, &mut stderr).unwrap_err();
         assert_eq!(err.exit_code, VALIDATION);
+    }
+
+    #[test]
+    fn unit_command_path_rejects_what_systemd_would_split_or_expand() {
+        assert_eq!(
+            unit_command_path("/usr/bin/omarchy-restart-shell".to_string()).unwrap(),
+            "/usr/bin/omarchy-restart-shell"
+        );
+        for unsafe_path in [
+            "omarchy-restart-shell",
+            "/home/a b/bin/notify-send",
+            "/opt/%h/notify-send",
+            "/opt/$HOME/notify-send",
+            "/opt/\"q\"/notify-send",
+            "/opt/a\\b/notify-send",
+        ] {
+            assert!(
+                unit_command_path(unsafe_path.to_string()).is_err(),
+                "{unsafe_path}"
+            );
+        }
     }
 }

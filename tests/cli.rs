@@ -671,6 +671,102 @@ fn update_apply_emits_delegation_document() {
     assert!(argv.contains(&"--".to_string()));
 }
 
+/// Runs `update apply` with PATH limited to `path_dir` (plus a `bash` link
+/// for the shims) and returns the recorded systemd-run argv.
+fn update_apply_argv_with_path_dir(root: &Path, path_dir: &Path) -> Vec<String> {
+    let home = root.join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    write_executable(&path_dir.join("omarchy"), "#!/usr/bin/env bash\nexit 0\n");
+    write_executable(
+        &path_dir.join("omarchy-restart-shell"),
+        "#!/usr/bin/env bash\nexit 0\n",
+    );
+    #[cfg(unix)]
+    std::os::unix::fs::symlink("/bin/bash", path_dir.join("bash")).unwrap();
+    let systemd_run_argv = root.join("systemd-run-argv.bin");
+    write_executable(
+        &path_dir.join("systemd-run"),
+        &recording_shim_body(&systemd_run_argv),
+    );
+
+    let bin = assert_cmd::cargo::cargo_bin("agent-bar");
+    let output = StdCommand::new(&bin)
+        .args(["update", "apply"])
+        .env("HOME", &home)
+        .env("XDG_STATE_HOME", home.join("state"))
+        .env("XDG_CACHE_HOME", home.join("cache"))
+        .env("XDG_CONFIG_HOME", home.join("config"))
+        .env("PATH", path_dir)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "stderr={} stdout={}",
+        String::from_utf8_lossy(&output.stderr),
+        String::from_utf8_lossy(&output.stdout)
+    );
+    read_nul_argv(&systemd_run_argv)
+}
+
+#[test]
+fn update_apply_restarts_shell_after_a_successful_update() {
+    // `omarchy plugin update` only rescans plugins, which does not reload a
+    // running Service.qml. The unit is oneshot so ExecStartPost runs only
+    // after the fast-forward succeeded: notify first, then restart the shell.
+    let dir = tempdir().unwrap();
+    let path_dir = dir.path().join("pathbin");
+    write_executable(
+        &path_dir.join("notify-send"),
+        "#!/usr/bin/env bash\nexit 0\n",
+    );
+    let argv = update_apply_argv_with_path_dir(dir.path(), &path_dir);
+
+    let separator = argv.iter().position(|a| a == "--").expect("argv has --");
+    let oneshot = argv
+        .iter()
+        .position(|a| a == "--service-type=oneshot")
+        .expect("unit is oneshot");
+    let notify_prefix = format!(
+        "--property=ExecStartPost={}/notify-send ",
+        path_dir.display()
+    );
+    let notify = argv
+        .iter()
+        .position(|a| a.starts_with(&notify_prefix))
+        .unwrap_or_else(|| panic!("notify step missing: {argv:?}"));
+    let restart = argv
+        .iter()
+        .position(|a| {
+            a == &format!(
+                "--property=ExecStartPost={}/omarchy-restart-shell",
+                path_dir.display()
+            )
+        })
+        .unwrap_or_else(|| panic!("restart step missing: {argv:?}"));
+    assert!(oneshot < separator && notify < restart && restart < separator);
+    assert!(argv.ends_with(&[
+        "plugin".to_string(),
+        "update".to_string(),
+        "othavi0.agent-bar".to_string(),
+        "--yes".to_string(),
+    ]));
+}
+
+#[test]
+fn update_apply_without_notify_send_still_restarts_the_shell() {
+    let dir = tempdir().unwrap();
+    let path_dir = dir.path().join("pathbin");
+    let argv = update_apply_argv_with_path_dir(dir.path(), &path_dir);
+    assert!(
+        !argv.iter().any(|a| a.contains("notify-send")),
+        "argv={argv:?}"
+    );
+    assert!(argv.contains(&format!(
+        "--property=ExecStartPost={}/omarchy-restart-shell",
+        path_dir.display()
+    )));
+}
+
 /// Fixture for the two `uninstall` delegation tests: isolated XDG roots with
 /// owned content, plus a fake `$HOME/.config/omarchy/shell.json` the helper
 /// must never touch (git-plugin-distribution Task 3: shell.json is
