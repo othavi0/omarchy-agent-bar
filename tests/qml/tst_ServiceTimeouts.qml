@@ -34,9 +34,10 @@ TestCase {
       var source = String(xhr.responseText)
       source = source.replace("import Quickshell\n", "")
       source = source.replace("import Quickshell.Io\n", "")
-      var processStart = source.indexOf("  // Processes (isolated lanes)")
-      var processEnd = source.indexOf("  // Single completed handler", processStart)
-      verify(processStart >= 0 && processEnd > processStart)
+      var processStart = source.indexOf("\n  Process {") + 1
+      var processEnd = source.indexOf("\n  Timer {", processStart) + 1
+      verify(processStart > 0 && processEnd > processStart)
+      verify(source.indexOf("\n  Process {", processEnd) < 0, "every Process block sits before the first Timer")
       var processMocks = [
         "  QtObject { id: versionProbe; property bool running: false; property var command: [] }",
         "  QtObject { id: statusProcess; property bool running: false; property var command: [] }",
