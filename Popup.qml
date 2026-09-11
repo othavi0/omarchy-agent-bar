@@ -278,11 +278,11 @@ KeyboardPanel {
 
       Item {
         id: railGutter
-        width: Style.space(8)
+        width: root.padding
         height: parent.height
 
         PanelSeparator {
-          anchors.left: parent.left
+          anchors.right: parent.right
           width: 1
           height: parent.height
           foreground: Color.foreground
