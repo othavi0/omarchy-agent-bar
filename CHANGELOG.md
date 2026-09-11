@@ -118,6 +118,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `This plan does not publish a usage percentage.` (PROD-031 / UX-032A
   amended).
 
+## [10.5.1] - 2026-09-11
+
+### Changed
+
+- fix: centre the rail between border and rule
+
 ## [10.5.0] - 2026-09-10
 
 ### Changed

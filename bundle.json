@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
   "pluginId": "othavi0.agent-bar",
-  "version": "10.5.0",
+  "version": "10.5.1",
   "target": "x86_64-unknown-linux-gnu",
   "omarchyContract": 1,
   "minimumQuickshellVersion": "0.3.0",
-  "sourceCommit": "5fcb308e08d8a2ff35539fcf9de794b8512f0465",
-  "buildRun": "https://github.com/othavi0/omarchy-agent-bar/actions/runs/34540375838",
+  "sourceCommit": "4739f95072e8b4455b4d0af16dbb8276810b67c6",
+  "buildRun": "https://github.com/othavi0/omarchy-agent-bar/actions/runs/34551448543",
   "files": [
     {
       "path": "BarWidget.qml",
@@ -58,7 +58,7 @@
     },
     {
       "path": "Popup.qml",
-      "sha256": "5699030454aa44da2b1022c18e5cacc0b606f1acc68859b5e4d5d88593f4ab6c",
+      "sha256": "8a2eb09190ec5f4926d82c994dc50c26fe03a035344092b7b4cfa76ece2d2911",
       "size": 13182,
       "mode": "0644"
     },
@@ -94,7 +94,7 @@
     },
     {
       "path": "bin/agent-bar",
-      "sha256": "bd74c151b1c24318b42f758940ddb7c626aa1943f57f701365cc8781a7f1d683",
+      "sha256": "34390a83bdf89556a0bfcd3f8c4d9cb09f7896ff59f2923f64088b75f860df45",
       "size": 4123992,
       "mode": "0755"
     },
@@ -190,7 +190,7 @@
     },
     {
       "path": "manifest.json",
-      "sha256": "e875ab1d0a757dc241aff83c194658c5befc35e76c6acbdcc6e0f6a44d4d1c62",
+      "sha256": "14ab9f3a536a3b2a544c961d9f46663a1a7f4e97da60d7981331aea8f56d8773",
       "size": 632,
       "mode": "0644"
     },
