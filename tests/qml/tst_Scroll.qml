@@ -102,6 +102,21 @@ TestCase {
     verify(src.indexOf("PanelActionButton") < 0)
   }
 
+  // The panel's left padding sits before the rail slot; the gutter after it
+  // must be as wide, with the rule at its far edge, or the icons read as
+  // off-centre between the popup border and the rule.
+  function test_rail_slot_is_centred_between_border_and_rule() {
+    var src = read("Popup.qml")
+    var start = src.indexOf("id: railGutter")
+    verify(start > 0)
+    var gutter = src.substring(start, src.indexOf("\n      Item {", start))
+    verify(gutter.indexOf("width: root.padding") >= 0,
+           "the gutter mirrors KeyboardPanel's left padding")
+    verify(gutter.indexOf("anchors.right: parent.right") >= 0,
+           "the rule closes the gutter")
+    verify(gutter.indexOf("anchors.left: parent.left") < 0)
+  }
+
   function test_popup_content_width_accounts_for_gutter() {
     var src = read("Popup.qml")
     verify(src.indexOf("railGutter") >= 0)
