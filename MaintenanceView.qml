@@ -23,6 +23,9 @@ Item {
 
   readonly property bool checking: ui.phase === "checking"
   readonly property bool updateAvailable: ui.phase === "update_available"
+      && !!ui.targetVersion && String(ui.targetVersion).length > 0
+  readonly property bool notesAvailable: !!ui.releaseNotesUrl
+      && String(ui.releaseNotesUrl).indexOf("https://") === 0
   readonly property bool maintenanceBusy: ui.phase === "uninstalling"
 
   width: parent ? parent.width : implicitWidth
@@ -96,11 +99,14 @@ Item {
       Flow {
         width: parent.width
         spacing: Style.space(8)
-        visible: marketplaceButton.visible || notesButton.visible
+        // Derived from state, not from the children: a child of a hidden
+        // item reads visible=false, so the old child-based binding latched
+        // the row closed when the view opened on an available update.
+        visible: root.updateAvailable || root.notesAvailable
 
         Button {
           id: marketplaceButton
-          visible: root.updateAvailable && ui.targetVersion && ui.targetVersion.length > 0
+          visible: root.updateAvailable
           text: "Marketplace page"
           bordered: true
           focusable: true
@@ -116,7 +122,7 @@ Item {
 
         Button {
           id: notesButton
-          visible: ui.releaseNotesUrl && String(ui.releaseNotesUrl).indexOf("https://") === 0
+          visible: root.notesAvailable
           text: "Release notes"
           bordered: true
           focusable: true
