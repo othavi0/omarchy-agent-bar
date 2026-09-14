@@ -78,10 +78,11 @@ pub fn help_text(topic: Option<HelpTopic>) -> String {
              Install and update are 'omarchy plugin add|update othavi0.agent-bar'.\n"
                 .to_owned()
         }
-        Some(HelpTopic::Update) => "update — print usage; no interactive flow\n\
+        Some(HelpTopic::Update) => format!(
+            "update — print usage; no interactive flow\n\
              update check — report whether a newer release exists (read-only)\n\
-             Install a reported update yourself: 'omarchy plugin update othavi0.agent-bar'.\n"
-            .to_owned(),
+             Install a reported update yourself: '{UPDATE_COMMAND}'.\n"
+        ),
         Some(HelpTopic::Uninstall) => {
             "uninstall — remove the plugin (keeps settings and backups)\n\
              uninstall purge — also delete settings and owned backups\n\
@@ -422,10 +423,15 @@ fn dispatch_update_check() -> Result<(), CliFailure> {
     Ok(())
 }
 
+/// The one command a user runs to install a reported release. `omarchy plugin
+/// update` fast-forwards the tree but does not reload a running shell, so the
+/// restart is part of the command. `CoreMaintenance.js` shows the same text.
+pub const UPDATE_COMMAND: &str = "omarchy plugin update othavi0.agent-bar && omarchy-restart-shell";
+
 fn dispatch_update_interactive() -> Result<(), CliFailure> {
     eprintln!("agent-bar update has no interactive flow.");
     eprintln!("Use 'agent-bar update check' to look for a new release.");
-    eprintln!("Install it yourself with 'omarchy plugin update othavi0.agent-bar'.");
+    eprintln!("Install it yourself with '{UPDATE_COMMAND}'.");
     Err(CliFailure {
         message: String::new(),
         exit_code: VALIDATION,

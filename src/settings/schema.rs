@@ -317,6 +317,9 @@ fn reject_unknown_top_level(value: &Value) -> Result<(), SettingsError> {
                 return Err(SettingsError::new("updates.automatic must be a boolean"));
             }
         }
+        if !updates.contains_key("automatic") {
+            return Err(SettingsError::new("updates.automatic is required"));
+        }
     }
     if let Some(providers) = obj.get("providers") {
         let providers = providers
@@ -506,6 +509,10 @@ mod tests {
         let non_bool = br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":true},{"id":"grok","enabled":true},{"id":"antigravity","enabled":false}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true},"updates":{"automatic":"yes"}}"#;
         let err = Settings::parse_strict(non_bool).unwrap_err();
         assert!(err.message().contains("automatic"), "{}", err.message());
+
+        let empty = br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":true},{"id":"grok","enabled":true},{"id":"antigravity","enabled":false}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true},"updates":{}}"#;
+        let err = Settings::parse_strict(empty).unwrap_err();
+        assert!(err.message().contains("updates.automatic is required"));
 
         let not_object = br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":true},{"id":"grok","enabled":true},{"id":"antigravity","enabled":false}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true},"updates":true}"#;
         let err = Settings::parse_strict(not_object).unwrap_err();

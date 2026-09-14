@@ -521,7 +521,7 @@ fn binary_interactive_update_rejects_non_tty() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains("update check")
-            && stderr.contains("omarchy plugin update othavi0.agent-bar"),
+            && stderr.contains("omarchy plugin update othavi0.agent-bar && omarchy-restart-shell"),
         "stderr={stderr}"
     );
 }
