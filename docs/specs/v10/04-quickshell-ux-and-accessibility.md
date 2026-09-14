@@ -186,22 +186,20 @@ Requirements:
 
 - `UX-040`: Show the installed version.
 - `UX-041`: `Check for updates` performs an explicit network request.
-- `UX-041A`: The service also checks two minutes after the helper answers
-  and every six hours after that, and only paints `maintenanceUi` with the
-  result — it never applies anything. It skips a tick until the boot
-  settings read succeeded, while the popup is open, or while maintenance is
-  in flight, never paints `reinstall_required` over a manual result, and a
-  failed scheduled check paints nothing. A click on `Check for updates`
-  during a silent check adopts it. Amended by the 2026-09-14 update-execution
-  removal: `docs/specs/v10/amendments/2026-09-14-remove-update-execution-design.md`;
-  it describes the scheduled check only and it never applies. See also
+- `UX-041A`: **Retired**, removed by the 2026-09-14 amendment
+  (`docs/specs/v10/amendments/2026-09-14-remove-update-execution-design.md`).
+  The scheduled check it described is deleted, not merely gated: it fired
+  an unconditional network request every six hours with no off switch, and
+  its result was invisible until the popup happened to open. `UX-041` is
+  the only way a check runs. See also
   `docs/specs/v10/amendments/2026-09-10-automatic-updates-design.md`
   (superseded).
 - `UX-042`: When available, show the target version, a `Release notes`
-  link, a `Marketplace page` link, and the command the user runs
-  themself: `Update to <version> is available. Run: omarchy plugin update
-  othavi0.agent-bar && omarchy-restart-shell`. The plugin never runs that
-  command.
+  link, a `Marketplace page` link, and, on its own read-only line under
+  the message, the command the user runs themself: `omarchy plugin update
+  othavi0.agent-bar && omarchy-restart-shell`. The message reads `Update
+  to <version> is available. Run this in a terminal:`. The plugin never
+  runs that command.
 - `UX-043`: **Retired**, removed by the 2026-09-14 amendment. There is
   nothing left for the plugin to apply, so there is no update confirmation
   dialog.

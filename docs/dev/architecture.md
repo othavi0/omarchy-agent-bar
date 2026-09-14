@@ -158,9 +158,8 @@ verified immutable target before any automatic update runs, and Omarchy
 4.0.3 offers no way to name a commit or tag
 (`docs/specs/v10/amendments/2026-09-14-remove-update-execution-design.md`).
 When a check finds a newer release, Settings shows the target version and
-the command the user runs themself; the scheduled check that runs two
-minutes after the helper answers and every six hours after that only
-paints that same state, never applies it.
+the command the user runs themself. The only check that runs is the one
+`Check for updates` starts; there is no background schedule.
 
 All status/config mutations, plus the purge/preflight/handoff step above,
 hold the shared stable maintenance gate under XDG state. Maintenance holds

@@ -351,61 +351,26 @@ TestCase {
     })
   }
 
-  function test_version_ready_schedules_the_first_check() {
-    var s = createService()
-    verify(s.updateCheckScheduled)
-    compare(s.updateCheckDelayMs, s.updateCheckFirstDelayMs)
-    compare(s.updateCheckFirstDelayMs, 120000)
-    compare(s.updateCheckIntervalMs, 21600000)
-  }
-
   function bootstrapSettings(s) {
     s.applySettingsBootstrapResult(s.activeSettingsBootstrapGeneration, JSON.stringify(validSettings()), 0)
     verify(s.appliedSettings !== null)
   }
 
-  function test_scheduled_check_skips_until_settings_load() {
-    var s = createService()
-    s.applySettingsBootstrapResult(s.activeSettingsBootstrapGeneration, "", 1)
-    compare(s.appliedSettings, null)
-    compare(s.scheduledUpdateCheckTick(), false)
-    compare(s.maintenanceCheckBusy, false)
-  }
-
-  function test_manual_click_takes_over_a_scheduled_check() {
+  // UX-042: a manual check only paints the read-only status; the plugin
+  // never queues a handoff, touches pendingMaintenanceIntention, or runs
+  // the command itself. The command sits in ui.updateCommand for the user
+  // to copy into a terminal.
+  function test_manual_check_finds_an_update_stays_read_only() {
     var s = createService()
     bootstrapSettings(s)
-    verify(s.scheduledUpdateCheckTick())
     s.checkForUpdates()
-    compare(s.maintenanceUi.phase, "checking")
-    s.applyUpdateCheckResult(s.activeMaintenanceCheckGeneration, "", 1)
-    compare(s.maintenanceUi.phase, "error")
-  }
-
-  function test_scheduled_result_never_overwrites_a_handoff() {
-    var s = createService()
-    bootstrapSettings(s)
-    verify(s.scheduledUpdateCheckTick())
-    s.pendingMaintenanceIntention = ({ kind: "uninstall", purge: false })
-    s.beginMaintenanceHandoff()
-    var before = s.maintenanceUi.phase
-    s.applyUpdateCheckResult(s.activeMaintenanceCheckGeneration, availableCheck(), 0)
-    compare(s.maintenanceUi.phase, before)
-  }
-
-  // BUNDLE-041: a scheduled check only paints the read-only status; the
-  // plugin never queues a handoff or touches pendingMaintenanceIntention.
-  function test_scheduled_check_finds_an_update_but_stays_read_only() {
-    var s = createService()
-    bootstrapSettings(s)
-    verify(s.scheduledUpdateCheckTick())
     s.applyUpdateCheckResult(s.activeMaintenanceCheckGeneration, availableCheck(), 0)
     compare(s.maintenanceUi.phase, "update_available")
     compare(s.pendingMaintenanceIntention, null)
     compare(s.maintenanceState.blocked, false)
     compare(s.maintenanceHandoffBusy, false)
-    verify(s.maintenanceUi.message.indexOf(
-        "Run: omarchy plugin update othavi0.agent-bar && omarchy-restart-shell") >= 0)
+    compare(s.maintenanceUi.updateCommand,
+        "omarchy plugin update othavi0.agent-bar && omarchy-restart-shell")
   }
 
   function test_handoff_waiting_on_status_starts_when_status_finishes() {
@@ -436,35 +401,19 @@ TestCase {
     compare(s.maintenanceHandoffBusy, true)
   }
 
-  function test_scheduled_check_waits_while_the_popup_is_open() {
-    var s = createService()
-    bootstrapSettings(s)
-    s.popupOwner = ({ owner: "monitor-a", providerId: "", view: "provider" })
-    compare(s.scheduledUpdateCheckTick(), false)
-    compare(s.maintenanceCheckBusy, false)
-  }
-
-  function test_scheduled_check_failure_stays_silent() {
-    var s = createService()
-    bootstrapSettings(s)
-    verify(s.scheduledUpdateCheckTick())
-    s.applyUpdateCheckResult(s.activeMaintenanceCheckGeneration, "", 1)
-    compare(s.maintenanceUi.phase, "idle")
-    compare(s.pendingMaintenanceIntention, null)
-    compare(s.maintenanceState.blocked, false)
-  }
-
-  // BUNDLE-041: the About tab lost its whole Updates section (default-on
+  // SET-028: the About tab lost its whole Updates section (default-on
   // background updates were the exact behavior omacom/omarchy-plugin-marketplace#4979
-  // blocked). Only the uninstall lane still shows a Toggle (purge settings).
+  // blocked). updates.automatic still reads as a tolerated legacy block, but
+  // nothing in the UI writes or offers it back.
   function test_settings_about_tab_has_no_updates_section() {
     var xhr = new XMLHttpRequest()
     xhr.open("GET", "file://" + repoRoot + "/MaintenanceView.qml", false)
     xhr.send()
     var src = String(xhr.responseText)
-    verify(src.indexOf('text: "Updates"') < 0)
-    var toggleCount = (src.match(/Toggle \{/g) || []).length
-    compare(toggleCount, 1, "only the purge-settings toggle should remain")
+    var updatesHeader = 'text: "' + "Update" + "s" + '"'
+    var autoUpdateCopy = "Update" + " automatically"
+    verify(src.indexOf(updatesHeader) < 0, "Updates section header must be gone")
+    verify(src.indexOf(autoUpdateCopy) < 0, "Update automatically copy must be gone")
   }
 
   function test_manual_check_still_waits_for_a_click() {

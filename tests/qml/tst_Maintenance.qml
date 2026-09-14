@@ -61,7 +61,7 @@ TestCase {
   function test_marketplace_url_and_update_command_text_exact() {
     compare(Core.marketplaceUrl(), "https://plugins.omarchy.org/plugin.html?id=othavi0.agent-bar")
     compare(Core.updateCommandText(),
-            "Run: omarchy plugin update othavi0.agent-bar && omarchy-restart-shell")
+            "omarchy plugin update othavi0.agent-bar && omarchy-restart-shell")
   }
 
   function test_uninstall_confirmation_json() {
@@ -85,8 +85,8 @@ TestCase {
     compare(ui.installedVersion, "10.3.1")
     compare(ui.targetVersion, "10.4.0")
     compare(ui.releaseNotesUrl, "https://github.com/othavi0/omarchy-agent-bar/releases/tag/v10.4.0")
-    compare(ui.message, "Update to 10.4.0 is available. "
-        + "Run: omarchy plugin update othavi0.agent-bar && omarchy-restart-shell")
+    compare(ui.message, "Update to 10.4.0 is available. Run this in a terminal:")
+    compare(ui.updateCommand, "omarchy plugin update othavi0.agent-bar && omarchy-restart-shell")
   }
 
   function test_update_check_up_to_date() {
@@ -98,6 +98,7 @@ TestCase {
     compare(ui.installedVersion, "10.4.0")
     compare(ui.targetVersion, "")
     compare(ui.releaseNotesUrl, "")
+    compare(ui.updateCommand, "")
     var none = Core.maintenanceUiFromCheck(Core.maintenanceUiIdle("10.3.1"), checkFixture("no-compatible.json"), 0, "10.3.1")
     compare(none.phase, "up_to_date")
   }
@@ -110,6 +111,7 @@ TestCase {
     compare(ui.phase, "reinstall_required")
     compare(ui.targetVersion, "")
     compare(ui.releaseNotesUrl, "")
+    compare(ui.updateCommand, "")
     verify(ui.message.indexOf("omarchy plugin remove othavi0.agent-bar") >= 0)
     verify(ui.message.indexOf("omarchy plugin add https://github.com/othavi0/omarchy-agent-bar.git") >= 0)
   }
@@ -119,7 +121,9 @@ TestCase {
     compare(Core.maintenanceUiFromCheck(Core.maintenanceUiIdle("1.0.0"), "", 0, "1.0.0").phase, "error")
     compare(Core.maintenanceUiFromCheck(Core.maintenanceUiIdle("1.0.0"), "Agent Bar is up to date.\n", 0, "1.0.0").phase, "error")
     var wrongSchema = JSON.stringify({ schemaVersion: 2, available: true })
-    compare(Core.maintenanceUiFromCheck(Core.maintenanceUiIdle("1.0.0"), wrongSchema, 0, "1.0.0").phase, "error")
+    var rejected = Core.maintenanceUiFromCheck(Core.maintenanceUiIdle("1.0.0"), wrongSchema, 0, "1.0.0")
+    compare(rejected.phase, "error")
+    compare(rejected.updateCommand, "")
   }
 
   function test_update_check_failure_has_one_string() {
@@ -260,9 +264,7 @@ TestCase {
     var end = src.indexOf("function ", start + 10)
     verify(end > start)
     var body = src.substring(start, end)
-    verify(body.indexOf("Maintenance.marketplaceUrl()") >= 0)
-    verify(body.indexOf("https://") >= 0)
-    verify(body.indexOf("Qt.openUrlExternally(url)") >= 0)
+    verify(body.indexOf("Qt.openUrlExternally(Maintenance.marketplaceUrl())") >= 0)
   }
 
   function test_install_type_is_gone_from_the_model() {
@@ -274,24 +276,6 @@ TestCase {
     var src = read("SettingsView.qml")
     verify(src.indexOf("MaintenanceView") >= 0)
     verify(src.indexOf("land in the next task") < 0)
-  }
-
-  function test_scheduled_update_check_gate() {
-    var ok = { settingsLoaded: true, versionReady: true,
-               blocked: false, checkBusy: false, popupOpen: false }
-    compare(Core.scheduledUpdateCheckAllowed(ok), true)
-    var keys = ["settingsLoaded", "versionReady"]
-    for (var i = 0; i < keys.length; i++) {
-      var off = JSON.parse(JSON.stringify(ok))
-      off[keys[i]] = false
-      compare(Core.scheduledUpdateCheckAllowed(off), false, keys[i])
-    }
-    var busy = ["blocked", "checkBusy", "popupOpen"]
-    for (var j = 0; j < busy.length; j++) {
-      var on = JSON.parse(JSON.stringify(ok))
-      on[busy[j]] = true
-      compare(Core.scheduledUpdateCheckAllowed(on), false, busy[j])
-    }
   }
 
   function test_helper_script_source_contract() {

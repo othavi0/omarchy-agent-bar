@@ -61,12 +61,12 @@ exists.
 }
 ```
 
-The service checks for a new release two minutes after start and every six
-hours, and only updates the Settings About tab with the result. It never
-installs anything or reloads the shell on its own; when a release is
+The service checks for a new release only when the user clicks `Check for
+updates` in the Settings About tab; there is no background schedule. It
+never installs anything or reloads the shell on its own; when a release is
 available, Settings shows the target version, a release-notes link, a
-marketplace-page link, and the command to run in a terminal:
-`omarchy plugin update othavi0.agent-bar && omarchy-restart-shell`.
+marketplace-page link, and, on its own read-only line, the command to run
+in a terminal: `omarchy plugin update othavi0.agent-bar && omarchy-restart-shell`.
 
 There is no `updates` block in the product settings any more. A document
 written by 10.3.24 through 10.5.1 that still carries

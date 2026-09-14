@@ -15,11 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   automatic update is installed
   (omacom/omarchy-plugin-marketplace#4979), and Omarchy 4.0.3 offers no way
   to name a commit or tag, so the plugin replaced reviewed code with
-  whatever `master` held at run time. `update apply` and `update run` are
-  gone; the scheduled check that runs two minutes after the helper answers
-  and every six hours after that now only reports what it finds. Settings
-  shows the version, release notes, the marketplace page, and the command
-  to run: `omarchy plugin update othavi0.agent-bar && omarchy-restart-shell`.
+  whatever `master` held at run time. `update apply`, `update run`, and the
+  background scheduled check are gone; a check now only runs from the
+  explicit `Check for updates` button. Settings shows the version, release
+  notes, the marketplace page, and the command to run:
+  `omarchy plugin update othavi0.agent-bar && omarchy-restart-shell`.
   `updates.automatic` is ignored if a settings file still carries it.
 
 ### Added

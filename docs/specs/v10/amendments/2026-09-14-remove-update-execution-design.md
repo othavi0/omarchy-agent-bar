@@ -42,12 +42,11 @@ takes weeks.
    `omarchy plugin update othavi0.agent-bar && omarchy-restart-shell`.
    The `Restart shell` button shown when Settings fails to load stays; it
    downloads nothing.
-3. The scheduled check stays as it was: two minutes after the helper
-   answers and every six hours after that, skipped while the popup is
-   open, while maintenance is in flight, or before the boot settings read
-   succeeded. It only paints the maintenance state. A failed scheduled
-   check paints nothing. A click on `Check for updates` during a silent
-   check adopts it.
+3. The scheduled check is deleted, not merely gated: it fired an
+   unconditional HTTPS GET every six hours with no off switch, and its
+   result was invisible until the popup happened to open next. The only
+   check that runs from now on is the explicit `Check for updates` button
+   (`UX-041`, the pre-10.3.24 contract).
 4. `updates.automatic` is removed from the settings contract. A document
    written by 10.3.24 through 10.5.1 that carries
    `"updates": { "automatic": <bool> }` still reads (`SET-007`); the block
@@ -58,8 +57,10 @@ takes weeks.
 
 ## Contract changes
 
-- `UX-041A` now describes the scheduled check only; it never applies.
-- `UX-042` shows `Marketplace page` and the terminal command instead of
+- `UX-041A` is **Retired**: the scheduled check it described no longer
+  exists.
+- `UX-042` shows `Marketplace page` and, under the message, a separate
+  read-only command line instead of embedding the command inside
   `Update to <version>`; `UX-043` (update confirmation) is removed.
 - `SET-028` becomes the legacy-block tolerance rule above.
 - `CLI-029` and `CLI-029A` are removed; `update apply` and `update run` are
@@ -73,5 +74,9 @@ takes weeks.
 Installs on 10.3.24 through 10.5.1 apply this release on their own once,
 through the automatic update they still run, and then never again. From
 this release on, the plugin tells the user that a release exists and the
-user installs it with the Omarchy plugin manager. The marketplace
-verification request is retargeted to the release commit of this change.
+user installs it with the Omarchy plugin manager. The scheduled check is
+removed rather than kept read-only: with the apply gone it had lost its
+off switch and its only visible effect, and a background request the
+user cannot turn off is a poor thing to defend in a verification review.
+The marketplace verification request is retargeted to the release commit
+of this change.

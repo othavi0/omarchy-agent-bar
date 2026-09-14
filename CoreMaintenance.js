@@ -59,7 +59,7 @@ function marketplaceUrl() {
 }
 
 function updateCommandText() {
-  return "Run: omarchy plugin update othavi0.agent-bar && omarchy-restart-shell"
+  return "omarchy plugin update othavi0.agent-bar && omarchy-restart-shell"
 }
 
 function uninstallArgv(helperPath, purge) {
@@ -83,6 +83,7 @@ function maintenanceUiIdle(installedVersion) {
     installedVersion: installedVersion ? String(installedVersion) : "",
     targetVersion: "",
     releaseNotesUrl: "",
+    updateCommand: "",
     purgeSettings: false,
     uninstallArmed: false,
     message: "",
@@ -103,6 +104,7 @@ function cloneMaintenanceUi(ui) {
     installedVersion: ui && ui.installedVersion ? String(ui.installedVersion) : "",
     targetVersion: ui && ui.targetVersion ? String(ui.targetVersion) : "",
     releaseNotesUrl: ui && ui.releaseNotesUrl ? String(ui.releaseNotesUrl) : "",
+    updateCommand: ui && ui.updateCommand ? String(ui.updateCommand) : "",
     purgeSettings: !!(ui && ui.purgeSettings),
     uninstallArmed: !!(ui && ui.uninstallArmed),
     message: ui && ui.message ? String(ui.message) : "",
@@ -124,6 +126,7 @@ function maintenanceUiFromCheck(ui, stdout, exitCode, fallbackVersion) {
           next.phase = "reinstall_required"
           next.targetVersion = ""
           next.releaseNotesUrl = ""
+          next.updateCommand = ""
           next.message = "Installed without git. Run: omarchy plugin remove othavi0.agent-bar, "
               + "then omarchy plugin add https://github.com/othavi0/omarchy-agent-bar.git"
           return next
@@ -133,13 +136,15 @@ function maintenanceUiFromCheck(ui, stdout, exitCode, fallbackVersion) {
           next.phase = "update_available"
           next.targetVersion = String(latest.version)
           next.releaseNotesUrl = latest.releaseNotesUrl ? String(latest.releaseNotesUrl) : ""
-          next.message = "Update to " + next.targetVersion + " is available. " + updateCommandText()
+          next.updateCommand = updateCommandText()
+          next.message = "Update to " + next.targetVersion + " is available. Run this in a terminal:"
           return next
         }
         if (doc.available === false) {
           next.phase = "up_to_date"
           next.targetVersion = ""
           next.releaseNotesUrl = ""
+          next.updateCommand = ""
           next.message = "Agent Bar is up to date."
           return next
         }
@@ -148,6 +153,7 @@ function maintenanceUiFromCheck(ui, stdout, exitCode, fallbackVersion) {
     }
   }
   next.phase = "error"
+  next.updateCommand = ""
   next.message = "Update check failed."
   return next
 }
@@ -183,16 +189,6 @@ function maintenanceUiArmOrConfirmUninstall(ui) {
     return { ui: next, confirmed: false }
   }
   return { ui: next, confirmed: true }
-}
-
-function scheduledUpdateCheckAllowed(context) {
-  if (!context)
-    return false
-  return context.settingsLoaded === true
-      && context.versionReady === true
-      && context.blocked !== true
-      && context.checkBusy !== true
-      && context.popupOpen !== true
 }
 
 function maintenanceUiUninstalling(ui) {

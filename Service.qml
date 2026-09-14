@@ -28,11 +28,6 @@ Item {
   property int maintenanceHandoffTimeoutMs: 120000
   property int pollIntervalMs: Core.pollIntervalMs(appliedSettings)
   property int collectionDelayMs: 0
-  property int updateCheckFirstDelayMs: 120000
-  property int updateCheckIntervalMs: 21600000
-  readonly property bool updateCheckScheduled: updateCheckTimer.running
-  readonly property int updateCheckDelayMs: updateCheckTimer.interval
-  property bool checkIsScheduled: false
 
   property var snapshot: null
   property bool refreshing: false
@@ -350,48 +345,25 @@ Item {
   }
 
   function checkForUpdates() {
-    startUpdateCheck(false)
+    startUpdateCheck()
   }
 
-  function scheduledUpdateCheckTick() {
-    updateCheckTimer.interval = updateCheckIntervalMs
-    updateCheckTimer.restart()
-    if (!Maintenance.scheduledUpdateCheckAllowed({
-          settingsLoaded: appliedSettings !== null,
-          versionReady: versionReady,
-          blocked: maintenanceState.blocked,
-          checkBusy: maintenanceCheckBusy,
-          popupOpen: popupOwner !== null
-        }))
-      return false
-    return startUpdateCheck(true)
-  }
-
-  function startUpdateCheck(scheduled) {
+  function startUpdateCheck() {
     if (maintenanceState.blocked)
       return false
-    if (!scheduled && maintenanceCheckBusy && checkIsScheduled) {
-      checkIsScheduled = false
-      maintenanceUi = Maintenance.maintenanceUiChecking(maintenanceUi)
-      return true
-    }
     if (!Core.canStartLane(maintenanceCheckBusy))
       return false
     syncMaintenanceVersion()
     maintenanceCheckGeneration++
     activeMaintenanceCheckGeneration = maintenanceCheckGeneration
-    checkIsScheduled = !!scheduled
-    if (!checkIsScheduled)
-      maintenanceUi = Maintenance.maintenanceUiChecking(maintenanceUi)
+    maintenanceUi = Maintenance.maintenanceUiChecking(maintenanceUi)
     maintenanceCheckBusy = true
     maintenanceCheckTimeout.restart()
     var helper = resolvedHelperPath()
     if (!helper.length) {
       maintenanceCheckTimeout.stop()
       maintenanceCheckBusy = false
-      if (!checkIsScheduled)
-        maintenanceUi = Maintenance.maintenanceUiFromCheck(maintenanceUi, "", 1, helperVersion)
-      checkIsScheduled = false
+      maintenanceUi = Maintenance.maintenanceUiFromCheck(maintenanceUi, "", 1, helperVersion)
       return false
     }
     maintenanceCheckProcess.command = Maintenance.updateCheckArgv(helper)
@@ -409,21 +381,12 @@ Item {
     maintenanceCheckTimeout.stop()
     maintenanceCheckBusy = false
     recordCompletedCallback(!!fromTimeout, "maintenanceCheck")
-    var scheduled = checkIsScheduled
-    checkIsScheduled = false
-    var next = Maintenance.maintenanceUiFromCheck(
+    maintenanceUi = Maintenance.maintenanceUiFromCheck(
       maintenanceUi,
       stdout,
       exitCode,
       helperVersion || manifestVersion
     )
-    if (!scheduled) {
-      maintenanceUi = next
-      return
-    }
-    if (next.phase === "error" || maintenanceState.blocked)
-      return
-    maintenanceUi = next
   }
 
   function openUninstallConfirm() {
@@ -461,10 +424,7 @@ Item {
   }
 
   function openMarketplacePage() {
-    var url = Maintenance.marketplaceUrl()
-    if (url.indexOf("https://") !== 0)
-      return
-    Qt.openUrlExternally(url)
+    Qt.openUrlExternally(Maintenance.marketplaceUrl())
   }
 
   function viewInstallation(providerId, url) {
@@ -549,10 +509,6 @@ Item {
     versionFailed = false
     syncMaintenanceVersion()
     kickSettingsBootstrap()
-    if (!updateCheckTimer.running) {
-      updateCheckTimer.interval = updateCheckFirstDelayMs
-      updateCheckTimer.start()
-    }
     if (collectionDelayMs > 0) {
       collectionDelay.interval = collectionDelayMs
       collectionDelay.start()
@@ -1077,14 +1033,6 @@ Item {
     }
   }
 
-  Timer {
-    id: updateCheckTimer
-    interval: root.updateCheckFirstDelayMs
-    repeat: false
-    running: false
-    onTriggered: root.scheduledUpdateCheckTick()
-  }
-
   IpcHandler {
     target: "othavi0.agent-bar"
     function health(expectedVersion: string): string { return root.health(expectedVersion) }
@@ -1113,7 +1061,6 @@ Item {
     maintenanceHandoffTimeout.stop()
     collectionDelay.stop()
     pollTimer.stop()
-    updateCheckTimer.stop()
     if (versionProbe.running)
       versionProbe.running = false
     if (statusProcess.running)

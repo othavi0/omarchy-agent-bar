@@ -107,11 +107,11 @@ mutation itself.
 
 ## Update check only
 
-The plugin has no equivalent handoff for update. The scheduled check runs
-two minutes after the helper answers and every six hours after that, but it
-only paints the maintenance state in Settings; it never fetches, installs,
-or restarts the shell. `settings.json` has no `updates.automatic` toggle
-any more, because there is nothing left for it to gate. See
+The plugin has no equivalent handoff for update. A check runs only when
+the user clicks `Check for updates`; it only paints the maintenance state
+in Settings and never fetches, installs, or restarts the shell.
+`settings.json` has no `updates.automatic` toggle any more, because there
+is nothing left for it to gate. See
 [docs/specs/v10/amendments/2026-09-14-remove-update-execution-design.md](../specs/v10/amendments/2026-09-14-remove-update-execution-design.md).
 
 ## Ownership

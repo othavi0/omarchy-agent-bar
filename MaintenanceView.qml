@@ -79,6 +79,20 @@ Item {
             wrapMode: Text.WordWrap
             textFormat: Text.PlainText
           }
+
+          TextEdit {
+            width: parent.width
+            visible: !!ui.updateCommand && String(ui.updateCommand).length > 0
+            text: ui.updateCommand || ""
+            readOnly: true
+            selectByMouse: true
+            wrapMode: TextEdit.Wrap
+            color: root.foreground
+            font.family: "monospace"
+            font.pixelSize: Style.font.caption
+            textFormat: TextEdit.PlainText
+            Accessible.name: "Update command"
+          }
         }
 
         Button {
