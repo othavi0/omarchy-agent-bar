@@ -6,19 +6,20 @@ reset. A fresh install shows Claude and Codex; Amp, Grok, and Antigravity
 are one toggle away in Settings.
 
 > [!IMPORTANT]
-> **Agent Bar older than 10.3.25 can't update itself on Omarchy 4.0.3.**
-> Version 10.3.22 and older never loads there: the chips show `···`, the
-> popup stays on its loading placeholder, and Settings says "Update check
-> failed". Version 10.3.24 loads but can stop refreshing a couple of minutes
-> after the shell starts. Run this once in a terminal to move to the fixed
-> release:
+> **Agent Bar no longer installs its own updates.** Settings tells you when
+> a new version is out; you install it yourself:
 >
 > ```bash
-> omarchy plugin update othavi0.agent-bar --yes && omarchy-restart-shell
+> omarchy plugin update othavi0.agent-bar && omarchy-restart-shell
 > ```
 >
-> If you're already current, it only restarts the shell. From 10.3.25 on,
-> Agent Bar installs new releases by itself.
+> The Omarchy plugin marketplace requires a separately verified immutable
+> target before any automatic update runs, and Omarchy 4.0.3 offers no way
+> to name a commit or tag, so Agent Bar stopped running that command on its
+> own. If you are on 10.3.22 or older, it never loaded on Omarchy 4.0.3 in
+> the first place: the chips show `···`, the popup stays on its loading
+> placeholder, and Settings says "Update check failed". Run the command
+> above once to move to a current release.
 
 ![Agent Bar preview](preview.png)
 
@@ -76,12 +77,15 @@ The install is one directory:
 
 ## Update
 
+Settings tells you when a new version is out, with a link to the release
+notes and the marketplace page. Install it yourself:
+
 ```bash
-omarchy plugin update othavi0.agent-bar
+omarchy plugin update othavi0.agent-bar && omarchy-restart-shell
 ```
 
 Installed before this release, as a plain directory instead of a git
-checkout? The update button shows a one-time migration notice. Run:
+checkout? Settings shows a one-time migration notice instead. Run:
 
 ```bash
 omarchy plugin remove othavi0.agent-bar
@@ -97,7 +101,8 @@ the swap.
 omarchy plugin remove othavi0.agent-bar
 ```
 
-Update and remove are also buttons in Settings.
+Remove is also a button in Settings. Update is not: Settings only checks
+and shows the command above.
 
 ## Settings
 

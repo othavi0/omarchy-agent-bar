@@ -12,7 +12,6 @@ Item {
   property color foreground: Color.foreground
   property string fontFamily: Style.font.family
   property bool settingsLocked: true
-  property bool automaticUpdatesOn: true
 
   readonly property var ui: agentService && agentService.maintenanceUi
       ? agentService.maintenanceUi
@@ -24,7 +23,13 @@ Item {
 
   readonly property bool checking: ui.phase === "checking"
   readonly property bool updateAvailable: ui.phase === "update_available"
-  readonly property bool applying: ui.phase === "applying" || ui.phase === "uninstalling"
+      && !!ui.targetVersion && String(ui.targetVersion).length > 0
+  readonly property bool notesAvailable: !!ui.releaseNotesUrl
+      && String(ui.releaseNotesUrl).indexOf("https://") === 0
+  readonly property bool maintenanceBusy: ui.phase === "uninstalling"
+  // Selecting the command line takes keyboard focus; the popup's key catcher
+  // must stand down for it like it does for the settings editors.
+  readonly property bool editorOwnsFocus: commandField.activeFocus
 
   width: parent ? parent.width : implicitWidth
   implicitHeight: body.implicitHeight
@@ -77,13 +82,29 @@ Item {
             wrapMode: Text.WordWrap
             textFormat: Text.PlainText
           }
+
+          TextEdit {
+            id: commandField
+            width: parent.width
+            visible: !!ui.updateCommand && String(ui.updateCommand).length > 0
+            text: ui.updateCommand || ""
+            readOnly: true
+            selectByMouse: true
+            cursorVisible: false
+            wrapMode: TextEdit.Wrap
+            color: root.foreground
+            font.family: "monospace"
+            font.pixelSize: Style.font.caption
+            textFormat: TextEdit.PlainText
+            Accessible.name: "Update command"
+          }
         }
 
         Button {
           text: root.checking ? "Checking\u2026" : "Check for updates"
           bordered: true
           focusable: true
-          enabled: !root.blocked && !root.checking && !root.applying
+          enabled: !root.blocked && !root.checking && !root.maintenanceBusy
           foreground: root.foreground
           fontFamily: root.fontFamily
           Accessible.name: "Check for updates"
@@ -97,31 +118,34 @@ Item {
       Flow {
         width: parent.width
         spacing: Style.space(8)
-        visible: updateButton.visible || notesButton.visible
+        // Derived from state, not from the children: a child of a hidden
+        // item reads visible=false, so the old child-based binding latched
+        // the row closed when the view opened on an available update.
+        visible: root.updateAvailable || root.notesAvailable
 
         Button {
-          id: updateButton
-          visible: root.updateAvailable && ui.targetVersion && ui.targetVersion.length > 0
-          text: "Update to " + ui.targetVersion
+          id: marketplaceButton
+          visible: root.updateAvailable
+          text: "Marketplace page"
           bordered: true
           focusable: true
-          enabled: !root.blocked && !root.applying
+          enabled: !root.blocked && !root.maintenanceBusy
           foreground: root.foreground
           fontFamily: root.fontFamily
-          Accessible.name: text
+          Accessible.name: "Marketplace page"
           onClicked: {
             if (root.agentService)
-              root.agentService.openUpdateConfirm()
+              root.agentService.openMarketplacePage()
           }
         }
 
         Button {
           id: notesButton
-          visible: ui.releaseNotesUrl && String(ui.releaseNotesUrl).indexOf("https://") === 0
+          visible: root.notesAvailable
           text: "Release notes"
           bordered: true
           focusable: true
-          enabled: !root.applying
+          enabled: !root.maintenanceBusy
           foreground: root.foreground
           fontFamily: root.fontFamily
           Accessible.name: "Release notes"
@@ -129,32 +153,6 @@ Item {
             if (root.agentService)
               root.agentService.openReleaseNotes()
           }
-        }
-      }
-    }
-
-    Column {
-      width: parent.width
-      spacing: Style.space(8)
-      opacity: root.settingsLocked ? 0.55 : 1.0
-      enabled: !root.settingsLocked
-
-      SectionHeader {
-        text: "Updates"
-        foreground: root.foreground
-        fontFamily: root.fontFamily
-      }
-
-      Toggle {
-        width: parent.width
-        label: "Update automatically"
-        description: "Install new versions and reload the shell."
-        checked: root.automaticUpdatesOn
-        foreground: root.foreground
-        fontFamily: root.fontFamily
-        onClicked: {
-          if (root.agentService)
-            root.agentService.setAutomaticUpdates(!root.automaticUpdatesOn)
         }
       }
     }
@@ -188,7 +186,7 @@ Item {
           text: "Uninstall Agent Bar"
           bordered: true
           focusable: true
-          enabled: !root.blocked && !root.applying
+          enabled: !root.blocked && !root.maintenanceBusy
           foreground: Color.urgent
           fontFamily: root.fontFamily
           Accessible.name: "Uninstall Agent Bar"
@@ -198,25 +196,6 @@ Item {
           }
         }
       }
-    }
-  }
-
-  ConfirmDialog {
-    opened: !!ui.updateConfirmOpen
-    title: "Confirm update"
-    message: Core.updateConfirmMessage(ui)
-    cancelText: "Cancel"
-    confirmText: "Update"
-    destructive: false
-    foreground: root.foreground
-    fontFamily: root.fontFamily
-    onCanceled: {
-      if (root.agentService)
-        root.agentService.closeUpdateConfirm()
-    }
-    onConfirmed: {
-      if (root.agentService)
-        root.agentService.confirmUpdateApply()
     }
   }
 

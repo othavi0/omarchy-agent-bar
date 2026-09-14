@@ -250,32 +250,37 @@ installer; installation is the native Omarchy plugin flow end to end.
 
 ## Update check
 
-The private command surface includes:
+Amended by the 2026-09-14 update-execution removal:
+`docs/specs/v10/amendments/2026-09-14-remove-update-execution-design.md`.
+`update apply` is gone; the private command surface for update is now:
 
 ```text
 agent-bar update
 agent-bar update check
-agent-bar update apply
 ```
 
-- `BUNDLE-020`: **Retired.** Bare `update` has no interactive flow: since
-  `update apply` applies unconditionally (below), there is no specific
-  fetched version left for a TTY prompt to confirm. Bare `update` prints
-  usage pointing at `update check`/`update apply` and exits `3`.
+- `BUNDLE-020` (amended 2026-09-14): Bare `update` has no interactive flow
+  and nothing to confirm, because there is no `update apply` left to run.
+  Bare `update` prints usage pointing at `update check` and at the
+  user-run `omarchy plugin update othavi0.agent-bar`, and exits `3`.
 - `BUNDLE-021`: `update check` returns a machine-readable document
   containing current version, latest compatible version, availability,
   release-notes URL, target, and `reinstallRequired`. It carries no
   archive/checksum/source-commit fields.
-- `BUNDLE-022`: `update apply` takes no version argument; it delegates
-  unconditionally to `omarchy plugin update othavi0.agent-bar --yes`.
-- `BUNDLE-023`: The Settings UI performs check and confirmation as separate
-  states before triggering apply.
+- `BUNDLE-022`: **Retired**, removed by the 2026-09-14 amendment.
+  `update apply` no longer exists; the plugin never delegates to
+  `omarchy plugin update ... --yes` itself.
+- `BUNDLE-023`: **Retired**, removed by the 2026-09-14 amendment. There is
+  no apply state left for the Settings UI to trigger; check is the only
+  state, and its result shows the version, the release notes link, the
+  marketplace page link, and the command the user runs themself.
 - `BUNDLE-024`: `update check` reads only the distribution repository's own
   `bundle.json`, fetched directly from
   `https://raw.githubusercontent.com/othavi0/omarchy-agent-bar/master/bundle.json`.
-- `BUNDLE-025`: `update apply` never downloads, extracts, or executes
-  anything itself; the git fast-forward and validation are entirely the
-  Omarchy CLI's.
+- `BUNDLE-025`: **Retired**, removed by the 2026-09-14 amendment. There is
+  nothing left in the plugin that downloads, extracts, or executes an
+  update; the git fast-forward and validation happen only when the user
+  runs `omarchy plugin update` themself.
 
 The exact successful `update check` response is:
 
@@ -317,10 +322,6 @@ through `omarchy plugin add` instead of updated in place. The receipt is
 still fetched and validated for its own sake in that case, so a malformed
 or unreachable distribution repository is still a command error.
 
-`update apply` performs no version check of its own. The omarchy CLI it
-delegates to always fast-forwards to whatever the distribution repository's
-`master` currently is.
-
 Omarchy contract `1` means all of these are required:
 
 - Quattro manifest service and bar-widget entry points;
@@ -335,62 +336,65 @@ Omarchy contract `1` means all of these are required:
 
 Setup preflight (for the settings-migration path only) requires regular
 readable Quattro QML components and executable Omarchy commands.
-`update apply` and `uninstall` preflight requires resolvable absolute paths
-for `omarchy` and `systemd-run` before consuming any confirmation or
-purging any state.
+`uninstall` preflight requires resolvable absolute paths for `omarchy` and
+`systemd-run` before consuming any confirmation or purging any state.
+`update` has no preflight, because `update check` only reads a receipt over
+HTTPS and there is no destructive step to fail closed before.
 
 ## Update transaction
 
-Retired as a block. `BUNDLE-026`–`BUNDLE-032K` described the staged-download
-worker chain: temporary-path download, archive/checksum/inventory
-validation, `renameat2(RENAME_EXCHANGE)` swap, a self-copied
+Retired as a block. `BUNDLE-026`–`BUNDLE-032K` described first the
+staged-download worker chain (temporary-path download, archive/checksum/
+inventory validation, `renameat2(RENAME_EXCHANGE)` swap, a self-copied
 `agent-bar-maintenance-worker` running in a transient systemd unit, health
-IPC polling, and post-commit garbage collection. None of that exists after
-git-plugin-distribution: there is no archive to download or verify, no
-directory exchange, and no copied worker binary.
+IPC polling, and post-commit garbage collection), and, after
+git-plugin-distribution, the `update apply`/`update run` detached-unit
+handoff to `omarchy plugin update othavi0.agent-bar --yes`. The 2026-09-14
+amendment
+(`docs/specs/v10/amendments/2026-09-14-remove-update-execution-design.md`)
+removes that handoff too: the plugin performs no update transaction of any
+kind. `update check` is the entire update surface; see MIG-021.
 
-What replaces it:
-
-- `BUNDLE-026`: `update apply` builds no download/stage plan; the git fetch
-  and fast-forward are entirely `omarchy plugin update`'s.
+- `BUNDLE-026`: **Retired**, removed by the 2026-09-14 amendment. There is
+  no download/stage plan to build, because the plugin no longer invokes
+  `omarchy plugin update` at all.
 - `BUNDLE-027`: Validation (manifest ID, schema, entry points, no symlinks,
-  `barWidget.defaultSection`) runs as `omarchy-plugin-validate` inside
-  `omarchy plugin update`, after the fast-forward and before it is kept.
+  `barWidget.defaultSection`) still runs as `omarchy-plugin-validate` inside
+  `omarchy plugin update`, after the fast-forward and before it is kept,
+  when the user runs that command themself.
 - `BUNDLE-028`–`BUNDLE-029`: **Retired.** There is no separate
   downgrade/modified-directory policy in Agent Bar: `omarchy plugin update`
   always fast-forwards to the distribution repository's current `master`,
   and refuses a plugin directory with local modifications outright (a
   non-fast-forward `git merge`) rather than negotiating around them.
-- `BUNDLE-030`: `omarchy plugin update` performs fetch, fast-forward,
-  re-validate, and (only on a failed validation) rollback as one operation
-  from the caller's perspective; Agent Bar's own part is limited to holding
-  the maintenance lock across the handoff and reporting it.
+- `BUNDLE-030`: **Retired**, removed by the 2026-09-14 amendment. Agent Bar
+  has no part in `omarchy plugin update` any more, not even holding the
+  maintenance lock; the command runs entirely outside the plugin, at the
+  user's own terminal.
 - `BUNDLE-031`: A failed validation restores the previous complete bundle
-  via `git reset --hard ORIG_HEAD`, run by `omarchy plugin update` itself.
+  via `git reset --hard ORIG_HEAD`, run by `omarchy plugin update` itself
+  when the user runs it.
 - `BUNDLE-032`: **Retired.** There is no directory exchange; the update is a
   git working-tree fast-forward in place.
 - `BUNDLE-032A`–`BUNDLE-032K`: **Retired.** The copied-worker, transient-unit
   argv0 dispatch, health-IPC polling, `listPlugins` absence verification,
   monotonic deadline budget, and post-commit garbage collection they
-  described are gone with the worker chain. What survives of the
-  "detached transient unit" idea is simpler: `uninstall` starts one
+  described are gone with the worker chain. The `update apply` detached
+  unit they were partly rewritten to describe
+  (`agent-bar-update-<txid>.service`, `update run`, `RuntimeMaxSec=25h`) is
+  also gone, removed by the 2026-09-14 amendment. What survives of the
+  "detached transient unit" idea is `uninstall` alone: it starts one
   `systemd-run --user --collect
   --unit=agent-bar-remove-<32-lowercase-hex-txid>.service -- <omarchy>
-  plugin remove othavi0.agent-bar --yes`, and `update apply` starts one
-  `systemd-run --user --collect --no-block
-  --unit=agent-bar-update-<32-lowercase-hex-txid>.service
-  --property=RuntimeMaxSec=25h -- <helper> update run`. Both return once
-  systemd has accepted the unit, so the operation outlives the shell process
-  that started it. `update run` wraps `omarchy plugin update othavi0.agent-bar
-  --yes` and restarts the shell only when the fast-forward moved `HEAD`: the
-  rescan that command triggers does not reload a running `Service.qml`.
-  `MIG-020`–`MIG-026` are the current contract.
+  plugin remove othavi0.agent-bar --yes` and returns once systemd has
+  accepted the unit, so the operation outlives the shell process that
+  started it. `MIG-022`–`MIG-026` are the current contract.
 
 ## UI uninstall
 
 Retired as a block. `BUNDLE-033`–`BUNDLE-038C` described uninstall's own
 quarantine/rescan/health/garbage-collection transaction, matching the
-update worker chain above. `MIG-020`–`MIG-026` are the current contract:
+update worker chain above. `MIG-022`–`MIG-026` are the current contract:
 `uninstall` purges only Agent Bar's own XDG state (with `purge`), then
 delegates unconditionally to `omarchy plugin remove othavi0.agent-bar --yes`,
 which owns disabling the bar entry, deleting (or, for a non-git directory,

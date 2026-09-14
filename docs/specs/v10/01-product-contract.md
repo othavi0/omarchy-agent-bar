@@ -21,11 +21,12 @@ connection actions, update, and uninstall.
 - `PROD-005`: Preserve valid v9 user settings and bar placement.
 - `PROD-006`: Remove TUI, Waybar, history, local cost, BRL conversion, and
   chart complexity rather than hiding them.
-- `PROD-007`: Give normal users complete configuration, update, and uninstall
-  flows in the plugin UI. Update and uninstall remain UI journeys; since
-  git-plugin-distribution (2026-08-05) they delegate their live mutation to
-  the Omarchy CLI (`omarchy plugin update|remove othavi0.agent-bar`) instead of
-  performing it in-process.
+- `PROD-007`: Give normal users complete configuration and uninstall flows
+  in the plugin UI, and an update check that tells them when a release
+  exists. Uninstall delegates its live mutation to the Omarchy CLI
+  (`omarchy plugin remove othavi0.agent-bar`) since git-plugin-distribution
+  (2026-08-05). Since the 2026-09-14 amendment the plugin never installs an
+  update itself: the user runs `omarchy plugin update othavi0.agent-bar`.
 - `PROD-008`: Expose typed, safe, partial provider failures without parsing
   human error strings in QML.
 - `PROD-009`: Treat keyboard navigation, scrolling, focus, themes, and absence
@@ -117,13 +118,13 @@ Notifications: enabled
 ### Maintain
 
 1. Settings shows installed plugin version and `Check for updates`.
-2. An available release requires explicit confirmation before applying it.
-3. Confirming update delegates to `omarchy plugin update othavi0.agent-bar
-   --yes`, which fetches, fast-forwards, re-validates, and rolls back
-   automatically on a failed validation. A plugin directory without `.git`
-   (a pre-conversion install) cannot be fast-forwarded; the check reports
-   `reinstallRequired` and Settings shows the remove-then-add migration
-   instruction instead of an update offer.
+2. An available release shows its version, a release-notes link, a
+   marketplace-page link, and the command the user runs in a terminal:
+   `omarchy plugin update othavi0.agent-bar && omarchy-restart-shell`. The
+   plugin never runs it.
+3. A plugin directory without `.git` (a pre-conversion install) cannot be
+   fast-forwarded; the check reports `reinstallRequired` and Settings shows
+   the remove-then-add migration instruction instead.
 4. `Uninstall Agent Bar` requires confirmation, then delegates to
    `omarchy plugin remove othavi0.agent-bar --yes`.
 5. Settings are preserved by default; deleting settings requires an additional

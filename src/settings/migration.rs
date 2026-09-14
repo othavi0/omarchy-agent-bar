@@ -475,7 +475,6 @@ fn migrate_v9_settings(raw: &[u8]) -> Result<(Settings, Vec<String>, bool), Migr
             enabled: notify_enabled,
             reminder_minutes: crate::settings::schema::default_reminder_minutes(),
         },
-        updates: crate::settings::schema::UpdateSettings::default(),
     };
     settings
         .validate()

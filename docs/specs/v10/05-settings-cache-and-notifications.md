@@ -19,12 +19,13 @@
   "notifications": {
     "enabled": true,
     "reminderMinutes": 120
-  },
-  "updates": {
-    "automatic": true
   }
 }
 ```
+
+There is no `updates` block in the product schema. A document written by
+10.3.24 through 10.5.1 that still carries `"updates": {"automatic": <bool>}`
+still reads (`SET-028`); the block is ignored and never written back.
 
 - `SET-001`: `settings.json` is the only product settings source.
 - `SET-002`: Every supported provider, including `antigravity`, appears
@@ -105,11 +106,15 @@ closed
   until its default is chosen. Existing documents are untouched, because a
   read never rewrites a row it already has (`SET-007`), and a migrated v9
   choice outranks this default (`MIG-009`, `PROD-024`).
-- `SET-028`: `updates.automatic` is a boolean. The `updates` block is
-  optional on read and defaults to `{ "automatic": true }`, so a document
-  written before it keeps parsing without a rewrite (`SET-007`); any other
-  key inside it is rejected under `SET-006`. It gates `UX-041A` only: the
-  explicit `Check for updates` button works either way.
+- `SET-028` (amended 2026-09-14): `updates.automatic` is removed from the
+  product. `updates` is no longer part of the canonical settings document
+  and `config apply`/Settings never write it. A document written by
+  10.3.24 through 10.5.1 that still carries
+  `"updates": { "automatic": <bool> }` still reads (`SET-007`); the block is
+  ignored and never written back. Any other key inside `updates`, a
+  non-boolean `automatic`, or a non-object `updates` is rejected under
+  `SET-006`. See
+  `docs/specs/v10/amendments/2026-09-14-remove-update-execution-design.md`.
 
 ## Cache files
 

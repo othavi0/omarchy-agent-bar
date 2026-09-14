@@ -57,6 +57,7 @@
       }
     },
     "updates": {
+      "description": "Legacy automatic-updates block written by 10.3.24-10.5.1. Tolerated on read and ignored; the current release never writes it back.",
       "type": "object",
       "additionalProperties": false,
       "required": ["automatic"],

@@ -117,20 +117,16 @@ TestCase {
     var d = Core.setProviderEnabled(snap, "grok", true)
     d = Core.moveProvider(d, "grok", -1)
     d = Core.setDisplayMetric(d, "used")
-    d = Core.setAutomaticUpdates(d, false)
     var c = Core.settingsChanges(snap, d)
     compare(c.tabs.providers, 2)
     compare(c.tabs.general, 1)
-    compare(c.tabs.about, 1)
-    compare(c.count, 4)
+    compare(c.tabs.about, 0, "the About tab tracks nothing since the update toggle left")
+    compare(c.count, 3)
 
     compare(Core.settingsChanges(null, d).count, 0)
     var roundTrip = Core.setProviderEnabled(Core.setProviderEnabled(snap, "grok", true), "grok", false)
     compare(Core.settingsChanges(snap, roundTrip).count, 0,
             "switching a provider on and off again leaves nothing to save")
-    var legacy = Core.cloneDraft(snap)
-    delete legacy.updates
-    compare(Core.settingsChanges(legacy, Core.cloneDraft(snap)).count, 0)
   }
 
   function test_settings_tabs_table() {
@@ -204,25 +200,31 @@ TestCase {
     compare(Core.validateSettingsDraft(bad).ok, false)
   }
 
-  function test_automatic_updates_setting() {
+  // omacom/omarchy-plugin-marketplace#4979: the product no longer runs
+  // updates on its own, so the settings document never carries an
+  // `updates` block by default.
+  function test_default_settings_has_no_updates_block() {
     var d = Service.defaultSettings()
-    compare(d.updates.automatic, true)
-    compare(Service.automaticUpdatesEnabled(d), true)
+    compare(d.updates, undefined)
+  }
 
-    d = Core.setAutomaticUpdates(d, false)
-    compare(d.updates.automatic, false)
-    compare(Service.automaticUpdatesEnabled(d), false)
-    compare(Core.validateSettingsDraft(d).ok, true)
+  // Settings reads never write (CLAUDE.md), so a document saved by
+  // 10.3.24-10.5.1 (which still had the removed toggle) must still load —
+  // the draft built from it just drops the legacy block instead of
+  // round-tripping it back to disk on the next save.
+  function test_legacy_updates_block_loads_but_is_not_written_back() {
+    var doc = Service.defaultSettings()
+    doc.updates = { automatic: true }
+    compare(Core.validateSettingsDraft(doc).ok, true)
 
-    var legacy = Service.defaultSettings()
-    delete legacy.updates
-    compare(Core.validateSettingsDraft(legacy).ok, true)
-    compare(Service.automaticUpdatesEnabled(legacy), true)
-    compare(Service.automaticUpdatesEnabled(null), true)
+    var state = Core.settingsFinishLoad(Core.settingsBeginLoad(1), 1, doc)
+    compare(state.phase, "clean")
+    compare(state.draft.updates, undefined)
+    compare(state.snapshot.updates, undefined)
 
-    var bad = Service.defaultSettings()
-    bad.updates = { automatic: "yes" }
-    compare(Core.validateSettingsDraft(bad).ok, false)
+    state = Core.settingsMarkDirty(state)
+    state = Core.settingsCancel(state)
+    compare(state.draft.updates, undefined)
   }
 
   function test_notifications_toggle() {

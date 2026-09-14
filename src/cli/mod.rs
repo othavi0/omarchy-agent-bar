@@ -45,7 +45,7 @@ pub fn help_text(topic: Option<HelpTopic>) -> String {
             out.push_str("  agent-bar config show\n");
             out.push_str("  agent-bar config apply stdin|file <path>|json <value>\n");
             out.push_str("  agent-bar setup\n");
-            out.push_str("  agent-bar update [check|apply]\n");
+            out.push_str("  agent-bar update [check]\n");
             out.push_str("  agent-bar uninstall [purge]\n");
             out.push_str("  agent-bar doctor scan|clean\n");
             out.push_str("  agent-bar help [<command>]\n");
@@ -78,11 +78,11 @@ pub fn help_text(topic: Option<HelpTopic>) -> String {
              Install and update are 'omarchy plugin add|update othavi0.agent-bar'.\n"
                 .to_owned()
         }
-        Some(HelpTopic::Update) => "update — print usage; no interactive flow\n\
-             update check — report whether a newer release exists\n\
-             update apply — start 'update run' in a detached unit and return\n\
-             update run — 'omarchy plugin update othavi0.agent-bar', then restart the shell if it changed\n"
-            .to_owned(),
+        Some(HelpTopic::Update) => format!(
+            "update — print usage; no interactive flow\n\
+             update check — report whether a newer release exists (read-only)\n\
+             Install a reported update yourself: '{UPDATE_COMMAND}'.\n"
+        ),
         Some(HelpTopic::Uninstall) => {
             "uninstall — remove the plugin (keeps settings and backups)\n\
              uninstall purge — also delete settings and owned backups\n\
@@ -112,8 +112,6 @@ pub fn dispatch(command: Command) -> Result<(), CliFailure> {
         Command::Setup => dispatch_setup(),
         Command::Update(UpdateCommand::Interactive) => dispatch_update_interactive(),
         Command::Update(UpdateCommand::Check) => dispatch_update_check(),
-        Command::Update(UpdateCommand::Apply) => dispatch_update_apply(),
-        Command::Update(UpdateCommand::Run) => dispatch_update_run(),
         Command::Config(config) => dispatch_config(config),
         Command::Login(provider) => dispatch_login(provider),
         Command::Status(opts) => dispatch_status(opts),
@@ -425,185 +423,15 @@ fn dispatch_update_check() -> Result<(), CliFailure> {
     Ok(())
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct UpdateApplyDelegation<'a> {
-    schema_version: u32,
-    operation: &'static str,
-    delegated: bool,
-    unit: &'a str,
-}
-
-fn dispatch_update_apply() -> Result<(), CliFailure> {
-    use crate::plugin::{
-        resolve_absolute_executable, txid_from_bytes, CommandRunner, PluginPaths,
-        ProcessCommandRunner,
-    };
-    use crate::support::maintenance_gate::MaintenanceGate;
-    use crate::support::{Clock, SystemClock};
-
-    let home = std::env::var_os("HOME")
-        .ok_or_else(|| CliFailure::plugin("HOME is required for update apply".to_string()))?;
-    let xdg_state = std::env::var_os("XDG_STATE_HOME").map(PathBuf::from);
-    let paths = PluginPaths::production(PathBuf::from(home), xdg_state);
-
-    let gate = MaintenanceGate::open(&paths.maintenance_lock)
-        .map_err(|e| CliFailure::plugin(format!("open maintenance lock: {e}")))?;
-    let _exclusive = gate
-        .lock_exclusive()
-        .map_err(|e| CliFailure::plugin(format!("exclusive maintenance lock: {e}")))?;
-
-    for tool in ["omarchy", "omarchy-restart-shell", "git", "timeout"] {
-        resolve_absolute_executable(tool).map_err(|e| CliFailure::plugin(e.to_string()))?;
-    }
-    let systemd_run = resolve_absolute_executable("systemd-run")
-        .map_err(|e| CliFailure::plugin(e.to_string()))?;
-    let helper = std::env::current_exe()
-        .map_err(|e| CliFailure::plugin(format!("cannot locate the helper: {e}")))?;
-    let helper = unit_argv_path(helper.to_string_lossy().into_owned())?;
-
-    let clock = SystemClock;
-    let txid = txid_from_bytes(format!("update-apply:{}", Clock::now_utc(&clock)).as_bytes());
-    let unit = format!("agent-bar-update-{txid}.service");
-    let unit_flag = format!("--unit={unit}");
-
-    // The unit runs `update run`, which owns the fast-forward and the shell
-    // restart. `--no-block` returns once systemd queued it, so this process
-    // and its maintenance lock never wait on a `git fetch`; RuntimeMaxSec
-    // bounds the unit, including a day of retries behind a locked session.
-    let argv: [&str; 9] = [
-        "--user",
-        "--collect",
-        "--no-block",
-        unit_flag.as_str(),
-        "--property=RuntimeMaxSec=25h",
-        "--",
-        helper.as_str(),
-        "update",
-        "run",
-    ];
-
-    let runner = ProcessCommandRunner;
-    let out = runner
-        .run(&systemd_run, &argv)
-        .map_err(|e| CliFailure::plugin(e.to_string()))?;
-    if out.code != 0 {
-        return Err(CliFailure::plugin(format!(
-            "failed to start update unit: {}",
-            out.stderr.trim()
-        )));
-    }
-
-    let doc = UpdateApplyDelegation {
-        schema_version: 1,
-        operation: "updateApply",
-        delegated: true,
-        unit: &unit,
-    };
-    let json = serde_json::to_string(&doc).map_err(|e| CliFailure::plugin(e.to_string()))?;
-    println!("{json}");
-    Ok(())
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct UpdateRunReport {
-    schema_version: u32,
-    operation: &'static str,
-    outcome: &'static str,
-}
-
-fn print_update_run_report(outcome: &'static str) -> Result<(), CliFailure> {
-    let doc = UpdateRunReport {
-        schema_version: 1,
-        operation: "updateRun",
-        outcome,
-    };
-    let json = serde_json::to_string(&doc).map_err(|e| CliFailure::plugin(e.to_string()))?;
-    println!("{json}");
-    Ok(())
-}
-
-/// Takes only the run lock, never the maintenance lock: this run can retry a
-/// restart for hours, and status and settings must keep working meanwhile.
-fn dispatch_update_run() -> Result<(), CliFailure> {
-    use crate::plugin::update_run::{
-        run_update, UpdateRunLimits, UpdateRunOutcome, UpdateRunTools,
-    };
-    use crate::plugin::{resolve_absolute_executable, PluginPaths, ProcessCommandRunner};
-    use crate::support::maintenance_gate::MaintenanceGate;
-
-    let home = std::env::var_os("HOME")
-        .ok_or_else(|| CliFailure::plugin("HOME is required for update run".to_string()))?;
-    let xdg_state = std::env::var_os("XDG_STATE_HOME").map(PathBuf::from);
-    let paths = PluginPaths::production(PathBuf::from(home), xdg_state);
-
-    std::fs::create_dir_all(&paths.xdg_state)
-        .map_err(|e| CliFailure::plugin(format!("create state directory: {e}")))?;
-    let gate = MaintenanceGate::open(paths.xdg_state.join("update-run.lock"))
-        .map_err(|e| CliFailure::plugin(format!("open update run lock: {e}")))?;
-    let Some(_run) = gate
-        .try_lock_exclusive()
-        .map_err(|e| CliFailure::plugin(format!("update run lock: {e}")))?
-    else {
-        eprintln!("agent-bar: another update run is in progress");
-        return print_update_run_report("alreadyRunning");
-    };
-
-    let resolve = |name: &str| {
-        resolve_absolute_executable(name).map_err(|e| CliFailure::plugin(e.to_string()))
-    };
-    let tools = UpdateRunTools {
-        git: resolve("git")?,
-        timeout: resolve("timeout")?,
-        omarchy: resolve("omarchy")?,
-        restart_shell: resolve("omarchy-restart-shell")?,
-        notify: resolve_absolute_executable("notify-send").ok(),
-    };
-
-    let outcome = run_update(
-        &ProcessCommandRunner,
-        &std::thread::sleep,
-        &tools,
-        &paths.plugin_root,
-        &UpdateRunLimits::default(),
-    )
-    .map_err(|e| CliFailure::plugin(e.to_string()))?;
-
-    let label = match outcome {
-        UpdateRunOutcome::UpToDate => "upToDate",
-        UpdateRunOutcome::Updated => "updated",
-        UpdateRunOutcome::UpdateFailed(_) => "updateFailed",
-        UpdateRunOutcome::RestartGaveUp => "restartGaveUp",
-    };
-    print_update_run_report(label)?;
-    match outcome {
-        UpdateRunOutcome::UpToDate | UpdateRunOutcome::Updated => Ok(()),
-        UpdateRunOutcome::UpdateFailed(code) => Err(CliFailure::plugin(format!(
-            "omarchy plugin update exited {code}"
-        ))),
-        UpdateRunOutcome::RestartGaveUp => Err(CliFailure::plugin(
-            "the shell refused every restart; restart it to load the update".to_string(),
-        )),
-    }
-}
-
-/// An absolute path that systemd-run passes to the unit unchanged. The argv
-/// travels over D-Bus without word splitting, but systemd-run expands `$`
-/// variables and `%` specifiers, so a path carrying either fails closed.
-fn unit_argv_path(path: String) -> Result<String, CliFailure> {
-    if path.starts_with('/') && !path.contains(['$', '%']) {
-        Ok(path)
-    } else {
-        Err(CliFailure::plugin(format!(
-            "helper path cannot be passed to systemd-run: {path}"
-        )))
-    }
-}
+/// The one command a user runs to install a reported release. `omarchy plugin
+/// update` fast-forwards the tree but does not reload a running shell, so the
+/// restart is part of the command. `CoreMaintenance.js` shows the same text.
+pub const UPDATE_COMMAND: &str = "omarchy plugin update othavi0.agent-bar && omarchy-restart-shell";
 
 fn dispatch_update_interactive() -> Result<(), CliFailure> {
     eprintln!("agent-bar update has no interactive flow.");
-    eprintln!("Use 'agent-bar update check' or 'agent-bar update apply'.");
+    eprintln!("Use 'agent-bar update check' to look for a new release.");
+    eprintln!("Install it yourself with '{UPDATE_COMMAND}'.");
     Err(CliFailure {
         message: String::new(),
         exit_code: VALIDATION,
@@ -821,21 +649,5 @@ mod tests {
         );
         let err = confirm_uninstall(false, false, &mut stdin, &mut stderr).unwrap_err();
         assert_eq!(err.exit_code, VALIDATION);
-    }
-
-    #[test]
-    fn unit_argv_path_rejects_what_systemd_run_would_expand() {
-        for safe in [
-            "/home/u/.config/omarchy/plugins/othavi0.agent-bar/bin/agent-bar",
-            "/home/a b/plugins/othavi0.agent-bar/bin/agent-bar",
-        ] {
-            assert_eq!(unit_argv_path(safe.to_string()).unwrap(), safe);
-        }
-        for unsafe_path in ["bin/agent-bar", "/opt/%h/agent-bar", "/opt/$HOME/agent-bar"] {
-            assert!(
-                unit_argv_path(unsafe_path.to_string()).is_err(),
-                "{unsafe_path}"
-            );
-        }
     }
 }

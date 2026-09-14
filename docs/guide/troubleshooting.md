@@ -131,10 +131,16 @@ maintenance lock, `config apply` waits for the lock after validating; it
 completes once maintenance finishes, and the settings file is untouched
 until then.
 
-## Update failed
+## Update available or update failed
 
-`update apply` only hands off to `omarchy plugin update othavi0.agent-bar
---yes`; that command owns the actual result. Its failure modes:
+Agent Bar only checks for updates; it never installs one. When Settings
+shows a new version, run the command it names yourself:
+
+```bash
+omarchy plugin update othavi0.agent-bar && omarchy-restart-shell
+```
+
+`omarchy plugin update` owns the actual result. Its failure modes:
 
 - **Non-fast-forward**: `omarchy plugin update` refuses to update a plugin
   directory with local modifications or diverged history. It never force-
@@ -149,6 +155,9 @@ until then.
   a bulk run and refuses it outright when targeted by ID. See
   [Migrating a pre-conversion install](integration.md#migrating-a-pre-conversion-install)
   for the detection, the reinstall commands, and what survives.
+
+`omarchy plugin update` does not reload a running shell by itself; run
+`omarchy-restart-shell` afterward so the new QML loads.
 
 Confirm the outcome with:
 

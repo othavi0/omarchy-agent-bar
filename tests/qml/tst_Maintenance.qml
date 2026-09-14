@@ -54,10 +54,14 @@ TestCase {
   function test_update_and_uninstall_argv() {
     var check = Core.updateCheckArgv("/bin/agent-bar")
     compare(check.join(" "), "/bin/agent-bar update check")
-    var apply = Core.updateApplyArgv("/bin/agent-bar")
-    compare(apply.join(" "), "/bin/agent-bar update apply")
     compare(Core.uninstallArgv("/bin/agent-bar", false).join(" "), "/bin/agent-bar uninstall")
     compare(Core.uninstallArgv("/bin/agent-bar", true).join(" "), "/bin/agent-bar uninstall purge")
+  }
+
+  function test_marketplace_url_and_update_command_text_exact() {
+    compare(Core.marketplaceUrl(), "https://plugins.omarchy.org/plugin.html?id=othavi0.agent-bar")
+    compare(Core.updateCommandText(),
+            "omarchy plugin update othavi0.agent-bar && omarchy-restart-shell")
   }
 
   function test_uninstall_confirmation_json() {
@@ -81,7 +85,8 @@ TestCase {
     compare(ui.installedVersion, "10.3.1")
     compare(ui.targetVersion, "10.4.0")
     compare(ui.releaseNotesUrl, "https://github.com/othavi0/omarchy-agent-bar/releases/tag/v10.4.0")
-    verify(ui.message.indexOf("10.4.0") >= 0)
+    compare(ui.message, "Update to 10.4.0 is available. Run this in a terminal:")
+    compare(ui.updateCommand, "omarchy plugin update othavi0.agent-bar && omarchy-restart-shell")
   }
 
   function test_update_check_up_to_date() {
@@ -93,6 +98,7 @@ TestCase {
     compare(ui.installedVersion, "10.4.0")
     compare(ui.targetVersion, "")
     compare(ui.releaseNotesUrl, "")
+    compare(ui.updateCommand, "")
     var none = Core.maintenanceUiFromCheck(Core.maintenanceUiIdle("10.3.1"), checkFixture("no-compatible.json"), 0, "10.3.1")
     compare(none.phase, "up_to_date")
   }
@@ -105,6 +111,7 @@ TestCase {
     compare(ui.phase, "reinstall_required")
     compare(ui.targetVersion, "")
     compare(ui.releaseNotesUrl, "")
+    compare(ui.updateCommand, "")
     verify(ui.message.indexOf("omarchy plugin remove othavi0.agent-bar") >= 0)
     verify(ui.message.indexOf("omarchy plugin add https://github.com/othavi0/omarchy-agent-bar.git") >= 0)
   }
@@ -114,17 +121,9 @@ TestCase {
     compare(Core.maintenanceUiFromCheck(Core.maintenanceUiIdle("1.0.0"), "", 0, "1.0.0").phase, "error")
     compare(Core.maintenanceUiFromCheck(Core.maintenanceUiIdle("1.0.0"), "Agent Bar is up to date.\n", 0, "1.0.0").phase, "error")
     var wrongSchema = JSON.stringify({ schemaVersion: 2, available: true })
-    compare(Core.maintenanceUiFromCheck(Core.maintenanceUiIdle("1.0.0"), wrongSchema, 0, "1.0.0").phase, "error")
-  }
-
-  function test_update_confirm_message_names_versions() {
-    var ui = Core.maintenanceUiIdle("10.0.0")
-    ui.targetVersion = "10.2.0"
-    var msg = Core.updateConfirmMessage(ui)
-    compare(msg, "Updates 10.0.0 → 10.2.0. Settings stay. "
-        + "Fast-forwards to the latest release; a failed validation rolls back.")
-    verify(msg.indexOf("This replaces the plugin bundle") < 0)
-    verify(msg.indexOf("Rolls back if it fails") < 0)
+    var rejected = Core.maintenanceUiFromCheck(Core.maintenanceUiIdle("1.0.0"), wrongSchema, 0, "1.0.0")
+    compare(rejected.phase, "error")
+    compare(rejected.updateCommand, "")
   }
 
   function test_update_check_failure_has_one_string() {
@@ -167,14 +166,18 @@ TestCase {
   function test_maintenance_intention_shapes() {
     var ui = Core.maintenanceUiIdle("10.0.0")
     ui.targetVersion = "10.1.0"
-    var up = Core.maintenanceIntention("update_apply", ui)
-    compare(up.kind, "update_apply")
-    compare(up.version, "10.1.0")
     ui.purgeSettings = true
     var un = Core.maintenanceIntention("uninstall", ui)
     compare(un.kind, "uninstall")
     compare(un.purge, true)
     compare(un.payload.purgeSettingsAndBackups, true)
+  }
+
+  function test_only_uninstall_is_a_known_intention_kind() {
+    var ui = Core.maintenanceUiIdle("10.0.0")
+    ui.targetVersion = "10.1.0"
+    compare(Core.maintenanceIntention("reinstall", ui), null)
+    compare(Core.maintenanceIntention("", ui), null)
   }
 
   function test_service_login_uses_exec_detached() {
@@ -223,6 +226,7 @@ TestCase {
   function test_maintenance_view_ux_copy() {
     var src = read("MaintenanceView.qml")
     verify(src.indexOf("Check for updates") >= 0)
+    verify(src.indexOf("Marketplace page") >= 0)
     verify(src.indexOf("Uninstall Agent Bar") >= 0)
     verify(src.indexOf("Also delete saved settings and backups") >= 0)
     verify(src.indexOf("ConfirmDialog") >= 0)
@@ -237,6 +241,32 @@ TestCase {
     verify(src.indexOf("Removes Agent Bar. Your settings stay.") >= 0)
   }
 
+  // The maintainer-blocked update path (marketplace maintainer issue #4979):
+  // the plugin only points the user at the marketplace page and the manual
+  // command now, mirroring how the release-notes and restart-shell buttons
+  // wire their source contract to a plain, testable Service call.
+  function test_maintenance_view_marketplace_button_source_contract() {
+    var src = read("MaintenanceView.qml")
+    var start = src.indexOf("id: marketplaceButton")
+    verify(start >= 0)
+    var onClicked = src.indexOf("onClicked:", start)
+    verify(onClicked >= 0)
+    var closeAt = src.indexOf("}", onClicked)
+    verify(closeAt > onClicked)
+    var body = src.substring(onClicked, closeAt)
+    verify(body.indexOf("root.agentService.openMarketplacePage()") >= 0)
+  }
+
+  function test_service_open_marketplace_page_source_contract() {
+    var src = read("Service.qml")
+    var start = src.indexOf("function openMarketplacePage()")
+    verify(start >= 0)
+    var end = src.indexOf("function ", start + 10)
+    verify(end > start)
+    var body = src.substring(start, end)
+    verify(body.indexOf("Qt.openUrlExternally(Maintenance.marketplaceUrl())") >= 0)
+  }
+
   function test_install_type_is_gone_from_the_model() {
     var src = read("CoreMaintenance.js")
     verify(src.indexOf("installType") < 0)
@@ -246,45 +276,6 @@ TestCase {
     var src = read("SettingsView.qml")
     verify(src.indexOf("MaintenanceView") >= 0)
     verify(src.indexOf("land in the next task") < 0)
-  }
-
-  function test_automatic_update_check_gate() {
-    var ok = { automatic: true, settingsLoaded: true, versionReady: true,
-               blocked: false, checkBusy: false, popupOpen: false }
-    compare(Core.automaticUpdateCheckAllowed(ok), true)
-    var keys = ["automatic", "settingsLoaded", "versionReady"]
-    for (var i = 0; i < keys.length; i++) {
-      var off = JSON.parse(JSON.stringify(ok))
-      off[keys[i]] = false
-      compare(Core.automaticUpdateCheckAllowed(off), false, keys[i])
-    }
-    var busy = ["blocked", "checkBusy", "popupOpen"]
-    for (var j = 0; j < busy.length; j++) {
-      var on = JSON.parse(JSON.stringify(ok))
-      on[busy[j]] = true
-      compare(Core.automaticUpdateCheckAllowed(on), false, busy[j])
-    }
-  }
-
-  function test_automatic_update_applies_only_an_available_update() {
-    var idle = Core.maintenanceUiIdle("10.3.23")
-    var available = Core.maintenanceUiFromCheck(idle, JSON.stringify({
-      schemaVersion: 1,
-      current: { version: "10.3.23" },
-      available: true,
-      reinstallRequired: false,
-      latestCompatible: { version: "10.3.24", releaseNotesUrl: "" }
-    }), 0, "10.3.23")
-    compare(Core.shouldAutoApplyUpdate(available), true)
-    compare(Core.shouldAutoApplyUpdate(Core.maintenanceUiFromCheck(idle, "", 1, "10.3.23")), false)
-    compare(Core.shouldAutoApplyUpdate(Core.maintenanceUiFromCheck(idle, JSON.stringify({
-      schemaVersion: 1, current: { version: "10.3.23" }, available: false,
-      reinstallRequired: false, latestCompatible: null
-    }), 0, "10.3.23")), false)
-    compare(Core.shouldAutoApplyUpdate(Core.maintenanceUiFromCheck(idle, JSON.stringify({
-      schemaVersion: 1, current: { version: "10.3.23" }, available: true,
-      reinstallRequired: true, latestCompatible: { version: "10.3.24" }
-    }), 0, "10.3.23")), false)
   }
 
   function test_helper_script_source_contract() {

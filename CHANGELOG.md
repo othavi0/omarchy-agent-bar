@@ -7,19 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Removed
+
+- fix: stop running `omarchy plugin update othavi0.agent-bar --yes` and
+  `omarchy-restart-shell` on the plugin's own behalf. The Omarchy plugin
+  marketplace requires a separately verified immutable target before any
+  automatic update is installed
+  (omacom/omarchy-plugin-marketplace#4979), and Omarchy 4.0.3 offers no way
+  to name a commit or tag, so the plugin replaced reviewed code with
+  whatever `master` held at run time. `update apply`, `update run`, and the
+  background scheduled check are gone; a check now only runs from the
+  explicit `Check for updates` button. Settings shows the version, release
+  notes, the marketplace page, and the command to run:
+  `omarchy plugin update othavi0.agent-bar && omarchy-restart-shell`.
+  `updates.automatic` is ignored if a settings file still carries it.
+
 ### Added
 
-- feat: automatic updates. The service checks for a new release two
-  minutes after start and every six hours, and installs it while the popup
-  is closed. The update unit now runs the helper's new `update run`, which
-  restarts the shell after the fast-forward so the new version actually
-  loads; before, `omarchy plugin update` only rescanned plugins and the old
-  QML kept running until the next restart, whether the update came from the
-  terminal or the Settings button. The restart happens only when the plugin
-  commit moved, waits for a locked session to unlock, and never follows a
-  failed or rolled-back update. Turn it off with the new "Update
-  automatically" toggle (`updates.automatic` in `settings.json`, default on
-  and assumed when absent; ignored until the settings file was read).
 - feat: Antigravity also reports the Claude/GPT quota (`3p-weekly`,
   `3p-5h`) next to Gemini. The two families have separate quotas (requested
   in #82, first proposed in #85 by @alinuxfan).

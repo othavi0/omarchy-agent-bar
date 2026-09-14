@@ -180,10 +180,6 @@ fn login_config_setup_update_uninstall_doctor_forms() {
         Command::Update(UpdateCommand::Check)
     );
     assert_eq!(
-        parse(words(&["update", "apply"])).unwrap(),
-        Command::Update(UpdateCommand::Apply)
-    );
-    assert_eq!(
         parse(words(&["uninstall"])).unwrap(),
         Command::Uninstall { purge: false }
     );
@@ -210,18 +206,11 @@ fn setup_rejects_any_argument() {
 }
 
 #[test]
-fn update_run_parses_and_takes_no_argument() {
-    assert_eq!(
-        parse(words(&["update", "run"])).unwrap(),
-        Command::Update(UpdateCommand::Run)
-    );
-    let err = parse(words(&["update", "run", "now"])).unwrap_err();
-    assert_eq!(err.exit_code, GRAMMAR);
-}
-
-#[test]
-fn update_apply_rejects_trailing_arguments() {
+fn update_apply_and_update_run_are_grammar_errors() {
     for extra in [
+        words(&["update", "run"]),
+        words(&["update", "run", "now"]),
+        words(&["update", "apply"]),
         words(&["update", "apply", "10.0.0"]),
         words(&["update", "apply", "extra", "words"]),
     ] {
@@ -531,7 +520,8 @@ fn binary_interactive_update_rejects_non_tty() {
     assert!(output.stdout.is_empty());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("update check") && stderr.contains("update apply"),
+        stderr.contains("update check")
+            && stderr.contains("omarchy plugin update othavi0.agent-bar && omarchy-restart-shell"),
         "stderr={stderr}"
     );
 }
@@ -571,188 +561,6 @@ fn read_nul_argv(path: &Path) -> Vec<String> {
         .filter(|s| !s.is_empty())
         .map(|s| String::from_utf8_lossy(s).into_owned())
         .collect()
-}
-
-#[test]
-fn update_apply_emits_delegation_document() {
-    let dir = tempdir().unwrap();
-    let home = dir.path().join("home");
-    std::fs::create_dir_all(&home).unwrap();
-
-    let path_dir = dir.path().join("pathbin");
-    write_executable(&path_dir.join("omarchy"), "#!/usr/bin/env bash\nexit 0\n");
-    write_executable(
-        &path_dir.join("omarchy-restart-shell"),
-        "#!/usr/bin/env bash\nexit 0\n",
-    );
-
-    let systemd_run_argv = dir.path().join("systemd-run-argv.bin");
-    write_executable(
-        &path_dir.join("systemd-run"),
-        &recording_shim_body(&systemd_run_argv),
-    );
-
-    let path = format!(
-        "{}:{}",
-        path_dir.display(),
-        std::env::var("PATH").unwrap_or_default()
-    );
-
-    let bin = assert_cmd::cargo::cargo_bin("agent-bar");
-    let output = StdCommand::new(&bin)
-        .args(["update", "apply"])
-        .env("HOME", &home)
-        .env("XDG_STATE_HOME", home.join("state"))
-        .env("XDG_CACHE_HOME", home.join("cache"))
-        .env("XDG_CONFIG_HOME", home.join("config"))
-        .env("PATH", &path)
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "stderr={} stdout={}",
-        String::from_utf8_lossy(&output.stderr),
-        String::from_utf8_lossy(&output.stdout)
-    );
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let lines: Vec<&str> = stdout.trim_end_matches('\n').lines().collect();
-    assert_eq!(lines.len(), 1, "stdout must be exactly one line: {stdout}");
-    let doc: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
-    assert_eq!(doc["schemaVersion"], 1);
-    assert_eq!(doc["operation"], "updateApply");
-    assert_eq!(doc["delegated"], true);
-    let unit = doc["unit"].as_str().expect("unit is a string");
-    assert!(
-        unit.starts_with("agent-bar-update-") && unit.ends_with(".service"),
-        "unit={unit}"
-    );
-
-    let argv = read_nul_argv(&systemd_run_argv);
-    let helper = std::fs::canonicalize(&bin).unwrap();
-    assert!(
-        argv.ends_with(&[
-            helper.display().to_string(),
-            "update".to_string(),
-            "run".to_string(),
-        ]),
-        "argv={argv:?}"
-    );
-    assert_eq!(argv.first().map(String::as_str), Some("--user"));
-    assert!(argv.contains(&"--collect".to_string()));
-    assert!(argv.contains(&"--no-block".to_string()));
-    assert!(argv.contains(&"--property=RuntimeMaxSec=25h".to_string()));
-    assert!(argv.iter().any(|a| a == &format!("--unit={unit}")));
-    assert!(argv.contains(&"--".to_string()));
-    assert!(!argv.iter().any(|a| a.contains("ExecStartPost")));
-}
-
-#[test]
-fn update_apply_fails_closed_without_omarchy_restart_shell() {
-    let dir = tempdir().unwrap();
-    let home = dir.path().join("home");
-    std::fs::create_dir_all(&home).unwrap();
-    let path_dir = dir.path().join("pathbin");
-    write_executable(&path_dir.join("omarchy"), "#!/usr/bin/env bash\nexit 0\n");
-    let systemd_run_argv = dir.path().join("systemd-run-argv.bin");
-    write_executable(
-        &path_dir.join("systemd-run"),
-        &recording_shim_body(&systemd_run_argv),
-    );
-    #[cfg(unix)]
-    std::os::unix::fs::symlink("/bin/bash", path_dir.join("bash")).unwrap();
-
-    let output = StdCommand::new(assert_cmd::cargo::cargo_bin("agent-bar"))
-        .args(["update", "apply"])
-        .env("HOME", &home)
-        .env("XDG_STATE_HOME", home.join("state"))
-        .env("PATH", &path_dir)
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("omarchy-restart-shell"));
-    assert!(!systemd_run_argv.exists(), "no unit may start");
-}
-
-fn update_run_in(root: &Path, before: &str, after: &str) -> (std::process::Output, PathBuf) {
-    let home = root.join("home");
-    std::fs::create_dir_all(&home).unwrap();
-    let path_dir = root.join("pathbin");
-    let counter = root.join("git-calls");
-    write_executable(
-        &path_dir.join("git"),
-        &format!(
-            "#!/usr/bin/env bash\nn=0\n[ -f \"{c}\" ] && n=$(<\"{c}\")\necho $((n+1)) > \"{c}\"\n\
-             if [ \"$n\" = 0 ]; then echo {before}; else echo {after}; fi\n",
-            c = counter.display()
-        ),
-    );
-    write_executable(&path_dir.join("omarchy"), "#!/usr/bin/env bash\nexit 0\n");
-    let restarted = root.join("restarted");
-    write_executable(
-        &path_dir.join("omarchy-restart-shell"),
-        &format!("#!/usr/bin/env bash\n: > \"{}\"\n", restarted.display()),
-    );
-    #[cfg(unix)]
-    {
-        std::os::unix::fs::symlink("/bin/bash", path_dir.join("bash")).unwrap();
-        let timeout = ["/usr/bin/timeout", "/bin/timeout"]
-            .into_iter()
-            .find(|p| Path::new(p).exists())
-            .expect("coreutils timeout");
-        std::os::unix::fs::symlink(timeout, path_dir.join("timeout")).unwrap();
-    }
-    let output = StdCommand::new(assert_cmd::cargo::cargo_bin("agent-bar"))
-        .args(["update", "run"])
-        .env("HOME", &home)
-        .env("XDG_STATE_HOME", home.join("state"))
-        .env("PATH", &path_dir)
-        .output()
-        .unwrap();
-    (output, restarted)
-}
-
-#[test]
-fn update_run_reports_and_skips_while_another_run_holds_the_lock() {
-    let dir = tempdir().unwrap();
-    let state = dir.path().join("home/state/agent-bar");
-    std::fs::create_dir_all(&state).unwrap();
-    let gate =
-        agent_bar::support::maintenance_gate::MaintenanceGate::open(state.join("update-run.lock"))
-            .unwrap();
-    let _held = gate.try_lock_exclusive().unwrap().expect("lock is free");
-
-    let (output, restarted) = update_run_in(dir.path(), "aaa", "bbb");
-    assert!(output.status.success());
-    let doc: serde_json::Value =
-        serde_json::from_str(String::from_utf8_lossy(&output.stdout).trim()).unwrap();
-    assert_eq!(doc["outcome"], "alreadyRunning");
-    assert!(!restarted.exists());
-    assert!(!dir.path().join("git-calls").exists(), "nothing may run");
-}
-
-#[test]
-fn update_run_restarts_the_shell_only_when_the_tree_moved() {
-    let dir = tempdir().unwrap();
-    let (output, restarted) = update_run_in(dir.path(), "aaa", "bbb");
-    assert!(
-        output.status.success(),
-        "stderr={}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let doc: serde_json::Value =
-        serde_json::from_str(String::from_utf8_lossy(&output.stdout).trim()).unwrap();
-    assert_eq!(doc["operation"], "updateRun");
-    assert_eq!(doc["outcome"], "updated");
-    assert!(restarted.exists());
-
-    let dir = tempdir().unwrap();
-    let (output, restarted) = update_run_in(dir.path(), "aaa", "aaa");
-    assert!(output.status.success());
-    let doc: serde_json::Value =
-        serde_json::from_str(String::from_utf8_lossy(&output.stdout).trim()).unwrap();
-    assert_eq!(doc["outcome"], "upToDate");
-    assert!(!restarted.exists(), "an up-to-date tree must not restart");
 }
 
 struct UninstallFixture {

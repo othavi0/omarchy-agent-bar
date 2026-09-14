@@ -17,19 +17,30 @@ to enable the plugin now; enabling it prompts for a bar section, defaulting
 to `right` from the manifest's `barWidget.defaultSection` when the prompt is
 skipped.
 
-Update and remove use the matching Omarchy commands, or the buttons on the
-Settings About tab, which delegate to them:
+Remove uses the matching Omarchy command, or the Settings About tab button,
+which delegates to it:
 
 ```bash
-omarchy plugin update othavi0.agent-bar
 omarchy plugin remove othavi0.agent-bar
+```
+
+Update is a command you run yourself; the plugin only checks and tells you
+what to run:
+
+```bash
+omarchy plugin update othavi0.agent-bar && omarchy-restart-shell
 ```
 
 `omarchy plugin update` fetches, fast-forwards, and re-validates the
 checkout; a failing validation rolls back automatically with
 `git reset --hard ORIG_HEAD`. It refuses a non-git plugin directory outright
 when targeted by ID, and silently skips one in a bulk `omarchy plugin
-update` run.
+update` run. The Settings About tab shows the command instead of a button
+that runs it: the Omarchy plugin marketplace requires a separately verified
+immutable target before any automatic update runs, and Omarchy 4.0.3 offers
+no way to name a commit or tag, so the plugin never invokes
+`omarchy plugin update` itself. See
+[docs/specs/v10/amendments/2026-09-14-remove-update-execution-design.md](../specs/v10/amendments/2026-09-14-remove-update-execution-design.md).
 
 Do not follow any of these commands with `omarchy bar plugin add`. That
 command can remove and recreate the bar entry, losing its section, index,
@@ -75,39 +86,33 @@ the backup/report and do not enter v10. Repeated migration is idempotent.
 
 There is no v9 runtime compatibility layer after migration.
 
-## Update and uninstall delegation
+## Uninstall delegation
 
-`update apply` and `uninstall` no longer stage, exchange, or roll back the
-plugin directory themselves. Uninstall resolves `omarchy` and `systemd-run`
-to absolute executable paths; update apply additionally resolves
-`omarchy-restart-shell`, `git`, and `timeout`. Both then hand their live
-mutation to the Omarchy CLI as a detached transient unit:
+`uninstall` no longer stages, exchanges, or rolls back the plugin directory
+itself. It resolves `omarchy` and `systemd-run` to absolute executable
+paths, then hands its live mutation to the Omarchy CLI as a detached
+transient unit:
 
 ```text
-systemd-run --user --collect --no-block --unit=agent-bar-update-<txid>.service \
-  --property=RuntimeMaxSec=25h -- <plugin>/bin/agent-bar update run
-
 systemd-run --user --collect --unit=agent-bar-remove-<txid>.service \
   -- <omarchy> plugin remove othavi0.agent-bar --yes
 ```
 
 Detachment lets the helper return as soon as systemd accepts the unit,
-without depending on the shell process that started it. `update run` wraps
-`omarchy plugin update othavi0.agent-bar --yes` (ten-minute timeout), which
-owns the git fast-forward and its own validation rollback; `omarchy plugin
+without depending on the shell process that started it. `omarchy plugin
 remove` owns disabling the bar entry, deleting (or backing up) the plugin
-directory, and rescanning. Both commands hold the shared exclusive
-maintenance lock only for the purge/preflight/handoff step, not for the
-delegated mutation itself; `update run` uses its own lock so two runs never
-overlap.
+directory, and rescanning. Uninstall holds the shared exclusive maintenance
+lock only for the purge/preflight/handoff step, not for the delegated
+mutation itself.
 
-The rescan `omarchy plugin update` triggers does not reload a running
-`Service.qml`. `update run` therefore compares the plugin `HEAD` before and
-after: when it moved, it shows a toast and runs `omarchy-restart-shell`,
-retrying every minute while a locked session refuses it; when it did not,
-or the update failed, the shell is left alone. With `updates.automatic` on,
-the service starts this same path by itself: a check two minutes after start
-and every six hours, applied only while the popup is closed.
+## Update check only
+
+The plugin has no equivalent handoff for update. A check runs only when
+the user clicks `Check for updates`; it only paints the maintenance state
+in Settings and never fetches, installs, or restarts the shell.
+`settings.json` has no `updates.automatic` toggle any more, because there
+is nothing left for it to gate. See
+[docs/specs/v10/amendments/2026-09-14-remove-update-execution-design.md](../specs/v10/amendments/2026-09-14-remove-update-execution-design.md).
 
 ## Ownership
 

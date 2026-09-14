@@ -1,7 +1,7 @@
 # Automatic updates that reload the shell
 
 Date: 2026-09-10
-Status: approved
+Status: superseded by 2026-09-14-remove-update-execution-design.md
 
 ## Context
 

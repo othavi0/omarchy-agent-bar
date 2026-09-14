@@ -28,11 +28,6 @@ Item {
   property int maintenanceHandoffTimeoutMs: 120000
   property int pollIntervalMs: Core.pollIntervalMs(appliedSettings)
   property int collectionDelayMs: 0
-  property int autoUpdateFirstDelayMs: 120000
-  property int autoUpdateIntervalMs: 21600000
-  readonly property bool autoUpdateScheduled: autoUpdateTimer.running
-  readonly property int autoUpdateDelayMs: autoUpdateTimer.interval
-  property bool automaticCheck: false
 
   property var snapshot: null
   property bool refreshing: false
@@ -263,12 +258,6 @@ Item {
     })
   }
 
-  function setAutomaticUpdates(enabled) {
-    mutateSettingsDraft(function (d) {
-      return Settings.setAutomaticUpdates(d, enabled)
-    })
-  }
-
   function restoreSettingsDefaults() {
     if (settingsLocked())
       return
@@ -356,49 +345,25 @@ Item {
   }
 
   function checkForUpdates() {
-    startUpdateCheck(false)
+    startUpdateCheck()
   }
 
-  function automaticUpdateTick() {
-    autoUpdateTimer.interval = autoUpdateIntervalMs
-    autoUpdateTimer.restart()
-    if (!Maintenance.automaticUpdateCheckAllowed({
-          automatic: Core.automaticUpdatesEnabled(appliedSettings),
-          settingsLoaded: appliedSettings !== null,
-          versionReady: versionReady,
-          blocked: maintenanceState.blocked,
-          checkBusy: maintenanceCheckBusy,
-          popupOpen: popupOwner !== null
-        }))
-      return false
-    return startUpdateCheck(true)
-  }
-
-  function startUpdateCheck(automatic) {
+  function startUpdateCheck() {
     if (maintenanceState.blocked)
       return false
-    if (!automatic && maintenanceCheckBusy && automaticCheck) {
-      automaticCheck = false
-      maintenanceUi = Maintenance.maintenanceUiChecking(maintenanceUi)
-      return true
-    }
     if (!Core.canStartLane(maintenanceCheckBusy))
       return false
     syncMaintenanceVersion()
     maintenanceCheckGeneration++
     activeMaintenanceCheckGeneration = maintenanceCheckGeneration
-    automaticCheck = !!automatic
-    if (!automaticCheck)
-      maintenanceUi = Maintenance.maintenanceUiChecking(maintenanceUi)
+    maintenanceUi = Maintenance.maintenanceUiChecking(maintenanceUi)
     maintenanceCheckBusy = true
     maintenanceCheckTimeout.restart()
     var helper = resolvedHelperPath()
     if (!helper.length) {
       maintenanceCheckTimeout.stop()
       maintenanceCheckBusy = false
-      if (!automaticCheck)
-        maintenanceUi = Maintenance.maintenanceUiFromCheck(maintenanceUi, "", 1, helperVersion)
-      automaticCheck = false
+      maintenanceUi = Maintenance.maintenanceUiFromCheck(maintenanceUi, "", 1, helperVersion)
       return false
     }
     maintenanceCheckProcess.command = Maintenance.updateCheckArgv(helper)
@@ -416,48 +381,12 @@ Item {
     maintenanceCheckTimeout.stop()
     maintenanceCheckBusy = false
     recordCompletedCallback(!!fromTimeout, "maintenanceCheck")
-    var automatic = automaticCheck
-    automaticCheck = false
-    var next = Maintenance.maintenanceUiFromCheck(
+    maintenanceUi = Maintenance.maintenanceUiFromCheck(
       maintenanceUi,
       stdout,
       exitCode,
       helperVersion || manifestVersion
     )
-    if (!automatic) {
-      maintenanceUi = next
-      return
-    }
-    if (next.phase === "error" || maintenanceState.blocked)
-      return
-    maintenanceUi = next
-    // Re-check the gate: the popup may have opened while the check ran.
-    if (Maintenance.shouldAutoApplyUpdate(next)
-        && Core.automaticUpdatesEnabled(appliedSettings)
-        && popupOwner === null
-        && !maintenanceState.blocked)
-      confirmUpdateApply()
-  }
-
-  function openUpdateConfirm() {
-    maintenanceUi = Maintenance.maintenanceUiOpenUpdateConfirm(maintenanceUi)
-  }
-
-  function closeUpdateConfirm() {
-    maintenanceUi = Maintenance.maintenanceUiCloseUpdateConfirm(maintenanceUi)
-  }
-
-  function confirmUpdateApply() {
-    if (!maintenanceUi || !maintenanceUi.targetVersion)
-      return false
-    var intention = Maintenance.maintenanceIntention("update_apply", maintenanceUi)
-    if (!intention || !intention.version.length)
-      return false
-    pendingMaintenanceIntention = intention
-    pendingMaintenancePayload = ""
-    maintenanceUi = Maintenance.maintenanceUiApplying(maintenanceUi)
-    beginMaintenanceHandoff()
-    return true
   }
 
   function openUninstallConfirm() {
@@ -492,6 +421,10 @@ Item {
     if (url.indexOf("https://") !== 0)
       return
     Qt.openUrlExternally(url)
+  }
+
+  function openMarketplacePage() {
+    Qt.openUrlExternally(Maintenance.marketplaceUrl())
   }
 
   function viewInstallation(providerId, url) {
@@ -576,10 +509,6 @@ Item {
     versionFailed = false
     syncMaintenanceVersion()
     kickSettingsBootstrap()
-    if (!autoUpdateTimer.running) {
-      autoUpdateTimer.interval = autoUpdateFirstDelayMs
-      autoUpdateTimer.start()
-    }
     if (collectionDelayMs > 0) {
       collectionDelay.interval = collectionDelayMs
       collectionDelay.start()
@@ -796,9 +725,7 @@ Item {
     var helper = resolvedHelperPath()
     var intention = pendingMaintenanceIntention
     var argv = null
-    if (intention && intention.kind === "update_apply")
-      argv = Maintenance.updateApplyArgv(helper)
-    else if (intention && intention.kind === "uninstall")
+    if (intention && intention.kind === "uninstall")
       argv = Maintenance.uninstallArgv(helper, intention.purge)
     else
       argv = helper && helper.length ? [helper, "doctor", "scan"] : null
@@ -833,16 +760,7 @@ Item {
     pollEnabled = true
     if (versionReady)
       pollTimer.restart()
-    if (intention && intention.kind === "update_apply") {
-      if (exitCode === 0) {
-        maintenanceUi = Maintenance.maintenanceUiIdle(helperVersion || intention.version)
-        maintenanceUi.message = "Update started. The shell reloads when it finishes."
-      } else {
-        maintenanceUi = Maintenance.cloneMaintenanceUi(maintenanceUi)
-        maintenanceUi.phase = "error"
-        maintenanceUi.message = "Update failed."
-      }
-    } else if (intention && intention.kind === "uninstall") {
+    if (intention && intention.kind === "uninstall") {
       if (exitCode === 0) {
         maintenanceUi = Maintenance.maintenanceUiIdle(helperVersion)
         maintenanceUi.message = "Uninstall completed."
@@ -1115,14 +1033,6 @@ Item {
     }
   }
 
-  Timer {
-    id: autoUpdateTimer
-    interval: root.autoUpdateFirstDelayMs
-    repeat: false
-    running: false
-    onTriggered: root.automaticUpdateTick()
-  }
-
   IpcHandler {
     target: "othavi0.agent-bar"
     function health(expectedVersion: string): string { return root.health(expectedVersion) }
@@ -1151,7 +1061,6 @@ Item {
     maintenanceHandoffTimeout.stop()
     collectionDelay.stop()
     pollTimer.stop()
-    autoUpdateTimer.stop()
     if (versionProbe.running)
       versionProbe.running = false
     if (statusProcess.running)

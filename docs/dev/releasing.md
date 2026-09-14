@@ -126,11 +126,17 @@ since the file is a release-triggering path).
 
 ## Update-path verification
 
-Every release must end with proof that installed plugins can actually
-receive it. A green merge is not that proof: the auto-release run has
-failed silently in the past (three consecutive releases before the fix in
-PR #50), and a red run means the Settings update button simply never sees
-the new version. Run this checklist after every product merge.
+Every release must end with proof that installed plugins can actually see
+it. A green merge is not that proof: the auto-release run has failed
+silently in the past (three consecutive releases before the fix in PR #50),
+and a red run means `update check` simply never reports the new version.
+Run this checklist after every product merge.
+
+The plugin only checks for updates; it never applies one. There is no
+Settings button that installs a release — Settings shows the version,
+release notes, marketplace page, and the command to run. Verification below
+proves `update check` reports the new version, then proves that command
+actually installs it on a live host.
 
 Before merging, the standing gates already cover the update contract:
 `cargo test --test root_tree_validate` mirrors `omarchy-plugin-validate`
@@ -160,24 +166,21 @@ After merging:
    paths in order:**
 
    ```bash
-   # The Settings button's first stage: must report the new version.
+   # What Settings reports: must show the new version is available.
    ~/.config/omarchy/plugins/othavi0.agent-bar/bin/agent-bar update check
 
-   # The apply path (the Settings button delegates to this same command).
-   omarchy plugin update othavi0.agent-bar
+   # The command Settings names, run by hand — there is no apply button.
+   omarchy plugin update othavi0.agent-bar && omarchy-restart-shell
 
    # Must now report available: false with current == the new version.
    ~/.config/omarchy/plugins/othavi0.agent-bar/bin/agent-bar update check
    ```
 
-   Then glance at the bar: chips must render with live data. The rescan
-   `omarchy plugin update` triggers does not reload a running
-   `Service.qml`, so after this manual command run `omarchy-restart-shell`
-   before judging the release. The Settings button and the automatic update
-   run `update apply`, whose `update run` unit restarts the shell by itself;
-   to prove that path, click `Update to <version>` on an install one release
-   behind and confirm the shell reloads on its own
-   (`journalctl --user -u 'agent-bar-update-*'` shows `"outcome":"updated"`).
+   Then glance at the bar: chips must render with live data. `omarchy
+   plugin update` fast-forwards the tree but does not reload a running
+   `Service.qml` by itself, which is why the command above chains
+   `omarchy-restart-shell`; confirm the new QML actually loaded before
+   judging the release green.
 
 `omarchy update` (the system-wide update) does not update plugins by
 design; installs that want it hook `omarchy-plugin-update --yes` into
@@ -238,11 +241,11 @@ release run its merge triggers publishes it as set instead of bumping the
 patch; `workflow_dispatch` runs the same pipeline without a merge. Until
 that run lands, `master` carries the new version in `manifest.json` next to
 the previous `bundle.json` and helper. `update check` reads `bundle.json`,
-so neither the Settings button nor automatic updates offer that tree; a
-manual `omarchy plugin update` in the window pulls it, the health IPC
-answers `unknown` until the next update, and a failed release run keeps the
-window open until a fixed run lands. Merging to `master` is
-the release decision; there is no separate per-release authorization step.
+so Settings does not report that tree as available; a manual
+`omarchy plugin update` in the window pulls it, the health IPC answers
+`unknown` until the next update, and a failed release run keeps the window
+open until a fixed run lands. Merging to `master` is the release decision;
+there is no separate per-release authorization step.
 
 ## Local reproduction
 

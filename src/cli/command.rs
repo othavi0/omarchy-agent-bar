@@ -100,8 +100,6 @@ pub enum ConfigInput {
 pub enum UpdateCommand {
     Interactive,
     Check,
-    Apply,
-    Run,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

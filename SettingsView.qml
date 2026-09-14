@@ -20,6 +20,7 @@ Item {
       || (reminderField && reminderField.field
         ? !!reminderField.field.activeFocus
         : false)
+      || maintenanceView.editorOwnsFocus
 
   readonly property var state: agentService ? agentService.settingsState : null
   readonly property var draft: agentService ? agentService.settingsDraft : null
@@ -59,12 +60,6 @@ Item {
   readonly property bool notificationsOn: {
     if (draft && draft.notifications)
       return !!draft.notifications.enabled
-    return true
-  }
-
-  readonly property bool automaticUpdatesOn: {
-    if (draft && draft.updates && typeof draft.updates.automatic === "boolean")
-      return draft.updates.automatic
     return true
   }
 
@@ -479,12 +474,12 @@ Item {
     }
 
     MaintenanceView {
+      id: maintenanceView
       visible: root.tab === "about"
       enabled: visible
       width: parent.width
       agentService: root.agentService
       settingsLocked: root.locked
-      automaticUpdatesOn: root.automaticUpdatesOn
       foreground: root.foreground
       fontFamily: root.fontFamily
     }
