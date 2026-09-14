@@ -201,7 +201,7 @@ TestCase {
 
   function test_maintenance_handoff_timeout_unblocks() {
     var s = createService()
-    s.pendingMaintenanceIntention = ({ kind: "update_apply", version: "10.3.18" })
+    s.pendingMaintenanceIntention = ({ kind: "uninstall", purge: false })
     s.beginMaintenanceHandoff()
     compare(s.maintenanceState.blocked, true)
     tryVerify(function () { return !s.maintenanceState.blocked }, 500)
@@ -351,12 +351,12 @@ TestCase {
     })
   }
 
-  function test_version_ready_schedules_the_first_automatic_check() {
+  function test_version_ready_schedules_the_first_check() {
     var s = createService()
-    verify(s.autoUpdateScheduled)
-    compare(s.autoUpdateDelayMs, s.autoUpdateFirstDelayMs)
-    compare(s.autoUpdateFirstDelayMs, 120000)
-    compare(s.autoUpdateIntervalMs, 21600000)
+    verify(s.updateCheckScheduled)
+    compare(s.updateCheckDelayMs, s.updateCheckFirstDelayMs)
+    compare(s.updateCheckFirstDelayMs, 120000)
+    compare(s.updateCheckIntervalMs, 21600000)
   }
 
   function bootstrapSettings(s) {
@@ -364,54 +364,59 @@ TestCase {
     verify(s.appliedSettings !== null)
   }
 
-  function test_automatic_update_skips_until_settings_load() {
+  function test_scheduled_check_skips_until_settings_load() {
     var s = createService()
     s.applySettingsBootstrapResult(s.activeSettingsBootstrapGeneration, "", 1)
     compare(s.appliedSettings, null)
-    compare(s.automaticUpdateTick(), false)
+    compare(s.scheduledUpdateCheckTick(), false)
     compare(s.maintenanceCheckBusy, false)
   }
 
-  function test_manual_click_takes_over_an_automatic_check() {
+  function test_manual_click_takes_over_a_scheduled_check() {
     var s = createService()
     bootstrapSettings(s)
-    verify(s.automaticUpdateTick())
+    verify(s.scheduledUpdateCheckTick())
     s.checkForUpdates()
     compare(s.maintenanceUi.phase, "checking")
     s.applyUpdateCheckResult(s.activeMaintenanceCheckGeneration, "", 1)
     compare(s.maintenanceUi.phase, "error")
   }
 
-  function test_automatic_result_never_overwrites_a_handoff() {
+  function test_scheduled_result_never_overwrites_a_handoff() {
     var s = createService()
     bootstrapSettings(s)
-    verify(s.automaticUpdateTick())
-    s.pendingMaintenanceIntention = ({ kind: "update_apply", version: "10.3.18" })
+    verify(s.scheduledUpdateCheckTick())
+    s.pendingMaintenanceIntention = ({ kind: "uninstall", purge: false })
     s.beginMaintenanceHandoff()
     var before = s.maintenanceUi.phase
     s.applyUpdateCheckResult(s.activeMaintenanceCheckGeneration, availableCheck(), 0)
     compare(s.maintenanceUi.phase, before)
   }
 
-  function test_started_update_says_the_shell_reloads_later() {
+  // BUNDLE-041: a scheduled check only paints the read-only status; the
+  // plugin never queues a handoff or touches pendingMaintenanceIntention.
+  function test_scheduled_check_finds_an_update_but_stays_read_only() {
     var s = createService()
     bootstrapSettings(s)
-    s.checkForUpdates()
+    verify(s.scheduledUpdateCheckTick())
     s.applyUpdateCheckResult(s.activeMaintenanceCheckGeneration, availableCheck(), 0)
-    verify(s.confirmUpdateApply())
-    s.applyMaintenanceHandoffDone(s.activeMaintenanceHandoffGeneration, 0)
-    compare(s.maintenanceUi.message, "Update started. The shell reloads when it finishes.")
+    compare(s.maintenanceUi.phase, "update_available")
+    compare(s.pendingMaintenanceIntention, null)
+    compare(s.maintenanceState.blocked, false)
+    compare(s.maintenanceHandoffBusy, false)
+    verify(s.maintenanceUi.message.indexOf(
+        "Run: omarchy plugin update othavi0.agent-bar && omarchy-restart-shell") >= 0)
   }
 
   function test_handoff_waiting_on_status_starts_when_status_finishes() {
     var s = createService()
     bootstrapSettings(s)
-    verify(s.automaticUpdateTick())
     s.kickStatus()
     compare(s.statusBusy, true)
     var statusGeneration = s.activeStatusGeneration
 
-    s.applyUpdateCheckResult(s.activeMaintenanceCheckGeneration, availableCheck(), 0)
+    s.pendingMaintenanceIntention = ({ kind: "uninstall", purge: false })
+    s.beginMaintenanceHandoff()
     compare(s.maintenanceState.blocked, true)
     compare(s.maintenanceHandoffBusy, false)
 
@@ -424,78 +429,42 @@ TestCase {
     bootstrapSettings(s)
     s.kickStatus()
     var statusGeneration = s.activeStatusGeneration
-    s.pendingMaintenanceIntention = ({ kind: "update_apply", version: "10.3.18" })
+    s.pendingMaintenanceIntention = ({ kind: "uninstall", purge: false })
     s.beginMaintenanceHandoff()
     compare(s.maintenanceHandoffBusy, false)
     s.applyStatusResult(statusGeneration, "", "boom", 1)
     compare(s.maintenanceHandoffBusy, true)
   }
 
-  function test_automatic_update_checks_then_applies_without_a_click() {
-    var s = createService()
-    bootstrapSettings(s)
-    compare(s.automaticUpdateTick(), true)
-    compare(s.maintenanceCheckBusy, true)
-    compare(s.maintenanceUi.phase, "idle")
-    compare(s.autoUpdateDelayMs, s.autoUpdateIntervalMs)
-    verify(s.autoUpdateScheduled)
-
-    s.applyUpdateCheckResult(s.activeMaintenanceCheckGeneration, availableCheck(), 0)
-
-    compare(s.pendingMaintenanceIntention.kind, "update_apply")
-    compare(s.pendingMaintenanceIntention.version, "10.3.18")
-    compare(s.maintenanceState.blocked, true)
-    compare(s.maintenanceUi.phase, "applying")
-    compare(s.maintenanceHandoffBusy, true)
-  }
-
-  function test_automatic_update_respects_the_setting() {
-    var s = createService()
-    var settings = validSettings()
-    settings.updates = { automatic: false }
-    s.applySettingsBootstrapResult(s.activeSettingsBootstrapGeneration, JSON.stringify(settings), 0)
-    compare(s.automaticUpdateTick(), false)
-    compare(s.maintenanceCheckBusy, false)
-    verify(s.autoUpdateScheduled)
-  }
-
-  function test_automatic_update_waits_while_the_popup_is_open() {
+  function test_scheduled_check_waits_while_the_popup_is_open() {
     var s = createService()
     bootstrapSettings(s)
     s.popupOwner = ({ owner: "monitor-a", providerId: "", view: "provider" })
-    compare(s.automaticUpdateTick(), false)
+    compare(s.scheduledUpdateCheckTick(), false)
     compare(s.maintenanceCheckBusy, false)
   }
 
-  function test_automatic_check_failure_stays_silent() {
+  function test_scheduled_check_failure_stays_silent() {
     var s = createService()
     bootstrapSettings(s)
-    verify(s.automaticUpdateTick())
+    verify(s.scheduledUpdateCheckTick())
     s.applyUpdateCheckResult(s.activeMaintenanceCheckGeneration, "", 1)
     compare(s.maintenanceUi.phase, "idle")
     compare(s.pendingMaintenanceIntention, null)
     compare(s.maintenanceState.blocked, false)
   }
 
-  function test_automatic_updates_toggle_saves_with_the_draft() {
-    var s = createService()
-    s.applySettingsBootstrapResult(s.activeSettingsBootstrapGeneration, "", 1)
-    s.openSettings("monitor-a")
-    s.applySettingsReadResult(s.activeSettingsReadGeneration, JSON.stringify(validSettings()), 0)
-    s.setAutomaticUpdates(false)
-    compare(s.settingsDraft.updates.automatic, false)
-    compare(s.settingsState.phase, "dirty")
-    verify(s.saveSettings())
-    verify(s.pendingSettingsPayload.indexOf('"updates":{"automatic":false}') >= 0)
-  }
-
-  function test_settings_about_tab_offers_the_automatic_updates_toggle() {
+  // BUNDLE-041: the About tab lost its whole Updates section (default-on
+  // background updates were the exact behavior omacom/omarchy-plugin-marketplace#4979
+  // blocked). Only the uninstall lane still shows a Toggle (purge settings).
+  function test_settings_about_tab_has_no_updates_section() {
     var xhr = new XMLHttpRequest()
     xhr.open("GET", "file://" + repoRoot + "/MaintenanceView.qml", false)
     xhr.send()
     var src = String(xhr.responseText)
-    verify(src.indexOf("label: \"Update automatically\"") >= 0)
-    verify(src.indexOf("setAutomaticUpdates(!root.automaticUpdatesOn)") >= 0)
+    verify(src.indexOf('text: "Updates"') < 0)
+    var toggleCount = (src.match(/Toggle \{/g) || []).length
+    compare(toggleCount, 1, "only the purge-settings toggle should remain")
   }
 
   function test_manual_check_still_waits_for_a_click() {

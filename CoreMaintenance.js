@@ -54,8 +54,12 @@ function updateCheckArgv(helperPath) {
   return [String(helperPath), "update", "check"]
 }
 
-function updateApplyArgv(helperPath) {
-  return [String(helperPath), "update", "apply"]
+function marketplaceUrl() {
+  return "https://plugins.omarchy.org/plugin.html?id=othavi0.agent-bar"
+}
+
+function updateCommandText() {
+  return "Run: omarchy plugin update othavi0.agent-bar && omarchy-restart-shell"
 }
 
 function uninstallArgv(helperPath, purge) {
@@ -82,7 +86,6 @@ function maintenanceUiIdle(installedVersion) {
     purgeSettings: false,
     uninstallArmed: false,
     message: "",
-    updateConfirmOpen: false,
     uninstallConfirmOpen: false
   }
 }
@@ -91,7 +94,6 @@ function maintenanceUiChecking(ui) {
   var next = cloneMaintenanceUi(ui)
   next.phase = "checking"
   next.message = "Checking for updates\u2026"
-  next.updateConfirmOpen = false
   return next
 }
 
@@ -104,14 +106,12 @@ function cloneMaintenanceUi(ui) {
     purgeSettings: !!(ui && ui.purgeSettings),
     uninstallArmed: !!(ui && ui.uninstallArmed),
     message: ui && ui.message ? String(ui.message) : "",
-    updateConfirmOpen: !!(ui && ui.updateConfirmOpen),
     uninstallConfirmOpen: !!(ui && ui.uninstallConfirmOpen)
   }
 }
 
 function maintenanceUiFromCheck(ui, stdout, exitCode, fallbackVersion) {
   var next = cloneMaintenanceUi(ui)
-  next.updateConfirmOpen = false
   if (exitCode === 0) {
     try {
       var doc = JSON.parse(String(stdout || ""))
@@ -133,7 +133,7 @@ function maintenanceUiFromCheck(ui, stdout, exitCode, fallbackVersion) {
           next.phase = "update_available"
           next.targetVersion = String(latest.version)
           next.releaseNotesUrl = latest.releaseNotesUrl ? String(latest.releaseNotesUrl) : ""
-          next.message = "Update to " + next.targetVersion + " is available."
+          next.message = "Update to " + next.targetVersion + " is available. " + updateCommandText()
           return next
         }
         if (doc.available === false) {
@@ -150,27 +150,6 @@ function maintenanceUiFromCheck(ui, stdout, exitCode, fallbackVersion) {
   next.phase = "error"
   next.message = "Update check failed."
   return next
-}
-
-function maintenanceUiOpenUpdateConfirm(ui) {
-  var next = cloneMaintenanceUi(ui)
-  if (next.phase !== "update_available" || !next.targetVersion.length)
-    return next
-  next.updateConfirmOpen = true
-  return next
-}
-
-function maintenanceUiCloseUpdateConfirm(ui) {
-  var next = cloneMaintenanceUi(ui)
-  next.updateConfirmOpen = false
-  return next
-}
-
-function updateConfirmMessage(ui) {
-  var current = ui && ui.installedVersion ? String(ui.installedVersion) : "current"
-  var target = ui && ui.targetVersion ? String(ui.targetVersion) : "new"
-  return "Updates " + current + " \u2192 " + target
-      + ". Settings stay. Fast-forwards to the latest release; a failed validation rolls back."
 }
 
 function maintenanceUiOpenUninstallConfirm(ui) {
@@ -206,28 +185,14 @@ function maintenanceUiArmOrConfirmUninstall(ui) {
   return { ui: next, confirmed: true }
 }
 
-function automaticUpdateCheckAllowed(context) {
+function scheduledUpdateCheckAllowed(context) {
   if (!context)
     return false
-  return context.automatic === true
-      && context.settingsLoaded === true
+  return context.settingsLoaded === true
       && context.versionReady === true
       && context.blocked !== true
       && context.checkBusy !== true
       && context.popupOpen !== true
-}
-
-function shouldAutoApplyUpdate(ui) {
-  return !!ui && ui.phase === "update_available"
-      && !!ui.targetVersion && String(ui.targetVersion).length > 0
-}
-
-function maintenanceUiApplying(ui) {
-  var next = cloneMaintenanceUi(ui)
-  next.phase = "applying"
-  next.updateConfirmOpen = false
-  next.message = "Applying update\u2026"
-  return next
 }
 
 function maintenanceUiUninstalling(ui) {
@@ -239,13 +204,6 @@ function maintenanceUiUninstalling(ui) {
 }
 
 function maintenanceIntention(kind, ui) {
-  if (kind === "update_apply") {
-    return {
-      kind: "update_apply",
-      version: ui && ui.targetVersion ? String(ui.targetVersion) : "",
-      payload: null
-    }
-  }
   if (kind === "uninstall") {
     return {
       kind: "uninstall",

@@ -334,13 +334,6 @@ function defaultSettings() {
     ],
     display: { metric: "remaining" },
     refreshIntervalSeconds: 60,
-    notifications: { enabled: true, reminderMinutes: 120 },
-    updates: { automatic: true }
+    notifications: { enabled: true, reminderMinutes: 120 }
   }
-}
-
-function automaticUpdatesEnabled(settings) {
-  if (!settings || !settings.updates || typeof settings.updates.automatic !== "boolean")
-    return true
-  return settings.updates.automatic
 }

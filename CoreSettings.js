@@ -23,6 +23,15 @@ function settingsBeginLoad(generation) {
   }
 }
 
+// A loaded document may still carry the legacy `updates` block written by
+// 10.3.24-10.5.1. Reads never write, so the draft built from it must drop
+// that block rather than round-trip it back to disk on the next save.
+function draftFromLoadedDocument(doc) {
+  var draft = JSON.parse(JSON.stringify(doc))
+  delete draft.updates
+  return draft
+}
+
 function settingsFinishLoad(state, generation, doc) {
   if (!state || state.generation !== generation)
     return state
@@ -35,7 +44,7 @@ function settingsFinishLoad(state, generation, doc) {
     phase: "clean",
     generation: generation,
     snapshot: copy,
-    draft: JSON.parse(JSON.stringify(copy)),
+    draft: draftFromLoadedDocument(doc),
     busy: false,
     pendingPayload: null
   }
@@ -249,8 +258,7 @@ var FIELD_TABS = [
   { tab: "general", read: function (d) { return d.display ? d.display.metric : undefined } },
   { tab: "general", read: function (d) { return d.refreshIntervalSeconds } },
   { tab: "general", read: function (d) { return d.notifications ? d.notifications.enabled : undefined } },
-  { tab: "general", read: function (d) { return d.notifications ? d.notifications.reminderMinutes : undefined } },
-  { tab: "about", read: function (d) { return Kernel.automaticUpdatesEnabled(d) } }
+  { tab: "general", read: function (d) { return d.notifications ? d.notifications.reminderMinutes : undefined } }
 ]
 
 function barOrderKey(d) {
@@ -332,12 +340,6 @@ function setReminderMinutes(draft, minutes) {
   return next
 }
 
-function setAutomaticUpdates(draft, enabled) {
-  var next = cloneDraft(draft)
-  next.updates = { automatic: !!enabled }
-  return next
-}
-
 function validateSettingsDraft(draft) {
   if (!draft || typeof draft !== "object")
     return { ok: false, reason: "not an object" }
@@ -354,9 +356,6 @@ function validateSettingsDraft(draft) {
   if (!isFinite(reminder) || reminder !== Math.floor(reminder)
       || reminder < 15 || reminder > 1440)
     return { ok: false, reason: "notifications.reminderMinutes" }
-  if (draft.updates !== undefined
-      && (!draft.updates || typeof draft.updates.automatic !== "boolean"))
-    return { ok: false, reason: "updates.automatic" }
   if (!Array.isArray(draft.providers))
     return { ok: false, reason: "providers length" }
   var seen = {}

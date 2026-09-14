@@ -12,7 +12,6 @@ Item {
   property color foreground: Color.foreground
   property string fontFamily: Style.font.family
   property bool settingsLocked: true
-  property bool automaticUpdatesOn: true
 
   readonly property var ui: agentService && agentService.maintenanceUi
       ? agentService.maintenanceUi
@@ -24,7 +23,7 @@ Item {
 
   readonly property bool checking: ui.phase === "checking"
   readonly property bool updateAvailable: ui.phase === "update_available"
-  readonly property bool applying: ui.phase === "applying" || ui.phase === "uninstalling"
+  readonly property bool maintenanceBusy: ui.phase === "uninstalling"
 
   width: parent ? parent.width : implicitWidth
   implicitHeight: body.implicitHeight
@@ -83,7 +82,7 @@ Item {
           text: root.checking ? "Checking\u2026" : "Check for updates"
           bordered: true
           focusable: true
-          enabled: !root.blocked && !root.checking && !root.applying
+          enabled: !root.blocked && !root.checking && !root.maintenanceBusy
           foreground: root.foreground
           fontFamily: root.fontFamily
           Accessible.name: "Check for updates"
@@ -97,21 +96,21 @@ Item {
       Flow {
         width: parent.width
         spacing: Style.space(8)
-        visible: updateButton.visible || notesButton.visible
+        visible: marketplaceButton.visible || notesButton.visible
 
         Button {
-          id: updateButton
+          id: marketplaceButton
           visible: root.updateAvailable && ui.targetVersion && ui.targetVersion.length > 0
-          text: "Update to " + ui.targetVersion
+          text: "Marketplace page"
           bordered: true
           focusable: true
-          enabled: !root.blocked && !root.applying
+          enabled: !root.blocked && !root.maintenanceBusy
           foreground: root.foreground
           fontFamily: root.fontFamily
-          Accessible.name: text
+          Accessible.name: "Marketplace page"
           onClicked: {
             if (root.agentService)
-              root.agentService.openUpdateConfirm()
+              root.agentService.openMarketplacePage()
           }
         }
 
@@ -121,7 +120,7 @@ Item {
           text: "Release notes"
           bordered: true
           focusable: true
-          enabled: !root.applying
+          enabled: !root.maintenanceBusy
           foreground: root.foreground
           fontFamily: root.fontFamily
           Accessible.name: "Release notes"
@@ -129,32 +128,6 @@ Item {
             if (root.agentService)
               root.agentService.openReleaseNotes()
           }
-        }
-      }
-    }
-
-    Column {
-      width: parent.width
-      spacing: Style.space(8)
-      opacity: root.settingsLocked ? 0.55 : 1.0
-      enabled: !root.settingsLocked
-
-      SectionHeader {
-        text: "Updates"
-        foreground: root.foreground
-        fontFamily: root.fontFamily
-      }
-
-      Toggle {
-        width: parent.width
-        label: "Update automatically"
-        description: "Install new versions and reload the shell."
-        checked: root.automaticUpdatesOn
-        foreground: root.foreground
-        fontFamily: root.fontFamily
-        onClicked: {
-          if (root.agentService)
-            root.agentService.setAutomaticUpdates(!root.automaticUpdatesOn)
         }
       }
     }
@@ -188,7 +161,7 @@ Item {
           text: "Uninstall Agent Bar"
           bordered: true
           focusable: true
-          enabled: !root.blocked && !root.applying
+          enabled: !root.blocked && !root.maintenanceBusy
           foreground: Color.urgent
           fontFamily: root.fontFamily
           Accessible.name: "Uninstall Agent Bar"
@@ -198,25 +171,6 @@ Item {
           }
         }
       }
-    }
-  }
-
-  ConfirmDialog {
-    opened: !!ui.updateConfirmOpen
-    title: "Confirm update"
-    message: Core.updateConfirmMessage(ui)
-    cancelText: "Cancel"
-    confirmText: "Update"
-    destructive: false
-    foreground: root.foreground
-    fontFamily: root.fontFamily
-    onCanceled: {
-      if (root.agentService)
-        root.agentService.closeUpdateConfirm()
-    }
-    onConfirmed: {
-      if (root.agentService)
-        root.agentService.confirmUpdateApply()
     }
   }
 

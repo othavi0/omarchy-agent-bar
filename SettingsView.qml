@@ -62,12 +62,6 @@ Item {
     return true
   }
 
-  readonly property bool automaticUpdatesOn: {
-    if (draft && draft.updates && typeof draft.updates.automatic === "boolean")
-      return draft.updates.automatic
-    return true
-  }
-
   readonly property int reminderMinutes: {
     if (draft && draft.notifications
         && isFinite(Number(draft.notifications.reminderMinutes)))
@@ -484,7 +478,6 @@ Item {
       width: parent.width
       agentService: root.agentService
       settingsLocked: root.locked
-      automaticUpdatesOn: root.automaticUpdatesOn
       foreground: root.foreground
       fontFamily: root.fontFamily
     }
