@@ -34,9 +34,22 @@ contract in `02-target-architecture.md` and Omarchy contract `1` in
 `08-plugin-bundle-and-release.md`:
 [docs/specs/v10/amendments/2026-09-10-plugin-root-from-service-url-design.md](amendments/2026-09-10-plugin-root-from-service-url-design.md).
 
-The automatic-updates design, approved 2026-09-10, adds `UX-041A`,
-`SET-028`, and `CLI-029A` and amends `CLI-029` and `MIG-020`:
+The automatic-updates design, approved 2026-09-10, added `UX-041A`,
+`SET-028`, and `CLI-029A` and amended `CLI-029` and `MIG-020`. It is
+superseded by the 2026-09-14 update-execution removal below:
 [docs/specs/v10/amendments/2026-09-10-automatic-updates-design.md](amendments/2026-09-10-automatic-updates-design.md).
+
+The update-execution removal, approved 2026-09-14, supersedes the
+2026-09-10 automatic-updates design above. The marketplace maintainer
+blocked verification because the plugin ran `omarchy plugin update ...
+--yes` on its own, replacing reviewed code with mutable remote `HEAD`. The
+plugin now only checks for updates; it never fetches, installs, or
+restarts the shell. `update apply`, `update run`, `UX-041A`'s apply
+behavior, and `updates.automatic` are removed; `UX-042`, `SET-028`,
+`CLI-029`, `CLI-029A`, `MIG-020`, `MIG-025`, `BUNDLE-020`, `BUNDLE-022`,
+`BUNDLE-025`, and `BUNDLE-026` are amended or retired, and `UX-043` is
+removed outright:
+[docs/specs/v10/amendments/2026-09-14-remove-update-execution-design.md](amendments/2026-09-14-remove-update-execution-design.md).
 
 ## Product statement
 
@@ -68,9 +81,11 @@ application, an AUR product, or a cargo-binstall product.
    [2026-08-25 login-state visibility](amendments/2026-08-25-login-state-visibility-design.md),
    [2026-09-04 session window leads](amendments/2026-09-04-session-window-leads-design.md),
    [2026-09-10 plugin root from Service URL](amendments/2026-09-10-plugin-root-from-service-url-design.md),
-   [2026-09-10 automatic updates](amendments/2026-09-10-automatic-updates-design.md),
+   [2026-09-10 automatic updates](amendments/2026-09-10-automatic-updates-design.md)
+   (superseded),
    [2026-09-10 Antigravity third-party windows](amendments/2026-09-10-antigravity-third-party-windows-design.md),
-   [2026-09-10 Settings tabs and rail state](amendments/2026-09-10-settings-tabs-and-rail-state-design.md).
+   [2026-09-10 Settings tabs and rail state](amendments/2026-09-10-settings-tabs-and-rail-state-design.md),
+   [2026-09-14 update execution removed](amendments/2026-09-14-remove-update-execution-design.md).
 
 When two statements conflict, the earlier contract in this reading order wins
 unless a later file explicitly identifies the requirement ID it refines.

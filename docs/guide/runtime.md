@@ -57,17 +57,21 @@ exists.
   "refreshIntervalSeconds": 60,
   "notifications": {
     "enabled": true
-  },
-  "updates": {
-    "automatic": true
   }
 }
 ```
 
-`updates.automatic` (default `true`, and assumed when the block is absent)
-lets the service check for a new release two minutes after start and every
-six hours, then install it and reload the shell while the popup is closed.
-Turn it off with the "Update automatically" toggle on the Settings About tab.
+The service checks for a new release two minutes after start and every six
+hours, and only updates the Settings About tab with the result. It never
+installs anything or reloads the shell on its own; when a release is
+available, Settings shows the target version, a release-notes link, a
+marketplace-page link, and the command to run in a terminal:
+`omarchy plugin update othavi0.agent-bar && omarchy-restart-shell`.
+
+There is no `updates` block in the product settings any more. A document
+written by 10.3.24 through 10.5.1 that still carries
+`"updates": { "automatic": <bool> }` is tolerated on read and dropped on the
+next write; any other key inside it is still rejected.
 
 Unknown keys and invalid/duplicate/missing providers are rejected. Reads never
 rewrite. Applies validate before lock and atomic replacement. File mode is

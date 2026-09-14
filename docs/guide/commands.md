@@ -62,7 +62,7 @@ argv, so `"$PLUGIN" login antigravity` never launches a CLI and fails with
 "$PLUGIN" config show
 "$PLUGIN" config apply stdin
 "$PLUGIN" config apply file /path/to/settings.json
-"$PLUGIN" config apply json '{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":false},{"id":"grok","enabled":false},{"id":"antigravity","enabled":false}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true,"reminderMinutes":120},"updates":{"automatic":true}}'
+"$PLUGIN" config apply json '{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":false},{"id":"grok","enabled":false},{"id":"antigravity","enabled":false}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true,"reminderMinutes":120}}'
 ```
 
 `show` is read-only. `apply` requires one complete valid settings document and
@@ -86,25 +86,32 @@ confirmed owned legacy artifacts.
 ```bash
 "$PLUGIN" update
 "$PLUGIN" update check
-"$PLUGIN" update apply
 ```
 
-- Bare `update` has no interactive flow; it prints usage pointing at `update
-  check` and `update apply`.
+- Bare `update` has no interactive flow and nothing to apply; it prints
+  usage pointing at `update check` and at the user-run
+  `omarchy plugin update othavi0.agent-bar`.
 - `update check` returns machine-readable compatibility metadata read from
   this repository's own `bundle.json` git receipt (the repository root is
   the plugin tree; see [ADR 0006](../adr/0006-single-repository-distribution.md)).
-- `update apply` takes no argument. It queues `update run` as a detached
-  transient unit and returns as soon as systemd accepts it.
-- `update run` is that unit's body; QML never calls it. It runs
-  `omarchy plugin update othavi0.agent-bar --yes`, which owns the
-  fast-forward, re-validation, and automatic rollback on a failed
-  validation. When the plugin `HEAD` moved, it shows a `notify-send` toast
-  (when available) and runs `omarchy-restart-shell` so the new QML loads,
-  retrying every minute while the session is locked. It prints
-  `{"schemaVersion":1,"operation":"updateRun","outcome":"..."}`.
+  It never fetches, installs, or restarts the shell; it only reports what
+  is available.
+- There is no `update apply` or `update run`. The Omarchy plugin
+  marketplace requires a separately verified immutable target before any
+  automatic update runs, and Omarchy 4.0.3 offers no way to name a commit
+  or tag, so the plugin no longer runs `omarchy plugin update` on its own
+  (see [ADR 0006](../adr/0006-single-repository-distribution.md) and
+  [docs/specs/v10/amendments/2026-09-14-remove-update-execution-design.md](../specs/v10/amendments/2026-09-14-remove-update-execution-design.md)).
+  `update apply` and `update run` are grammar errors like any other unknown
+  argument.
 
-Normal users use the Settings About tab.
+When an update is available, the Settings About tab shows the target
+version, a `Release notes` link, a `Marketplace page` link, and the command
+to run in a terminal:
+
+```bash
+omarchy plugin update othavi0.agent-bar && omarchy-restart-shell
+```
 
 ## Uninstall
 

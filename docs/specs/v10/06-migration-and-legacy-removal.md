@@ -217,21 +217,21 @@ The Bash helper is retained only for interactive provider login and rewritten:
 
 Replaced by git-plugin-distribution (2026-08-05):
 `docs/specs/v10/amendments/2026-08-05-git-plugin-distribution-design.md`.
-Update and uninstall no longer stage, exchange, or roll back the plugin
-directory themselves; each hands its live mutation to the Omarchy CLI as a
-detached transient `systemd-run --user` unit, so the helper process can
-return as soon as the handoff is accepted without depending on the QML
-service it may be running under.
+Uninstall no longer stages, exchanges, or rolls back the plugin directory
+itself; it hands its live mutation to the Omarchy CLI as a detached
+transient `systemd-run --user` unit, so the helper process can return as
+soon as the handoff is accepted without depending on the QML service it may
+be running under.
 
-- `MIG-020`: `update apply` takes no version argument and detaches
-  unconditionally to `omarchy plugin update othavi0.agent-bar --yes`, which
-  owns the git fetch, fast-forward, re-validation, and
-  `git reset --hard ORIG_HEAD` rollback on a failed validation. The queued
-  unit runs the helper's `update run`, which wraps that command, and when it
-  moved the plugin `HEAD` toasts through `notify-send` (when present) and
-  runs `omarchy-restart-shell`, retrying while the session is locked. A
-  failed or no-op update leaves the shell alone
-  (`docs/specs/v10/amendments/2026-09-10-automatic-updates-design.md`).
+Amended by the 2026-09-14 update-execution removal:
+`docs/specs/v10/amendments/2026-09-14-remove-update-execution-design.md`.
+Update no longer mutates the plugin directory, queues a unit, or restarts
+the shell at all; the helper keeps only the read-only `update check`, and
+the user runs `omarchy plugin update othavi0.agent-bar &&
+omarchy-restart-shell` themself.
+
+- `MIG-020`: **Retired**, removed by the 2026-09-14 amendment. `update
+  apply` and its detached unit no longer exist.
 - `MIG-021`: `update check` reads the distribution repository's
   `bundle.json` receipt over HTTPS and reports `reinstallRequired: true`,
   forcing `available`/`latestCompatible` null, whenever the live plugin root
@@ -249,10 +249,11 @@ service it may be running under.
   never touches the plugin directory, and `omarchy plugin remove` never
   touches `$XDG_CONFIG_HOME/agent-bar`, `$XDG_CACHE_HOME/agent-bar`, or
   `$XDG_STATE_HOME/agent-bar`.
-- `MIG-025`: Both `update apply` and `uninstall` resolve `omarchy` and
+- `MIG-025` (amended 2026-09-14): `uninstall` resolves `omarchy` and
   `systemd-run` to absolute executable paths before consuming the
   confirmation or purging any state, so a missing tool fails closed before
-  anything destructive happens.
+  anything destructive happens. `update` performs no such resolution: it
+  has no mutation to fail closed before.
 - `MIG-026`: A non-git plugin root removed by `omarchy plugin remove` is
   backed up by Omarchy to a timestamped sibling rather than deleted
   (verified Omarchy behavior), so the one-time migration path is safe.

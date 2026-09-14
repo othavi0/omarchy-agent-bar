@@ -129,38 +129,38 @@ payload. Generation IDs prevent stale callbacks.
 
 ## Plugin maintenance
 
-`update apply` and `uninstall` delegate their live mutation to the Omarchy
-CLI rather than staging, exchanging, or rolling back the plugin directory
-themselves:
+`uninstall` delegates its live mutation to the Omarchy CLI rather than
+staging, exchanging, or rolling back the plugin directory itself:
 
-1. resolve `omarchy` and `systemd-run` (and, for update,
-   `omarchy-restart-shell`, `git`, and `timeout`) to absolute executable
-   paths, failing closed before anything destructive if one is missing;
+1. resolve `omarchy` and `systemd-run` to absolute executable paths,
+   failing closed before anything destructive if one is missing;
 2. `uninstall purge` removes Agent Bar's own XDG state here, before the
    handoff;
-3. start a detached transient `systemd-run --user` unit: `omarchy plugin
-   remove othavi0.agent-bar --yes` for uninstall, or `--no-block` with the
-   helper's own `update run` for update;
+3. start a detached transient `systemd-run --user` unit running
+   `omarchy plugin remove othavi0.agent-bar --yes`;
 4. return once systemd has accepted the unit.
 
-`update run` wraps `omarchy plugin update othavi0.agent-bar --yes`, which
-owns the git fetch, fast-forward, re-validation, and `git reset --hard
-ORIG_HEAD` rollback on a failed validation. The rescan it triggers does not
-reload a running `Service.qml`, so `update run` compares the plugin `HEAD`
-before and after and, only when it moved, shows a toast and runs
-`omarchy-restart-shell`, retrying while a locked session refuses it.
 `omarchy plugin remove` owns disabling the bar entry, deleting (or, for a
 non-git directory, backing up) the plugin directory, and rescanning.
 Detaching the unit lets the operation outlive the shell process that
 started it; there is no permanent daemon and no verified worker copy of the
 helper.
 
-`update check` fetches this repository's `bundle.json` receipt directly
-from `master` over HTTPS (the repository root is the plugin tree; see
+Update has no equivalent delegation. `update check` fetches this
+repository's `bundle.json` receipt directly from `master` over HTTPS (the
+repository root is the plugin tree; see
 [ADR 0006](../adr/0006-single-repository-distribution.md)) and reports
 `reinstallRequired: true` when the live plugin root has no `.git`
 directory, so the UI can offer the one-time remove-then-add migration
-instead of a false "up to date".
+instead of a false "up to date". The plugin never runs `omarchy plugin
+update` itself: the Omarchy plugin marketplace requires a separately
+verified immutable target before any automatic update runs, and Omarchy
+4.0.3 offers no way to name a commit or tag
+(`docs/specs/v10/amendments/2026-09-14-remove-update-execution-design.md`).
+When a check finds a newer release, Settings shows the target version and
+the command the user runs themself; the scheduled check that runs two
+minutes after the helper answers and every six hours after that only
+paints that same state, never applies it.
 
 All status/config mutations, plus the purge/preflight/handoff step above,
 hold the shared stable maintenance gate under XDG state. Maintenance holds

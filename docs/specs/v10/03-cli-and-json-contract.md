@@ -29,8 +29,6 @@ agent-bar config apply json <value>
 agent-bar setup
 agent-bar update
 agent-bar update check
-agent-bar update apply
-agent-bar update run
 agent-bar uninstall
 agent-bar uninstall purge
 
@@ -305,16 +303,19 @@ view_installation
 
 Amended by git-plugin-distribution (2026-08-05):
 `docs/specs/v10/amendments/2026-08-05-git-plugin-distribution-design.md`.
-`update apply` and `uninstall` no longer stage, exchange, or roll back the
-plugin directory in-process; each resolves `omarchy` and `systemd-run` to
-absolute paths, then detaches unconditionally to the Omarchy CLI as a
-transient `systemd-run --user` unit and returns once the handoff is
-accepted. `update apply` also requires `omarchy-restart-shell`, `git`, and
-`timeout`, and its unit runs `update run`: the fast-forward, then a toast
-and a shell restart only when the plugin `HEAD` moved (`MIG-020`).
-`update run` prints one line,
-`{"schemaVersion":1,"operation":"updateRun","outcome":"<upToDate|updated|updateFailed|restartGaveUp|alreadyRunning>"}`,
-and exits non-zero for `updateFailed` and `restartGaveUp`.
+`uninstall` no longer stages, exchanges, or rolls back the plugin directory
+in-process; it resolves `omarchy` and `systemd-run` to absolute paths, then
+detaches unconditionally to the Omarchy CLI as a transient
+`systemd-run --user` unit and returns once the handoff is accepted.
+
+Amended by the 2026-09-14 update-execution removal:
+`docs/specs/v10/amendments/2026-09-14-remove-update-execution-design.md`.
+`update apply` and `update run` are gone; the helper keeps only the
+read-only `update check`. When a check finds a newer release, Settings
+shows the target version, a release-notes link, a marketplace-page link,
+and the command the user runs themself:
+`omarchy plugin update othavi0.agent-bar && omarchy-restart-shell`. The
+plugin never fetches, installs, or restarts the shell on its own.
 
 - `CLI-024`: `doctor scan` is read-only.
 - `CLI-025`: `doctor clean` removes only confirmed owned legacy artifacts after
@@ -325,16 +326,11 @@ and exits non-zero for `updateFailed` and `restartGaveUp`.
   detached `omarchy plugin remove` handoff.
 - `CLI-028`: QML passes structured intentions; it never concatenates command
   strings.
-- `CLI-029`: `update apply` takes no version argument. It queues `update run`,
-  which delegates unconditionally to
-  `omarchy plugin update othavi0.agent-bar --yes`; that command owns the git
-  fetch, fast-forward, re-validation, and automatic
-  `git reset --hard ORIG_HEAD` rollback on a failed validation.
-- `CLI-029A`: `update run` takes no argument and is only the update unit's
-  body. It restarts the shell only when the plugin `HEAD` moved, retries a
-  refused restart every minute for up to a day, and exits at once when
-  another run holds its lock
-  (`docs/specs/v10/amendments/2026-09-10-automatic-updates-design.md`).
+- `CLI-029`: **Retired**, removed by the 2026-09-14 amendment. `update apply`
+  no longer exists; `update apply` and `update run` are grammar errors like
+  any other unknown argument.
+- `CLI-029A`: **Retired**, removed by the 2026-09-14 amendment. `update run`
+  and its unit no longer exist.
 - `CLI-030`: Setup, update, doctor, and uninstall never touch unrelated Omarchy
   plugins or layout entries.
 - `CLI-031`: Notification dispatch failure is reported on stderr, does not
@@ -379,9 +375,8 @@ before mutation. `uninstall` requires `false`; `uninstall purge` requires
 `true`. QML always uses the structured non-TTY document. Standard uninstall
 does not consume stdin until after its complete preflight has succeeded.
 
-Since git-plugin-distribution (2026-08-05), bare `update` has no interactive
-flow: `update apply` now applies unconditionally, so there is no longer a
-specific fetched version for a TTY prompt to confirm. Bare `update` prints
-usage to stderr pointing at `update check` and `update apply`, and exits `3`
-without touching the network or the filesystem, on both TTY and non-TTY
-stdin. The typed UI never invokes bare `update`.
+Since the 2026-09-14 update-execution removal, `update` has no execution
+path to confirm at all: bare `update` prints usage to stderr pointing at
+`update check` and at the user-run `omarchy plugin update othavi0.agent-bar`,
+and exits `3` without touching the network or the filesystem, on both TTY
+and non-TTY stdin. The typed UI never invokes bare `update`.
