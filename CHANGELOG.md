@@ -122,6 +122,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `This plan does not publish a usage percentage.` (PROD-031 / UX-032A
   amended).
 
+## [10.5.2] - 2026-09-14
+
+### Changed
+
+- fix: let the command line own popup focus
+- fix: check for updates only from the button
+- fix: one update command, legacy block needs its key
+- fix: strip the legacy updates block at load
+- fix: show update links when the view opens late
+- docs: updates are checked, never executed
+- fix: check for updates without installing them
+- fix: drop update apply and run from the helper
+
 ## [10.5.1] - 2026-09-11
 
 ### Changed
