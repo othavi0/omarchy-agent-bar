@@ -220,7 +220,11 @@ TestCase {
     var state = Core.settingsFinishLoad(Core.settingsBeginLoad(1), 1, doc)
     compare(state.phase, "clean")
     compare(state.draft.updates, undefined)
-    compare(state.snapshot.updates.automatic, true)
+    compare(state.snapshot.updates, undefined)
+
+    state = Core.settingsMarkDirty(state)
+    state = Core.settingsCancel(state)
+    compare(state.draft.updates, undefined)
   }
 
   function test_notifications_toggle() {

@@ -24,12 +24,12 @@ function settingsBeginLoad(generation) {
 }
 
 // A loaded document may still carry the legacy `updates` block written by
-// 10.3.24-10.5.1. Reads never write, so the draft built from it must drop
-// that block rather than round-trip it back to disk on the next save.
-function draftFromLoadedDocument(doc) {
-  var draft = JSON.parse(JSON.stringify(doc))
-  delete draft.updates
-  return draft
+// 10.3.24-10.5.1. Strip it where the document enters the state machine, so
+// neither the snapshot nor any draft rebuilt from it (Cancel) writes it back.
+function loadedDocument(doc) {
+  var copy = JSON.parse(JSON.stringify(doc))
+  delete copy.updates
+  return copy
 }
 
 function settingsFinishLoad(state, generation, doc) {
@@ -39,12 +39,12 @@ function settingsFinishLoad(state, generation, doc) {
     return state
   if (state.phase !== "loading" && state.phase !== "clean")
     return state
-  var copy = JSON.parse(JSON.stringify(doc))
+  var copy = loadedDocument(doc)
   return {
     phase: "clean",
     generation: generation,
     snapshot: copy,
-    draft: draftFromLoadedDocument(doc),
+    draft: JSON.parse(JSON.stringify(copy)),
     busy: false,
     pendingPayload: null
   }
