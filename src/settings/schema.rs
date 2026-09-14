@@ -71,20 +71,6 @@ pub struct NotificationSettings {
     pub reminder_minutes: u32,
 }
 
-/// Updates block. The whole block is optional on read so documents written
-/// before it stay valid and take the default (automatic updates on).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct UpdateSettings {
-    pub automatic: bool,
-}
-
-impl Default for UpdateSettings {
-    fn default() -> Self {
-        Self { automatic: true }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Settings {
@@ -93,8 +79,6 @@ pub struct Settings {
     pub display: DisplaySettings,
     pub refresh_interval_seconds: u32,
     pub notifications: NotificationSettings,
-    #[serde(default)]
-    pub updates: UpdateSettings,
 }
 
 /// Settings validation / parse error (maps to helper exit code 3).
@@ -181,7 +165,6 @@ impl Settings {
                 enabled: true,
                 reminder_minutes: DEFAULT_REMINDER_MINUTES,
             },
-            updates: UpdateSettings::default(),
         }
     }
 
@@ -199,9 +182,12 @@ impl Settings {
         raw: &[u8],
         policy: MissingProviders,
     ) -> Result<(Self, bool), SettingsError> {
-        let value: Value = serde_json::from_slice(raw)
+        let mut value: Value = serde_json::from_slice(raw)
             .map_err(|err| SettingsError::new(format!("invalid settings JSON: {err}")))?;
         reject_unknown_top_level(&value)?;
+        if let Some(obj) = value.as_object_mut() {
+            obj.remove("updates");
+        }
         let mut settings: Self = serde_json::from_value(value)
             .map_err(|err| SettingsError::new(format!("invalid settings document: {err}")))?;
 
@@ -318,12 +304,17 @@ fn reject_unknown_top_level(value: &Value) -> Result<(), SettingsError> {
         }
     }
     if let Some(updates) = obj.get("updates") {
+        // Legacy block written by 10.3.24 through 10.5.1: validated here, then
+        // dropped before the struct is built so it never reaches a write.
         let updates = updates
             .as_object()
             .ok_or_else(|| SettingsError::new("updates must be an object"))?;
-        for key in updates.keys() {
+        for (key, val) in updates {
             if key != "automatic" {
                 return Err(SettingsError::new(format!("unknown updates key '{key}'")));
+            }
+            if !val.is_boolean() {
+                return Err(SettingsError::new("updates.automatic must be a boolean"));
             }
         }
     }
@@ -495,23 +486,29 @@ mod tests {
     }
 
     #[test]
-    fn automatic_updates_default_on_when_absent() {
-        let doc = br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":true},{"id":"grok","enabled":true},{"id":"antigravity","enabled":false}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true}}"#;
+    fn legacy_updates_block_is_tolerated_on_read_and_dropped_on_write() {
+        let doc = br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":false},{"id":"grok","enabled":false},{"id":"antigravity","enabled":false}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true},"updates":{"automatic":false}}"#;
         let parsed = Settings::parse_strict(doc).unwrap();
-        assert!(parsed.updates.automatic);
-        assert!(Settings::defaults().updates.automatic);
+        assert_eq!(parsed, Settings::defaults());
+        let line = parsed.to_canonical_json_line().unwrap();
+        assert!(!line.contains("updates"), "{line}");
+
+        let doc_true = br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":false},{"id":"grok","enabled":false},{"id":"antigravity","enabled":false}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true},"updates":{"automatic":true}}"#;
+        Settings::parse_strict(doc_true).unwrap();
     }
 
     #[test]
-    fn automatic_updates_round_trip_and_reject_unknown_keys() {
-        let doc = br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":true},{"id":"grok","enabled":true},{"id":"antigravity","enabled":false}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true},"updates":{"automatic":false}}"#;
-        let parsed = Settings::parse_strict(doc).unwrap();
-        assert!(!parsed.updates.automatic);
-        let line = parsed.to_canonical_json_line().unwrap();
-        assert!(line.contains(r#""updates":{"automatic":false}"#));
-
+    fn updates_block_rejects_unknown_key_non_boolean_automatic_and_non_object() {
         let unknown = br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":true},{"id":"grok","enabled":true},{"id":"antigravity","enabled":false}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true},"updates":{"automatic":true,"channel":"beta"}}"#;
         let err = Settings::parse_strict(unknown).unwrap_err();
         assert!(err.message().contains("unknown updates key 'channel'"));
+
+        let non_bool = br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":true},{"id":"grok","enabled":true},{"id":"antigravity","enabled":false}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true},"updates":{"automatic":"yes"}}"#;
+        let err = Settings::parse_strict(non_bool).unwrap_err();
+        assert!(err.message().contains("automatic"), "{}", err.message());
+
+        let not_object = br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":true},{"id":"grok","enabled":true},{"id":"antigravity","enabled":false}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true},"updates":true}"#;
+        let err = Settings::parse_strict(not_object).unwrap_err();
+        assert!(err.message().contains("updates must be an object"));
     }
 }
