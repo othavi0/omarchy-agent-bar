@@ -20,6 +20,7 @@ Item {
       || (reminderField && reminderField.field
         ? !!reminderField.field.activeFocus
         : false)
+      || maintenanceView.editorOwnsFocus
 
   readonly property var state: agentService ? agentService.settingsState : null
   readonly property var draft: agentService ? agentService.settingsDraft : null
@@ -473,6 +474,7 @@ Item {
     }
 
     MaintenanceView {
+      id: maintenanceView
       visible: root.tab === "about"
       enabled: visible
       width: parent.width

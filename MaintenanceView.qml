@@ -27,6 +27,9 @@ Item {
   readonly property bool notesAvailable: !!ui.releaseNotesUrl
       && String(ui.releaseNotesUrl).indexOf("https://") === 0
   readonly property bool maintenanceBusy: ui.phase === "uninstalling"
+  // Selecting the command line takes keyboard focus; the popup's key catcher
+  // must stand down for it like it does for the settings editors.
+  readonly property bool editorOwnsFocus: commandField.activeFocus
 
   width: parent ? parent.width : implicitWidth
   implicitHeight: body.implicitHeight
@@ -81,11 +84,13 @@ Item {
           }
 
           TextEdit {
+            id: commandField
             width: parent.width
             visible: !!ui.updateCommand && String(ui.updateCommand).length > 0
             text: ui.updateCommand || ""
             readOnly: true
             selectByMouse: true
+            cursorVisible: false
             wrapMode: TextEdit.Wrap
             color: root.foreground
             font.family: "monospace"
