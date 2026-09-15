@@ -57,7 +57,8 @@ Item {
     settingsRead: settingsReadLane,
     settingsBootstrap: settingsBootstrapLane,
     settingsWrite: settingsWriteLane,
-    maintenanceCheck: maintenanceCheckLane
+    maintenanceCheck: maintenanceCheckLane,
+    maintenanceHandoff: maintenanceHandoffLane
   })
   readonly property int stalledLaneCount: Core.stalledLanes(timedOutLanes)
       + (versionProbeLane.stalled ? 1 : 0)
@@ -66,6 +67,7 @@ Item {
       + (settingsBootstrapLane.stalled ? 1 : 0)
       + (settingsWriteLane.stalled ? 1 : 0)
       + (maintenanceCheckLane.stalled ? 1 : 0)
+      + (maintenanceHandoffLane.stalled ? 1 : 0)
   readonly property string runtimeHealth: Core.runtimeHealth(stalledLaneCount)
 
   property string helperVersion: ""
@@ -79,12 +81,9 @@ Item {
   readonly property bool settingsBootstrapBusy: settingsBootstrapLane.busy
   readonly property bool settingsWriteBusy: settingsWriteLane.busy
   readonly property bool maintenanceCheckBusy: maintenanceCheckLane.busy
-  property bool maintenanceHandoffBusy: false
+  readonly property bool maintenanceHandoffBusy: maintenanceHandoffLane.busy
 
   property int settingsGeneration: 0
-  property int maintenanceHandoffGeneration: 0
-  property int activeMaintenanceHandoffGeneration: 0
-  property int maintenanceHandoffStartedGeneration: 0
   property string pendingSettingsPayload: ""
 
   property int refreshRequestCount: 0
@@ -650,39 +649,21 @@ Item {
         || settingsWriteBusy || maintenanceCheckBusy
     if (!Maintenance.maintenanceCanDetach(maintenanceState, anyLaneBusy))
       return
-    if (!Core.canStartLane(maintenanceHandoffBusy))
+    if (!maintenanceHandoffLane.ready)
       return
-    maintenanceHandoffGeneration++
-    activeMaintenanceHandoffGeneration = maintenanceHandoffGeneration
-    maintenanceHandoffBusy = true
-    maintenanceHandoffTimeout.restart()
     var helper = resolvedHelperPath()
     var intention = pendingMaintenanceIntention
     var argv = Maintenance.uninstallArgv(helper, intention.purge)
-
-    if (!argv) {
-      maintenanceHandoffBusy = false
+    if (!argv)
       return
-    }
-    if (intention && intention.kind === "uninstall" && pendingMaintenancePayload.length) {
-      maintenanceHandoffProcess.stdinEnabled = true
-    } else {
-      maintenanceHandoffProcess.stdinEnabled = false
-    }
-    maintenanceHandoffProcess.command = argv
-    maintenanceHandoffStartedGeneration = activeMaintenanceHandoffGeneration
-    if (testMode) {
-      return
-    }
-    maintenanceHandoffProcess.running = true
+    var confirmation = intention && intention.kind === "uninstall"
+        ? pendingMaintenancePayload
+        : ""
+    maintenanceHandoffLane.start(argv, confirmation)
   }
 
-  function applyMaintenanceHandoffDone(generation, exitCode, fromTimeout) {
-    if (!Core.shouldApplyGeneration(activeMaintenanceHandoffGeneration, generation))
-      return
-    maintenanceHandoffTimeout.stop()
-    maintenanceHandoffBusy = false
-    recordCompletedCallback(!!fromTimeout, "maintenanceHandoff")
+  function applyMaintenanceHandoffDone(outcome) {
+    noteLaneSettled(outcome)
     var intention = pendingMaintenanceIntention
     pendingMaintenanceIntention = null
     pendingMaintenancePayload = ""
@@ -691,7 +672,7 @@ Item {
     if (versionReady)
       pollTimer.restart()
     if (intention && intention.kind === "uninstall") {
-      if (exitCode === 0) {
+      if (outcome.exitCode === 0) {
         maintenanceUi = Maintenance.maintenanceUiIdle(helperVersion)
         maintenanceUi.message = "Uninstall completed."
       } else {
@@ -700,13 +681,6 @@ Item {
         maintenanceUi.message = "Uninstall failed."
       }
     }
-  }
-
-  function maintenanceHandoffExited(exitCode, generation) {
-    var gen = generation === undefined ? maintenanceHandoffStartedGeneration : generation
-    if (!shouldApplyProcessExit("maintenanceHandoff", gen, activeMaintenanceHandoffGeneration))
-      return
-    applyMaintenanceHandoffDone(gen, exitCode)
   }
 
   HelperLane {
@@ -759,6 +733,15 @@ Item {
   }
 
   HelperLane {
+    id: maintenanceHandoffLane
+    process: maintenanceHandoffProcess
+    stdoutSource: maintenanceHandoffOut
+    stderrSource: maintenanceHandoffErr
+    timeoutMs: root.maintenanceHandoffTimeoutMs
+    onSettled: function (outcome) { root.applyMaintenanceHandoffDone(outcome) }
+  }
+
+  HelperLane {
     id: maintenanceCheckLane
     process: maintenanceCheckProcess
     stdoutSource: maintenanceCheckOut
@@ -805,32 +788,8 @@ Item {
 
   Process {
     id: maintenanceHandoffProcess
-    stdinEnabled: false
     stdout: StdioCollector { id: maintenanceHandoffOut; waitForEnd: true }
     stderr: StdioCollector { id: maintenanceHandoffErr; waitForEnd: true }
-    onStarted: {
-      // write() alone does not deliver EOF; stdinEnabled=false closes the write channel.
-      if (root.pendingMaintenancePayload && root.pendingMaintenancePayload.length
-          && maintenanceHandoffProcess.stdinEnabled) {
-        write(root.pendingMaintenancePayload + "\n")
-        maintenanceHandoffProcess.stdinEnabled = false
-      }
-    }
-    onExited: function (exitCode) { root.maintenanceHandoffExited(exitCode) }
-  }
-
-  Timer {
-    id: maintenanceHandoffTimeout
-    interval: root.maintenanceHandoffTimeoutMs
-    repeat: false
-    onTriggered: {
-      if (!root.maintenanceHandoffBusy)
-        return
-      if (maintenanceHandoffProcess.running)
-        maintenanceHandoffProcess.running = false
-      root.recordLaneTimeout("maintenanceHandoff", root.activeMaintenanceHandoffGeneration)
-      root.applyMaintenanceHandoffDone(root.activeMaintenanceHandoffGeneration, 1, true)
-    }
   }
 
   Timer {
@@ -870,10 +829,7 @@ Item {
   }
 
   Component.onDestruction: {
-    maintenanceHandoffTimeout.stop()
     collectionDelay.stop()
     pollTimer.stop()
-    if (maintenanceHandoffProcess.running)
-      maintenanceHandoffProcess.running = false
   }
 }
