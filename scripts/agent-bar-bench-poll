@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Measures a cold (cache bypass) status poll N times and prints each wall time plus the median.
+set -euo pipefail
+
+usage() {
+  echo "Usage: agent-bar-bench-poll <helper-path> [runs]" >&2
+}
+
+if [[ "$#" -lt 1 || "$#" -gt 2 ]]; then
+  usage
+  exit 2
+fi
+
+helper="$1"
+runs="${2:-5}"
+times=()
+
+for ((i = 1; i <= runs; i++)); do
+  start=$(date +%s%N)
+  "$helper" status format json cache bypass notifications skip >/dev/null 2>&1 || true
+  end=$(date +%s%N)
+  ms=$(((end - start) / 1000000))
+  times+=("$ms")
+  echo "run $i: ${ms} ms"
+done
+
+sorted=$(printf '%s\n' "${times[@]}" | sort -n)
+median=$(printf '%s\n' "$sorted" | sed -n "$(((runs + 1) / 2))p")
+echo "median: ${median} ms"

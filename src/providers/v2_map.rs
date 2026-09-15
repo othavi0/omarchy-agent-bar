@@ -1,3 +1,5 @@
+use std::sync::LazyLock;
+
 use regex::Regex;
 use serde::Deserialize;
 use serde_json::Value;
@@ -21,21 +23,34 @@ const LABEL_GEMINI_SESSION: &str = "Gemini · 5h";
 const LABEL_THIRD_PARTY_WEEKLY: &str = "Claude/GPT · 7d";
 const LABEL_THIRD_PARTY_SESSION: &str = "Claude/GPT · 5h";
 
+static ACCOUNT_RE: LazyLock<Option<Regex>> =
+    LazyLock::new(|| Regex::new(r"Signed in as (\S+)").ok());
+static FREE_PCT_RE: LazyLock<Option<Regex>> =
+    LazyLock::new(|| Regex::new(r"Amp Free:\s*([0-9.]+)%\s*remaining").ok());
+static DOLLAR_PCT_RE: LazyLock<Option<Regex>> =
+    LazyLock::new(|| Regex::new(r"Amp Free:\s*\$([0-9.]+)/\$([0-9.]+)\s*remaining").ok());
+static SUBSCRIPTION_RE: LazyLock<Option<Regex>> = LazyLock::new(|| {
+    Regex::new(
+        r"Subscription\s+(\S+):\s*([0-9.]+)%\s*other usage and\s*([0-9.]+)%\s*orb usage remaining",
+    )
+    .ok()
+});
+
 pub fn amp_from_usage_text(stdout: &str, now: OffsetDateTime) -> ProviderResult {
     let text = strip_ansi_and_controls(stdout);
-    let account = Regex::new(r"Signed in as (\S+)")
-        .ok()
+    let account = ACCOUNT_RE
+        .as_ref()
         .and_then(|re| re.captures(&text))
         .and_then(|c| c.get(1).map(|m| m.as_str().to_owned()));
 
-    let free_pct = Regex::new(r"Amp Free:\s*([0-9.]+)%\s*remaining")
-        .ok()
+    let free_pct = FREE_PCT_RE
+        .as_ref()
         .and_then(|re| re.captures(&text))
         .and_then(|c| c.get(1)?.as_str().parse::<f64>().ok());
 
     let dollar_pct = if free_pct.is_none() {
-        Regex::new(r"Amp Free:\s*\$([0-9.]+)/\$([0-9.]+)\s*remaining")
-            .ok()
+        DOLLAR_PCT_RE
+            .as_ref()
             .and_then(|re| re.captures(&text))
             .and_then(|c| {
                 let remaining: f64 = c.get(1)?.as_str().parse().ok()?;
@@ -71,12 +86,7 @@ pub fn amp_from_usage_text(stdout: &str, now: OffsetDateTime) -> ProviderResult 
     // Labels render the meaning, not the CLI word: "other" is included agent
     // usage, "orb" is included orb-hours (design 2026-08-07).
     let mut plan = None;
-    if let Some(caps) = Regex::new(
-        r"Subscription\s+(\S+):\s*([0-9.]+)%\s*other usage and\s*([0-9.]+)%\s*orb usage remaining",
-    )
-    .ok()
-    .and_then(|re| re.captures(&text))
-    {
+    if let Some(caps) = SUBSCRIPTION_RE.as_ref().and_then(|re| re.captures(&text)) {
         if let Some(name) = caps.get(1).map(|m| m.as_str()) {
             plan = Some(Plan {
                 id: name.to_ascii_lowercase(),
