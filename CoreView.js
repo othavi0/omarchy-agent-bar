@@ -37,6 +37,13 @@ function iconFileName(id) {
   return ""
 }
 
+function iconUrl(id) {
+  var name = iconFileName(id)
+  if (!name.length)
+    return ""
+  return Qt.resolvedUrl("icons/" + name)
+}
+
 function placeholderProvider(id) {
   var key = String(id || "")
   return {

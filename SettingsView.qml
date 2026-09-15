@@ -12,7 +12,6 @@ Item {
   property var agentService: null
   property color foreground: Color.foreground
   property string fontFamily: Style.font.family
-  property url iconBase: Qt.resolvedUrl("icons/")
   property string tab: "providers"
   property bool editorOwnsFocus: (intervalField && intervalField.field
         ? !!intervalField.field.activeFocus
@@ -74,10 +73,7 @@ Item {
   implicitHeight: col.implicitHeight
 
   function iconUrl(id) {
-    var name = Core.iconFileName(id)
-    if (!name.length)
-      return ""
-    return String(root.iconBase) + name
+    return Core.iconUrl(id)
   }
 
   function providerStatus(id) {
