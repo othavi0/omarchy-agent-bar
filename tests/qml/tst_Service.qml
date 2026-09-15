@@ -1,8 +1,7 @@
 import QtQuick
 import QtTest
 import "../../CoreService.js" as Core
-import "../../CoreMaintenance.js" as Maintenance
-import "../../CoreSettings.js" as Settings
+import "ServiceHarness.js" as Harness
 
 TestCase {
   id: testCase
@@ -19,160 +18,29 @@ TestCase {
     return parts.join("/")
   }
   property string serviceUrl: "file://" + repoRoot + "/Service.qml"
-  property string fakeHelper: repoRoot + "/tests/qml/fixtures/fake-agent-bar"
   property string manifestPath: repoRoot + "/manifest.json"
+  property var service: null
 
-  Item {
-    id: h
-    property string helperVersion: ""
-    property bool versionReady: false
-    property bool versionFailed: false
-    property bool collectionStarted: false
-    property int collectionDelayMs: 0
-    property var snapshot: null
-    property bool refreshing: false
-    property string selectedProviderId: ""
-    property var popupOwner: null
-    property var settingsState: Settings.settingsClosed()
-    property var settingsDraft: null
-    property var maintenanceState: Maintenance.maintenanceIdle()
-    property var pendingForcedTargets: Core.emptyPending()
-    property bool statusBusy: false
-    property bool settingsReadBusy: false
-    property bool settingsWriteBusy: false
-    property int statusGeneration: 0
-    property int activeStatusGeneration: 0
-    property int statusStartCount: 0
-    property int refreshRequestCount: 0
-    property string lastRefreshProviderId: ""
-    property bool pollEnabled: true
-    property var manifest: ({ version: "10.0.0" })
-    readonly property string manifestVersion: "10.0.0"
-
-    function health(v) {
-      return Core.health(versionReady, versionFailed, helperVersion, manifestVersion, v, "ok")
-    }
-    function applyVersion(stdout) {
-      var v = Core.parseVersionStdout(stdout, "", 0)
-      if (!v) { versionFailed = true; return }
-      helperVersion = v; versionReady = true; versionFailed = false
-      if (collectionDelayMs > 0) delay.restart()
-      else beginCollection()
-    }
-    function beginCollection() {
-      collectionStarted = true
-      kickStatus()
-    }
-    function refreshAll(force) {
-      if (maintenanceState.blocked) return
-      if (force) pendingForcedTargets = Core.unionForced(pendingForcedTargets, "all")
-      kickStatus()
-    }
-    function refreshProvider(id, force) {
-      if (maintenanceState.blocked) return
-      if (!Core.isClosedProvider(id)) return
-      if (force) pendingForcedTargets = Core.unionForced(pendingForcedTargets, id)
-      kickStatus()
-    }
-    function refresh(id) {
-      if (Core.refreshResult(id) !== "ok") return "unknown"
-      lastRefreshProviderId = String(id)
-      refreshRequestCount++
-      refreshProvider(id, true)
-      return "ok"
-    }
-    function kickStatus() {
-      if (!versionReady || versionFailed || maintenanceState.blocked) return
-      if (statusBusy) return
-      statusGeneration++
-      activeStatusGeneration = statusGeneration
-      var taken = Core.takePending(pendingForcedTargets)
-      pendingForcedTargets = taken.remaining
-      statusBusy = true
-      refreshing = true
-      statusStartCount++
-      lastArgv = Core.statusArgv("/helper", taken.captured)
-    }
-    property var lastArgv: []
-    function applyStatus(gen, stdout, code) {
-      if (activeStatusGeneration !== gen) return
-      statusBusy = false
-      refreshing = false
-      if (code !== 0) { maybeFollowUp(); return }
-      var parsed = Core.parseStatusEnvelope(stdout, helperVersion)
-      if (!parsed.ok) { maybeFollowUp(); return }
-      snapshot = parsed.envelope
-      maybeFollowUp()
-    }
-    function maybeFollowUp() {
-      if (!Core.pendingIsEmpty(pendingForcedTargets))
-        kickStatus()
-    }
-    function requestPopup(owner, providerId, view) {
-      popupOwner = Core.requestPopup(popupOwner, owner, providerId, view)
-      if (providerId) selectedProviderId = String(providerId)
-    }
-    function closePopup(owner) {
-      popupOwner = Core.closePopup(popupOwner, owner)
-    }
-    function dismissPopup() {
-      popupOwner = Core.dismissPopup(popupOwner)
-    }
-    function openSettings(owner) {
-      if (maintenanceState.blocked) return
-      requestPopup(owner, selectedProviderId || null, "settings")
-      if (!settingsState || settingsState.phase === "closed") {
-        settingsGen++
-        settingsState = Settings.settingsBeginLoad(settingsGen)
-        settingsDraft = null
-        settingsState = Settings.settingsFinishLoad(settingsState, settingsGen, Core.defaultSettings())
-        settingsDraft = settingsState.draft
-      }
-    }
-    property int settingsGen: 0
-    function beginMaintenance() {
-      maintenanceState = Maintenance.maintenanceBeginHandoff(maintenanceState)
-      pollEnabled = false
-    }
-    function tryDetach() {
-      return Maintenance.maintenanceCanDetach(maintenanceState,
-          statusBusy || settingsReadBusy || settingsWriteBusy)
-    }
-    Timer {
-      id: delay
-      interval: h.collectionDelayMs
-      onTriggered: h.beginCollection()
-    }
+  function createService() {
+    service = Harness.createService(serviceUrl, testCase, testCase)
+    return service
   }
 
-  function reset() {
-    h.helperVersion = ""
-    h.versionReady = false
-    h.versionFailed = false
-    h.collectionStarted = false
-    h.collectionDelayMs = 0
-    h.snapshot = null
-    h.refreshing = false
-    h.selectedProviderId = ""
-    h.popupOwner = null
-    h.settingsState = Settings.settingsClosed()
-    h.settingsDraft = null
-    h.maintenanceState = Maintenance.maintenanceIdle()
-    h.pendingForcedTargets = Core.emptyPending()
-    h.statusBusy = false
-    h.settingsWriteBusy = false
-    h.statusGeneration = 0
-    h.activeStatusGeneration = 0
-    h.statusStartCount = 0
-    h.refreshRequestCount = 0
-    h.lastArgv = []
-    h.pollEnabled = true
+  function finishLane(s, name, exitCode, stdout, stderr) {
+    Harness.finishLane(s, name, exitCode, stdout, stderr)
+  }
+
+  function cleanup() {
+    if (service) {
+      service.destroy()
+      service = null
+    }
   }
 
   function validEnvelope(version) {
     return JSON.stringify({
       schemaVersion: 2,
-      helperVersion: version || "10.0.0",
+      helperVersion: version || "10.3.17",
       generatedAt: "2026-07-26T18:42:00Z",
       request: { provider: null, cache: "use" },
       providers: [{
@@ -194,6 +62,22 @@ TestCase {
         action: null
       }]
     })
+  }
+
+  function validSettings() {
+    return {
+      schemaVersion: 1,
+      providers: [
+        { id: "claude", enabled: true },
+        { id: "codex", enabled: true },
+        { id: "amp", enabled: false },
+        { id: "grok", enabled: false },
+        { id: "antigravity", enabled: false }
+      ],
+      display: { metric: "remaining" },
+      refreshIntervalSeconds: 60,
+      notifications: { enabled: true, reminderMinutes: 120 }
+    }
   }
 
   function loadManifest() {
@@ -222,91 +106,75 @@ TestCase {
   }
 
   function test_version_and_health() {
-    reset()
-    h.applyVersion("10.0.0\n")
-    compare(h.health("10.0.0"), "ok")
-    compare(h.health("9.0.0"), "unknown")
-    compare(h.collectionStarted, true)
+    var s = createService()
+    compare(s.health("10.3.17"), "ok")
+    compare(s.health("9.0.0"), "unknown")
+    compare(s.collectionStarted, false)
+    s.beginCollection()
+    compare(s.collectionStarted, true)
+    compare(s.lanes.status.busy, true)
   }
 
   function test_refresh_closed_providers() {
-    reset()
-    h.applyVersion("10.0.0\n")
-    h.statusBusy = false
-    h.statusStartCount = 0
-    compare(h.refresh("claude"), "ok")
-    compare(h.refresh("nope"), "unknown")
-    compare(h.refreshRequestCount, 1)
+    var s = createService()
+    compare(s.refresh("claude"), "ok")
+    compare(s.refresh("nope"), "unknown")
+    compare(s.refreshRequestCount, 1)
   }
 
   function test_status_argv_shape_cache_use() {
-    reset()
-    h.applyVersion("10.0.0\n")
-    verify(h.lastArgv.indexOf("status") >= 0)
-    verify(h.lastArgv.indexOf("format") >= 0)
-    verify(h.lastArgv.indexOf("json") >= 0)
-    verify(h.lastArgv.indexOf("cache") >= 0)
-    verify(h.lastArgv.indexOf("use") >= 0 || h.lastArgv.indexOf("bypass") >= 0)
-    verify(h.lastArgv.indexOf("notifications") >= 0)
-    verify(h.lastArgv.indexOf("evaluate") >= 0)
+    var s = createService()
+    s.beginCollection()
+    var argv = s.lanes.status.process.command
+    verify(argv.indexOf("status") >= 0)
+    verify(argv.indexOf("format") >= 0)
+    verify(argv.indexOf("json") >= 0)
+    verify(argv.indexOf("cache") >= 0)
+    verify(argv.indexOf("use") >= 0 || argv.indexOf("bypass") >= 0)
+    verify(argv.indexOf("notifications") >= 0)
+    verify(argv.indexOf("evaluate") >= 0)
   }
 
   function test_force_refresh_uses_bypass() {
-    reset()
-    h.applyVersion("10.0.0\n")
-    h.applyStatus(h.activeStatusGeneration, validEnvelope("10.0.0"), 0)
-    h.statusStartCount = 0
-    h.refreshAll(true)
-    compare(h.statusStartCount, 1)
-    verify(h.lastArgv.indexOf("bypass") >= 0)
+    var s = createService()
+    s.beginCollection()
+    finishLane(s, "status", 0, validEnvelope())
+    var startsBefore = s.lanes.status.runId
+    s.refreshAll(true)
+    compare(s.lanes.status.runId, startsBefore + 1)
+    verify(s.lanes.status.process.command.indexOf("bypass") >= 0)
   }
 
   function test_immutable_snapshot_replacement() {
-    reset()
-    h.applyVersion("10.0.0\n")
-    var gen = h.activeStatusGeneration
-    h.applyStatus(gen, validEnvelope("10.0.0"), 0)
-    verify(h.snapshot !== null)
-    compare(h.snapshot.schemaVersion, 2)
-    compare(h.snapshot.providers[0].id, "claude")
-    var first = h.snapshot
-    h.statusBusy = false
-    h.kickStatus()
-    h.applyStatus(h.activeStatusGeneration, validEnvelope("10.0.0"), 0)
-    verify(h.snapshot !== first)
-    compare(h.snapshot.providers[0].id, "claude")
+    var s = createService()
+    s.beginCollection()
+    finishLane(s, "status", 0, validEnvelope())
+    verify(s.snapshot !== null)
+    compare(s.snapshot.schemaVersion, 2)
+    compare(s.snapshot.providers[0].id, "claude")
+    var first = s.snapshot
+    s.kickStatus()
+    finishLane(s, "status", 0, validEnvelope())
+    verify(s.snapshot !== first)
+    compare(s.snapshot.providers[0].id, "claude")
   }
 
   function test_malformed_envelope_retains_snapshot() {
-    reset()
-    h.applyVersion("10.0.0\n")
-    h.applyStatus(h.activeStatusGeneration, validEnvelope("10.0.0"), 0)
-    var kept = h.snapshot
-    h.statusBusy = false
-    h.kickStatus()
-    h.applyStatus(h.activeStatusGeneration, "{not-json", 0)
-    compare(h.snapshot, kept)
-  }
-
-  function test_stale_generation_ignored() {
-    reset()
-    h.applyVersion("10.0.0\n")
-    var oldGen = h.activeStatusGeneration
-    h.statusBusy = false
-    h.kickStatus()
-    var newGen = h.activeStatusGeneration
-    verify(newGen !== oldGen)
-    h.applyStatus(oldGen, validEnvelope("10.0.0"), 0)
-    h.applyStatus(newGen, validEnvelope("10.0.0"), 0)
-    compare(h.snapshot.schemaVersion, 2)
+    var s = createService()
+    s.beginCollection()
+    finishLane(s, "status", 0, validEnvelope())
+    var kept = s.snapshot
+    s.kickStatus()
+    finishLane(s, "status", 0, "{not-json")
+    compare(s.snapshot, kept)
   }
 
   function test_one_status_lane_no_reentry() {
-    reset()
-    h.applyVersion("10.0.0\n")
-    var starts = h.statusStartCount
-    h.kickStatus()
-    compare(h.statusStartCount, starts)
+    var s = createService()
+    s.beginCollection()
+    var runId = s.lanes.status.runId
+    s.kickStatus()
+    compare(s.lanes.status.runId, runId)
   }
 
   function test_pending_forced_union_all_dominates() {
@@ -327,59 +195,63 @@ TestCase {
   }
 
   function test_popup_same_owner_close() {
-    reset()
-    h.requestPopup("mon-a", "claude", "usage")
-    compare(h.popupOwner.owner, "mon-a")
-    compare(h.selectedProviderId, "claude")
-    h.closePopup("mon-b")
-    verify(h.popupOwner !== null)
-    h.closePopup("mon-a")
-    compare(h.popupOwner, null)
+    var s = createService()
+    s.requestPopup("mon-a", "claude", "usage")
+    compare(s.popupOwner.owner, "mon-a")
+    compare(s.selectedProviderId, "claude")
+    s.closePopup("mon-b")
+    verify(s.popupOwner !== null)
+    s.closePopup("mon-a")
+    compare(s.popupOwner, null)
   }
 
   function test_popup_dismiss_clears_any_owner() {
-    reset()
-    h.requestPopup("mon-a", "claude", "usage")
-    verify(h.popupOwner !== null)
-    h.closePopup("mon-b")
-    verify(h.popupOwner !== null)
-    h.dismissPopup()
-    compare(h.popupOwner, null)
+    var s = createService()
+    s.requestPopup("mon-a", "claude", "usage")
+    verify(s.popupOwner !== null)
+    s.closePopup("mon-b")
+    verify(s.popupOwner !== null)
+    s.dismissPopup()
+    compare(s.popupOwner, null)
     verify(Core.foreignPopupOpen({ owner: "mon-a" }, "mon-b"))
     verify(!Core.foreignPopupOpen({ owner: "mon-a" }, "mon-a"))
     verify(!Core.foreignPopupOpen(null, "mon-b"))
   }
 
   function test_popup_cross_monitor_transfer() {
-    reset()
-    h.requestPopup("mon-a", "claude", "usage")
-    h.requestPopup("mon-b", "grok", "usage")
-    compare(h.popupOwner.owner, "mon-b")
-    compare(h.popupOwner.providerId, "grok")
-    compare(h.selectedProviderId, "grok")
+    var s = createService()
+    s.requestPopup("mon-a", "claude", "usage")
+    s.requestPopup("mon-b", "grok", "usage")
+    compare(s.popupOwner.owner, "mon-b")
+    compare(s.popupOwner.providerId, "grok")
+    compare(s.selectedProviderId, "grok")
   }
 
   function test_settings_open_captures_snapshot() {
-    reset()
-    h.applyVersion("10.0.0\n")
-    h.applyStatus(h.activeStatusGeneration, validEnvelope("10.0.0"), 0)
-    h.openSettings("mon-a")
-    compare(h.settingsState.phase, "clean")
-    verify(h.settingsState.snapshot !== null)
-    verify(h.settingsDraft !== null)
-    compare(h.popupOwner.view, "settings")
+    var s = createService()
+    finishLane(s, "settingsBootstrap", 1)
+    s.beginCollection()
+    finishLane(s, "status", 0, validEnvelope())
+    s.openSettings("mon-a")
+    finishLane(s, "settingsRead", 0, JSON.stringify(validSettings()))
+    compare(s.settingsState.phase, "clean")
+    verify(s.settingsState.snapshot !== null)
+    verify(s.settingsDraft !== null)
+    compare(s.popupOwner.view, "settings")
   }
 
   function test_maintenance_blocks_poll_and_waits_drain() {
-    reset()
-    h.applyVersion("10.0.0\n")
-    h.statusBusy = true
-    h.beginMaintenance()
-    compare(h.maintenanceState.blocked, true)
-    compare(h.pollEnabled, false)
-    compare(h.tryDetach(), false)
-    h.statusBusy = false
-    compare(h.tryDetach(), true)
+    var s = createService()
+    finishLane(s, "settingsBootstrap", 1)
+    s.beginCollection()
+    compare(s.lanes.status.busy, true)
+    s.pendingMaintenanceIntention = ({ kind: "uninstall", purge: false })
+    s.beginMaintenanceHandoff()
+    compare(s.maintenanceState.blocked, true)
+    compare(s.pollEnabled, false)
+    compare(s.lanes.maintenanceHandoff.busy, false)
+    finishLane(s, "status", 0, validEnvelope())
+    compare(s.lanes.maintenanceHandoff.busy, true)
   }
 
   function test_service_qml_declares_seven_process_lanes() {
