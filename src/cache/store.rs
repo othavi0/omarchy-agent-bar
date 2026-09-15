@@ -103,8 +103,22 @@ impl CacheStore {
         &self,
         id: ProviderId,
         entry: CachedProvider,
+        now: OffsetDateTime,
+    ) -> Result<CacheDocument, CacheStoreError> {
+        self.merge_providers(vec![(id, entry)], now)
+    }
+
+    /// Merge every entry from one poll in a single load-modify-write: one
+    /// file lock, one `revision` bump, one atomic replace, however many
+    /// providers were collected.
+    pub fn merge_providers(
+        &self,
+        entries: Vec<(ProviderId, CachedProvider)>,
         _now: OffsetDateTime,
     ) -> Result<CacheDocument, CacheStoreError> {
+        if entries.is_empty() {
+            return self.load();
+        }
         let _guard = self
             .gate
             .try_lock_shared()?
@@ -112,7 +126,9 @@ impl CacheStore {
         let file_lock = open_lock(&self.paths.lock)?;
         FileExt::lock_exclusive(&file_lock)?;
         let mut doc = self.load()?;
-        doc.providers.insert(id.as_str().to_owned(), entry);
+        for (id, entry) in entries {
+            doc.providers.insert(id.as_str().to_owned(), entry);
+        }
         doc.revision = doc.revision.saturating_add(1);
         doc.validate()?;
         let bytes = serde_json::to_vec_pretty(&doc).map_err(|err| {
