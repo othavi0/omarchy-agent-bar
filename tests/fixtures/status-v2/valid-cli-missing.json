@@ -13,11 +13,9 @@
       "state": "cli_missing",
       "source": null,
       "plan": null,
-      "account": null,
       "windows": [],
       "lastSuccessAt": null,
       "error": {
-        "code": "cli_not_found",
         "message": "Amp CLI was not found.",
         "retryable": false
       },

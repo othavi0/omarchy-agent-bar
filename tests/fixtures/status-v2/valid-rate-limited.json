@@ -13,11 +13,9 @@
       "state": "rate_limited",
       "source": null,
       "plan": null,
-      "account": null,
       "windows": [],
       "lastSuccessAt": null,
       "error": {
-        "code": "rate_limited",
         "message": "Codex rate limited the request.",
         "retryable": true
       },

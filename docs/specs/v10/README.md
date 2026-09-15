@@ -77,6 +77,15 @@ fallback" retry note; the `07-testing-and-acceptance.md` raw-input
 allowlist no longer names Codex `session_log`:
 [docs/specs/v10/amendments/2026-09-15-codex-app-server-only-design.md](amendments/2026-09-15-codex-app-server-only-design.md).
 
+The `account`/`error.code` removal, approved 2026-09-15, drops the two
+status-v2 fields no QML consumer reads. `account` and the `Account` type
+leave `ProviderStatus`, `ProviderResult::Ready`, the cache entry, the JSON
+schema, and the fixtures; the adapters stop extracting account labels.
+`error.code` and the `ErrorCode` enum are retired; `error` keeps `message`
+and `retryable`. `JSON-006` drops the `error.code` clause, `JSON-018`
+narrows to plan only, and `JSON-019` is retired:
+[docs/specs/v10/amendments/2026-09-15-drop-unread-status-fields-design.md](amendments/2026-09-15-drop-unread-status-fields-design.md).
+
 ## Product statement
 
 Agent Bar v10 is an Omarchy Quattro Quickshell plugin. Its only graphical
@@ -116,6 +125,9 @@ application, an AUR product, or a cargo-binstall product.
    [2026-09-15 live Quickshell probe](amendments/2026-09-15-live-quickshell-probe-design.md).
 
    [2026-09-15 Codex app-server only](amendments/2026-09-15-codex-app-server-only-design.md).
+
+   [2026-09-15 Codex app-server only](amendments/2026-09-15-codex-app-server-only-design.md),
+   [2026-09-15 drop account and error.code](amendments/2026-09-15-drop-unread-status-fields-design.md).
 
 When two statements conflict, the earlier contract in this reading order wins
 unless a later file explicitly identifies the requirement ID it refines.

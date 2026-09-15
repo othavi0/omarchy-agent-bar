@@ -41,7 +41,6 @@ function placeholderProvider(id) {
     state: "loading",
     source: null,
     plan: null,
-    account: null,
     windows: [],
     lastSuccessAt: null,
     error: null,

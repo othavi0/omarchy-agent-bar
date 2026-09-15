@@ -550,10 +550,10 @@ TestCase {
       request: { provider: null, cache: "use" },
       providers: [
         { id: "claude", name: "Claude", state: "ready", source: "live", plan: null,
-          account: null, windows: [], lastSuccessAt: "2026-08-26T12:00:00Z",
+          windows: [], lastSuccessAt: "2026-08-26T12:00:00Z",
           error: null, action: null },
         { id: "codex", name: "Codex", state: "ready", source: "live", plan: null,
-          account: null, windows: [], lastSuccessAt: "2026-08-26T12:00:00Z",
+          windows: [], lastSuccessAt: "2026-08-26T12:00:00Z",
           error: null, action: null }
       ]
     }

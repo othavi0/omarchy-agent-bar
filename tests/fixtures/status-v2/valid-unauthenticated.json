@@ -13,11 +13,9 @@
       "state": "unauthenticated",
       "source": null,
       "plan": null,
-      "account": null,
       "windows": [],
       "lastSuccessAt": null,
       "error": {
-        "code": "authentication_required",
         "message": "Claude is not authenticated.",
         "retryable": false
       },

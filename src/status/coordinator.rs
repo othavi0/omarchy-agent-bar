@@ -254,13 +254,10 @@ fn apply_stale_retention(
     if !matches!(prior.state(), ProviderState::Ready | ProviderState::Stale) {
         return Ok(live);
     }
-    let error = live.error().cloned().unwrap_or_else(|| {
-        ProviderError::new(
-            crate::status::schema::ErrorCode::NetworkError,
-            "Temporary refresh failure.",
-            true,
-        )
-    });
+    let error = live
+        .error()
+        .cloned()
+        .unwrap_or_else(|| ProviderError::new("Temporary refresh failure.", true));
     prior
         .retain_as_stale(error)
         .map_err(StatusCoordError::Schema)
@@ -296,7 +293,7 @@ fn descriptor_ttl(id: ProviderId) -> std::time::Duration {
 }
 
 fn fallback_provider_error(id: ProviderId, message: &str) -> ProviderStatus {
-    use crate::status::schema::{ErrorCode, ProviderAction, ProviderError};
+    use crate::status::schema::{ProviderAction, ProviderError};
     let name = match id {
         ProviderId::Claude => "Claude",
         ProviderId::Codex => "Codex",
@@ -309,7 +306,7 @@ fn fallback_provider_error(id: ProviderId, message: &str) -> ProviderStatus {
         ProviderStatus::provider_error(
             id,
             name,
-            ProviderError::new(ErrorCode::ProviderError, message, false),
+            ProviderError::new(message, false),
             ProviderAction::retry("Retry"),
         )
         .expect("static provider_error constructor args are valid")
@@ -343,9 +340,7 @@ mod tests {
     use crate::providers::adapter::{BoxFuture, HttpError, HttpResponse};
     use crate::providers::process::{ProcessError, ProcessOutput};
     use crate::settings::schema::Settings as SettingsDocument;
-    use crate::status::schema::{
-        DataSource, ErrorCode, ProviderAction, ProviderError, UsageWindow,
-    };
+    use crate::status::schema::{DataSource, ProviderAction, ProviderError, UsageWindow};
     use crate::support::maintenance_gate::MaintenanceGate;
     use std::path::Path;
     use std::sync::Mutex;
@@ -485,7 +480,6 @@ mod tests {
             ProviderId::Claude,
             "Claude",
             DataSource::Live,
-            None,
             None,
             vec![UsageWindow::try_new("session", "Session", 40.0, 60.0, None).unwrap()],
             now,
@@ -635,7 +629,7 @@ mod tests {
         let live = ProviderStatus::network_error(
             ProviderId::Claude,
             "Claude",
-            ProviderError::new(ErrorCode::NetworkError, "down", true),
+            ProviderError::new("down", true),
             ProviderAction::retry("Retry"),
         )
         .unwrap();
@@ -656,7 +650,7 @@ mod tests {
         let live = ProviderStatus::network_error(
             ProviderId::Claude,
             "Claude",
-            ProviderError::new(ErrorCode::NetworkError, "down", true),
+            ProviderError::new("down", true),
             ProviderAction::retry("Retry"),
         )
         .unwrap();
@@ -674,7 +668,7 @@ mod tests {
         let live = ProviderStatus::unauthenticated(
             ProviderId::Claude,
             "Claude",
-            ProviderError::new(ErrorCode::AuthenticationRequired, "expired", true),
+            ProviderError::new("expired", true),
             ProviderAction::login("Sign in"),
         )
         .unwrap();
@@ -699,7 +693,6 @@ mod tests {
             ProviderId::Grok,
             "Grok",
             DataSource::Live,
-            None,
             None,
             vec![UsageWindow::try_new("weekly", "Weekly (7d)", 11.0, 89.0, None).unwrap()],
             earlier,
@@ -741,7 +734,7 @@ mod tests {
         let live = ProviderStatus::unauthenticated(
             ProviderId::Claude,
             "Claude",
-            ProviderError::new(ErrorCode::AuthenticationRequired, "auth", false),
+            ProviderError::new("auth", false),
             ProviderAction::login("Sign in"),
         )
         .unwrap();
@@ -759,16 +752,9 @@ mod tests {
         let coord = coord_at(dir.path(), t2);
 
         let rev = coord.cache_coord.start_generation(ProviderId::Amp, t0);
-        let status = ProviderStatus::ready(
-            ProviderId::Amp,
-            "Amp",
-            DataSource::Live,
-            None,
-            None,
-            vec![],
-            t0,
-        )
-        .unwrap();
+        let status =
+            ProviderStatus::ready(ProviderId::Amp, "Amp", DataSource::Live, None, vec![], t0)
+                .unwrap();
         let entry = entry_from_status(status, t0, t0, std::time::Duration::from_secs(90));
         coord
             .cache_store
@@ -778,16 +764,9 @@ mod tests {
         assert!(!coord.cache_coord.bypass_accepts(ProviderId::Amp, t1));
 
         let rev2 = coord.cache_coord.start_generation(ProviderId::Amp, t1);
-        let status2 = ProviderStatus::ready(
-            ProviderId::Amp,
-            "Amp",
-            DataSource::Live,
-            None,
-            None,
-            vec![],
-            t1,
-        )
-        .unwrap();
+        let status2 =
+            ProviderStatus::ready(ProviderId::Amp, "Amp", DataSource::Live, None, vec![], t1)
+                .unwrap();
         let entry2 = entry_from_status(status2, t1, t2, std::time::Duration::from_secs(90));
         coord
             .cache_store
@@ -833,16 +812,9 @@ mod tests {
         let t1 = datetime!(2026-07-26 18:00:01 UTC);
         let coord = coord_at(dir.path(), t1);
         let rev = coord.cache_coord.start_generation(ProviderId::Amp, t1);
-        let status = ProviderStatus::ready(
-            ProviderId::Amp,
-            "Amp",
-            DataSource::Live,
-            None,
-            None,
-            vec![],
-            t1,
-        )
-        .unwrap();
+        let status =
+            ProviderStatus::ready(ProviderId::Amp, "Amp", DataSource::Live, None, vec![], t1)
+                .unwrap();
         let entry = entry_from_status(status, t1, t1, std::time::Duration::from_secs(90));
         coord
             .cache_store

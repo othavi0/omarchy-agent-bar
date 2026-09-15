@@ -13,11 +13,9 @@
       "state": "network_error",
       "source": null,
       "plan": null,
-      "account": null,
       "windows": [],
       "lastSuccessAt": null,
       "error": {
-        "code": "network_error",
         "message": "Network error while contacting Grok.",
         "retryable": true
       },

@@ -16,9 +16,6 @@
         "id": "pro",
         "label": "Pro"
       },
-      "account": {
-        "label": "Personal"
-      },
       "windows": [
         {
           "id": "session",
@@ -45,11 +42,9 @@
       "state": "cli_missing",
       "source": null,
       "plan": null,
-      "account": null,
       "windows": [],
       "lastSuccessAt": null,
       "error": {
-        "code": "cli_not_found",
         "message": "Codex CLI was not found.",
         "retryable": false
       },

@@ -221,7 +221,6 @@ mod tests {
             "Claude",
             DataSource::Live,
             None,
-            None,
             vec![],
             datetime!(2026-07-26 18:42:00 UTC),
         )
@@ -273,7 +272,6 @@ mod tests {
             "Codex",
             DataSource::Live,
             None,
-            None,
             vec![],
             now,
         )
@@ -283,6 +281,55 @@ mod tests {
         assert_eq!(doc.revision, 2);
         assert!(doc.providers.contains_key("claude"));
         assert!(doc.providers.contains_key("codex"));
+    }
+
+    #[test]
+    fn legacy_account_and_error_code_keys_are_tolerated() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = store_in(dir.path());
+        fs::create_dir_all(store.paths.document.parent().unwrap()).unwrap();
+        let legacy = br#"{
+            "schemaVersion": 2,
+            "revision": 1,
+            "providers": {
+                "claude": {
+                    "startedAt": "2026-07-26T18:42:00Z",
+                    "completedAt": "2026-07-26T18:42:01Z",
+                    "expiresAt": "2026-07-26T18:47:01Z",
+                    "status": {
+                        "id": "claude",
+                        "name": "Claude",
+                        "state": "stale",
+                        "source": "cache",
+                        "plan": null,
+                        "account": { "label": "Old Label" },
+                        "windows": [],
+                        "lastSuccessAt": "2026-07-26T18:40:00Z",
+                        "error": {
+                            "code": "network_error",
+                            "message": "Temporary network failure.",
+                            "retryable": true
+                        },
+                        "action": { "kind": "retry", "label": "Retry", "target": null }
+                    }
+                }
+            }
+        }"#;
+        fs::write(&store.paths.document, legacy).unwrap();
+        let doc = store.load().unwrap();
+        assert_eq!(doc.revision, 1, "legacy document must not be quarantined");
+        let entry = doc.get(ProviderId::Claude).expect("claude entry loads");
+        assert_eq!(
+            entry.status.error().map(|e| e.message.as_str()),
+            Some("Temporary network failure.")
+        );
+        let corrupt_dir = fs::read_dir(store.paths.document.parent().unwrap()).unwrap();
+        assert!(
+            corrupt_dir
+                .filter_map(|e| e.ok())
+                .all(|e| !e.file_name().to_string_lossy().contains("corrupt")),
+            "legacy keys must never quarantine the cache"
+        );
     }
 
     #[test]

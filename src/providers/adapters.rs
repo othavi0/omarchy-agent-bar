@@ -1,10 +1,10 @@
 use crate::cli::ProviderId;
-use crate::status::schema::{Account, Plan, ProviderResult};
+use crate::status::schema::{Plan, ProviderResult};
 use crate::support::redact::strip_ansi_and_controls;
 
 use super::adapter::{
     collection_exe, login_available, missing_collection, unauthenticated, BoxFuture,
-    CollectionContext, ProviderAdapter,
+    CollectionContext, HttpError, HttpResponse, ProviderAdapter,
 };
 use super::catalog::{AMP, ANTIGRAVITY, CLAUDE, CODEX, GROK};
 use super::codex_app_server::{fetch_rate_limits_via_appserver, AppServerOutcome};
@@ -36,8 +36,7 @@ impl ProviderAdapter for AmpAdapter {
             let spec = ProcessSpec::new(exe, ["usage"])
                 .with_timeout(AMP.timeout)
                 .with_max_output(AMP.max_output_bytes)
-                .with_env("NO_COLOR", "1")
-                .with_env("TERM", "dumb");
+                .with_quiet_terminal();
             match context.process.run(&spec).await {
                 Ok(out) if out.timed_out => ProviderResult::NetworkError {
                     id: ProviderId::Amp,
@@ -62,26 +61,54 @@ impl ProviderAdapter for AmpAdapter {
 /// marker; a bare "auth" substring (e.g. "authorization server unavailable")
 /// is an operational failure, not a login problem.
 fn classify_amp_failure(out: &ProcessOutput, login_available: bool) -> ProviderResult {
-    let stdout = out.stdout.to_ascii_lowercase();
-    let stderr = out.stderr.to_ascii_lowercase();
-    let explicit = ["not signed", "sign in", "unauthorized", "please log in"];
-    if explicit
+    classify_cli_failure(
+        out,
+        &AMP,
+        login_available,
+        false,
+        &["not signed", "sign in", "unauthorized", "please log in"],
+        "Amp is not authenticated.",
+        "Amp usage command failed.",
+    )
+}
+
+fn classify_cli_failure(
+    out: &ProcessOutput,
+    descriptor: &'static ProviderDescriptor,
+    login_available: bool,
+    ansi_aware: bool,
+    markers: &[&str],
+    unauthenticated_message: &str,
+    generic_message: &str,
+) -> ProviderResult {
+    let (stdout, stderr) = if ansi_aware {
+        (
+            strip_ansi_and_controls(&out.stdout).to_ascii_lowercase(),
+            strip_ansi_and_controls(&out.stderr).to_ascii_lowercase(),
+        )
+    } else {
+        (
+            out.stdout.to_ascii_lowercase(),
+            out.stderr.to_ascii_lowercase(),
+        )
+    };
+    if markers
         .iter()
         .any(|m| stdout.contains(m) || stderr.contains(m))
     {
         return unauthenticated(
-            ProviderId::Amp,
-            AMP.display_name,
-            "Amp is not authenticated.",
+            descriptor.id,
+            descriptor.display_name,
+            unauthenticated_message,
             login_available,
-            AMP.installation_url,
+            descriptor.installation_url,
             false,
         );
     }
     ProviderResult::ProviderError {
-        id: ProviderId::Amp,
-        name: AMP.display_name.to_owned(),
-        message: "Amp usage command failed.".into(),
+        id: descriptor.id,
+        name: descriptor.display_name.to_owned(),
+        message: generic_message.to_owned(),
         retryable: false,
     }
 }
@@ -142,8 +169,7 @@ impl ProviderAdapter for GrokAdapter {
                     let mut spec = ProcessSpec::new(exe, ["models"])
                         .with_timeout(GROK.timeout)
                         .with_max_output(GROK.max_output_bytes)
-                        .with_env("NO_COLOR", "1")
-                        .with_env("TERM", "dumb");
+                        .with_quiet_terminal();
                     if let Some(home) = &context.env.grok_home {
                         spec = spec.with_env("GROK_HOME", home.to_string_lossy());
                     }
@@ -173,7 +199,7 @@ impl ProviderAdapter for GrokAdapter {
                 }
             }
 
-            let GrokCredentials { token, account, .. } = creds;
+            let GrokCredentials { token, .. } = creds;
             let bearer = format!("Bearer {token}");
             let headers = [
                 ("Authorization", bearer.as_str()),
@@ -193,18 +219,16 @@ impl ProviderAdapter for GrokAdapter {
             {
                 Ok(resp) if (200..300).contains(&resp.status) => {
                     let _ = resp.final_url;
-                    let credits = grok_from_billing_json(&resp.body, account.clone(), now, login);
+                    let credits = grok_from_billing_json(&resp.body, now, login);
                     match &credits {
                         ProviderResult::Ready { windows, .. } if windows.is_empty() => {
-                            grok_monthly_fallback(
-                                context, &headers, max_body, account, now, login, credits,
-                            )
-                            .await
+                            grok_monthly_fallback(context, &headers, max_body, now, login, credits)
+                                .await
                         }
                         _ => credits,
                     }
                 }
-                other => grok_http_failure(other, login),
+                other => http_failure(&GROK, "billing", login, other, false, true),
             }
         })
     }
@@ -214,7 +238,6 @@ async fn grok_monthly_fallback(
     context: &CollectionContext<'_>,
     headers: &[(&str, &str)],
     max_body: usize,
-    account: Option<String>,
     now: time::OffsetDateTime,
     login: bool,
     credits: ProviderResult,
@@ -230,9 +253,9 @@ async fn grok_monthly_fallback(
     let resp = match response {
         Ok(resp) if (200..300).contains(&resp.status) => resp,
         Ok(resp) if resp.status < 500 => return credits,
-        other => return grok_http_failure(other, login),
+        other => return http_failure(&GROK, "billing", login, other, false, true),
     };
-    let monthly = grok_from_billing_json(&resp.body, account, now, login);
+    let monthly = grok_from_billing_json(&resp.body, now, login);
     match (monthly, credits) {
         (
             ProviderResult::Ready {
@@ -245,7 +268,6 @@ async fn grok_monthly_fallback(
                 name,
                 source,
                 plan,
-                account,
                 last_success_at,
                 rate_limit_resets_available,
                 ..
@@ -255,7 +277,6 @@ async fn grok_monthly_fallback(
             name,
             source,
             plan: plan.or(monthly_plan),
-            account,
             windows,
             last_success_at,
             rate_limit_resets_available,
@@ -264,46 +285,57 @@ async fn grok_monthly_fallback(
     }
 }
 
-fn grok_http_failure(
-    response: Result<super::adapter::HttpResponse, super::adapter::HttpError>,
+fn http_failure(
+    descriptor: &'static ProviderDescriptor,
+    resource: &str,
     login: bool,
+    response: Result<HttpResponse, HttpError>,
+    rate_limit_429: bool,
+    retryable_5xx: bool,
 ) -> ProviderResult {
+    let id = descriptor.id;
+    let name = descriptor.display_name;
     match response {
         Ok(resp) if resp.status == 401 || resp.status == 403 => unauthenticated(
-            ProviderId::Grok,
-            GROK.display_name,
-            "Grok authentication was rejected.",
+            id,
+            name,
+            format!("{name} authentication was rejected."),
             login,
-            GROK.installation_url,
+            descriptor.installation_url,
             false,
         ),
+        Ok(resp) if rate_limit_429 && resp.status == 429 => ProviderResult::RateLimited {
+            id,
+            name: name.to_owned(),
+            message: format!("{name} rate limited the request."),
+        },
         Ok(resp) => ProviderResult::ProviderError {
-            id: ProviderId::Grok,
-            name: GROK.display_name.to_owned(),
-            message: "Grok billing request failed.".into(),
-            retryable: resp.status >= 500,
+            id,
+            name: name.to_owned(),
+            message: format!("{name} {resource} request failed."),
+            retryable: retryable_5xx && resp.status >= 500,
         },
-        Err(super::adapter::HttpError::Network(_)) => ProviderResult::NetworkError {
-            id: ProviderId::Grok,
-            name: GROK.display_name.to_owned(),
-            message: "Network error while contacting Grok.".into(),
+        Err(HttpError::Network(_)) => ProviderResult::NetworkError {
+            id,
+            name: name.to_owned(),
+            message: format!("Network error while contacting {name}."),
         },
-        Err(super::adapter::HttpError::RedirectRefused(_)) => ProviderResult::ProviderError {
-            id: ProviderId::Grok,
-            name: GROK.display_name.to_owned(),
-            message: "Grok billing redirect refused.".into(),
+        Err(HttpError::RedirectRefused(_)) => ProviderResult::ProviderError {
+            id,
+            name: name.to_owned(),
+            message: format!("{name} {resource} redirect refused."),
             retryable: false,
         },
-        Err(super::adapter::HttpError::BodyTooLarge) => ProviderResult::ProviderError {
-            id: ProviderId::Grok,
-            name: GROK.display_name.to_owned(),
-            message: "Grok billing response exceeded size limit.".into(),
+        Err(HttpError::BodyTooLarge) => ProviderResult::ProviderError {
+            id,
+            name: name.to_owned(),
+            message: format!("{name} {resource} response exceeded size limit."),
             retryable: false,
         },
-        Err(super::adapter::HttpError::InvalidResponse(_)) => ProviderResult::ProviderError {
-            id: ProviderId::Grok,
-            name: GROK.display_name.to_owned(),
-            message: "Invalid Grok billing response.".into(),
+        Err(HttpError::InvalidResponse(_)) => ProviderResult::ProviderError {
+            id,
+            name: name.to_owned(),
+            message: format!("Invalid {name} {resource} response."),
             retryable: false,
         },
     }
@@ -313,7 +345,6 @@ const GROK_TOKEN_EXPIRY_MARGIN: time::Duration = time::Duration::seconds(60);
 
 struct GrokCredentials {
     token: String,
-    account: Option<String>,
     expires_at: Option<time::OffsetDateTime>,
 }
 
@@ -375,10 +406,6 @@ fn parse_grok_credentials(bytes: &[u8]) -> Result<GrokCredentials, GrokAuthError
         if key.is_empty() {
             continue;
         }
-        let account = entry
-            .get("first_name")
-            .and_then(|v| v.as_str())
-            .map(str::to_owned);
         let expires_at = entry
             .get("expires_at")
             .and_then(|v| v.as_str())
@@ -387,7 +414,6 @@ fn parse_grok_credentials(bytes: &[u8]) -> Result<GrokCredentials, GrokAuthError
             });
         return Ok(GrokCredentials {
             token: key.to_owned(),
-            account,
             expires_at,
         });
     }
@@ -535,6 +561,7 @@ impl ProviderAdapter for ClaudeAdapter {
                 ("Authorization", bearer.as_str()),
                 ("anthropic-beta", "oauth-2025-04-20"),
             ];
+            let login = login_available(discovery);
             match super::retry::http_get_with_retry(
                 context.http,
                 &CLAUDE,
@@ -544,62 +571,11 @@ impl ProviderAdapter for ClaudeAdapter {
             )
             .await
             {
-                Ok(resp) if resp.status == 401 || resp.status == 403 => unauthenticated(
-                    ProviderId::Claude,
-                    CLAUDE.display_name,
-                    "Claude authentication was rejected.",
-                    login_available(discovery),
-                    CLAUDE.installation_url,
-                    false,
-                ),
-                Ok(resp) if resp.status == 429 => ProviderResult::RateLimited {
-                    id: ProviderId::Claude,
-                    name: CLAUDE.display_name.to_owned(),
-                    message: "Claude rate limited the request.".into(),
-                },
-                Ok(resp) if !(200..300).contains(&resp.status) => ProviderResult::ProviderError {
-                    id: ProviderId::Claude,
-                    name: CLAUDE.display_name.to_owned(),
-                    message: "Claude usage request failed.".into(),
-                    retryable: false,
-                },
-                Ok(resp) => {
+                Ok(resp) if (200..300).contains(&resp.status) => {
                     let _ = resp.final_url;
-                    claude_from_usage_json(
-                        &resp.body,
-                        context.clock.now_utc(),
-                        creds.plan,
-                        creds.account,
-                        login_available(discovery),
-                    )
+                    claude_from_usage_json(&resp.body, context.clock.now_utc(), creds.plan, login)
                 }
-                Err(super::adapter::HttpError::RedirectRefused(_)) => {
-                    ProviderResult::ProviderError {
-                        id: ProviderId::Claude,
-                        name: CLAUDE.display_name.to_owned(),
-                        message: "Claude usage redirect refused.".into(),
-                        retryable: false,
-                    }
-                }
-                Err(super::adapter::HttpError::BodyTooLarge) => ProviderResult::ProviderError {
-                    id: ProviderId::Claude,
-                    name: CLAUDE.display_name.to_owned(),
-                    message: "Claude usage response exceeded size limit.".into(),
-                    retryable: false,
-                },
-                Err(super::adapter::HttpError::Network(_)) => ProviderResult::NetworkError {
-                    id: ProviderId::Claude,
-                    name: CLAUDE.display_name.to_owned(),
-                    message: "Network error while contacting Claude.".into(),
-                },
-                Err(super::adapter::HttpError::InvalidResponse(_)) => {
-                    ProviderResult::ProviderError {
-                        id: ProviderId::Claude,
-                        name: CLAUDE.display_name.to_owned(),
-                        message: "Invalid Claude usage response.".into(),
-                        retryable: false,
-                    }
-                }
+                other => http_failure(&CLAUDE, "usage", login, other, true, false),
             }
         })
     }
@@ -608,7 +584,6 @@ impl ProviderAdapter for ClaudeAdapter {
 struct ClaudeCredentials {
     token: String,
     plan: Option<Plan>,
-    account: Option<Account>,
     expires_at_ms: Option<i64>,
 }
 
@@ -627,7 +602,6 @@ fn parse_claude_credentials(bytes: &[u8]) -> Option<ClaudeCredentials> {
     Some(ClaudeCredentials {
         token,
         plan,
-        account: None,
         expires_at_ms,
     })
 }
@@ -785,8 +759,7 @@ fn antigravity_spec(exe: &std::path::Path, args: &[&str]) -> ProcessSpec {
     ProcessSpec::new(exe, args.iter().copied())
         .with_timeout(ANTIGRAVITY.timeout)
         .with_max_output(ANTIGRAVITY.max_output_bytes)
-        .with_env("NO_COLOR", "1")
-        .with_env("TERM", "dumb")
+        .with_quiet_terminal()
 }
 
 fn antigravity_unsupported_version() -> ProviderResult {
@@ -836,22 +809,15 @@ fn antigravity_logged_out(out: &ProcessOutput) -> bool {
 /// logged-out banner on stdout/stderr is the only signal trusted here;
 /// anything else is a fixed provider error that echoes no provider output.
 fn classify_antigravity_failure(out: &ProcessOutput, login_available: bool) -> ProviderResult {
-    if antigravity_logged_out(out) {
-        return unauthenticated(
-            ProviderId::Antigravity,
-            ANTIGRAVITY.display_name,
-            "Antigravity is not authenticated.",
-            login_available,
-            ANTIGRAVITY.installation_url,
-            false,
-        );
-    }
-    ProviderResult::ProviderError {
-        id: ProviderId::Antigravity,
-        name: ANTIGRAVITY.display_name.to_owned(),
-        message: "Antigravity usage command failed.".into(),
-        retryable: false,
-    }
+    classify_cli_failure(
+        out,
+        &ANTIGRAVITY,
+        login_available,
+        true,
+        &["not signed in"],
+        "Antigravity is not authenticated.",
+        "Antigravity usage command failed.",
+    )
 }
 
 #[cfg(test)]
@@ -1184,11 +1150,8 @@ mod tests {
             );
             let result = grok_ctx_collect(&http).await;
             match result {
-                ProviderResult::Ready {
-                    windows, account, ..
-                } => {
+                ProviderResult::Ready { windows, .. } => {
                     assert!(windows.is_empty(), "status {status}: {windows:?}");
-                    assert!(account.is_some(), "status {status}");
                 }
                 other => panic!("status {status}: expected ready, got {other:?}"),
             }
@@ -1196,7 +1159,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn grok_monthly_fallback_keeps_plan_and_account_from_credits() {
+    async fn grok_monthly_fallback_keeps_plan_from_credits() {
         let credits = br#"{"config": {"subscriptionTiers": "SuperGrok",
             "currentPeriod": {"type": "USAGE_PERIOD_TYPE_WEEKLY"}}}"#;
         let monthly =
@@ -1215,26 +1178,17 @@ mod tests {
         );
         let result = grok_ctx_collect(&http).await;
         match result {
-            ProviderResult::Ready {
-                windows,
-                plan,
-                account,
-                ..
-            } => {
+            ProviderResult::Ready { windows, plan, .. } => {
                 assert_eq!(windows.len(), 1);
                 assert_eq!(windows[0].id(), "monthly");
                 assert_eq!(plan.as_ref().map(|p| p.label.as_str()), Some("SuperGrok"));
-                assert!(
-                    account.is_some(),
-                    "account label from auth.json must survive"
-                );
             }
             other => panic!("expected ready, got {other:?}"),
         }
     }
 
     #[tokio::test]
-    async fn grok_no_quota_on_either_shape_keeps_credits_account() {
+    async fn grok_no_quota_on_either_shape_stays_live_ready() {
         let credits =
             include_bytes!("../../tests/fixtures/providers/grok/billing-credits-no-quota.json");
         let monthly =
@@ -1254,13 +1208,9 @@ mod tests {
         let result = grok_ctx_collect(&http).await;
         match result {
             ProviderResult::Ready {
-                windows,
-                account,
-                source,
-                ..
+                windows, source, ..
             } => {
                 assert!(windows.is_empty());
-                assert!(account.is_some());
                 assert_eq!(source, crate::status::schema::DataSource::Live);
             }
             other => panic!("expected ready, got {other:?}"),
@@ -1639,14 +1589,11 @@ mod tests {
             "x-grok-client-mode header missing: {headers:?}"
         );
         match result {
-            ProviderResult::Ready {
-                windows, account, ..
-            } => {
+            ProviderResult::Ready { windows, .. } => {
                 assert_eq!(windows.len(), 1);
                 assert_eq!(windows[0].id(), "weekly");
                 assert_eq!(windows[0].label(), "Weekly (7d)");
                 assert!(windows.iter().all(|w| w.id() != "context"));
-                assert_eq!(account.as_ref().map(|a| a.label.as_str()), Some("Ada"));
             }
             other => panic!("{other:?}"),
         }
