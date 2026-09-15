@@ -62,8 +62,7 @@ Included:
 - Provider login delegation through the official CLI.
 - Provider enablement/order, used/remaining, interval, and notifications.
 - Plugin update check (install command shown for the user to run) and
-  uninstall delegated to the Omarchy plugin manager; settings migration with
-  backup.
+  uninstall delegated to the Omarchy plugin manager.
 
 Removed:
 
