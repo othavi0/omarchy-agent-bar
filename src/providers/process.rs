@@ -51,6 +51,10 @@ impl ProcessSpec {
         self.env.push((key.into(), value.into()));
         self
     }
+
+    pub fn with_quiet_terminal(self) -> Self {
+        self.with_env("NO_COLOR", "1").with_env("TERM", "dumb")
+    }
 }
 
 /// Captured process output after redaction of controls/ANSI.
