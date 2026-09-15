@@ -36,6 +36,7 @@ const LOCKED_DELETION_PATHS: &[&str] = &[
     "src/doctor.rs",
     "src/settings/migration.rs",
     "src/plugin/doctor.rs",
+    "src/plugin/ownership.rs",
     "tests/fixtures/migration",
     "src/providers/amp_cli.rs",
     "src/providers/base.rs",

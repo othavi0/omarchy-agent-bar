@@ -75,8 +75,8 @@ Notifications: enabled
   action; Agent Bar never installs the provider CLI.
 - `PROD-023`: Disabled providers disappear from the bar and provider rail but
   remain available in Settings.
-- `PROD-024`: Migration preserves valid user choices instead of applying fresh
-  defaults.
+- `PROD-024`: **Retired** by the 2026-09-15 amendment. The v9 migration no
+  longer exists.
 
 ## Primary user journeys
 

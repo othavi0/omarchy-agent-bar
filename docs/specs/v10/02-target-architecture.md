@@ -48,8 +48,8 @@ Monitor 1 BarWidget   Monitor 2 BarWidget
   human message.
 - `ARCH-009`: Settings are owned by `settings.json`; `shell.json` owns only
   plugin presence, placement, and Quattro layout.
-- `ARCH-010`: Cache, settings, bundle installation, update, migration, and
-  uninstall use shared locking and atomic-file primitives.
+- `ARCH-010`: Cache, settings, bundle installation, update, and uninstall use
+  shared locking and atomic-file primitives.
 - `ARCH-011`: A single provider catalog owns ID, display name, catalog order,
   executable metadata, icon key, and official URL.
 - `ARCH-012`: All production process execution uses argv arrays; no `sh -c`.
@@ -92,8 +92,7 @@ src/
 ├── settings/
 │   ├── mod.rs
 │   ├── schema.rs
-│   ├── store.rs
-│   └── migration.rs
+│   └── store.rs
 ├── cache/
 │   ├── mod.rs
 │   ├── schema.rs
@@ -105,11 +104,8 @@ src/
 ├── plugin/
 │   ├── mod.rs
 │   ├── paths.rs
-│   ├── ownership.rs
-│   ├── transaction.rs
 │   ├── bundle.rs
 │   ├── omarchy.rs
-│   ├── doctor.rs
 │   └── maintenance.rs
 └── support/
     ├── atomic_file.rs
@@ -130,8 +126,7 @@ Public module responsibilities:
   helper processes.
 - `notifications`: decide threshold transitions and persist deduplication
   state; it does not render UI.
-- `plugin`: own Omarchy paths, ownership evidence, migration, bundle
-  transactions, update, doctor, and uninstall.
+- `plugin`: own Omarchy paths, bundle receipts, update check, and uninstall.
 - `support`: narrow primitives shared by the modules above.
 
 ## Provider adapter interface
@@ -287,9 +282,8 @@ The table is product data, not an example:
   values to diagnostics, cache, fixtures, or errors.
 - `ARCH-026`: `$XDG_STATE_HOME/agent-bar/maintenance.lock` is a stable
   cross-process gate outside quarantined paths. Status and every non-maintenance
-  mutation hold a shared lock; setup, migration, update, uninstall, and doctor
-  clean hold the exclusive lock from final plan recheck through commit or
-  verified rollback. The service stops new work and drains its mutable lanes
+  mutation hold a shared lock; uninstall holds the exclusive lock from final
+  plan recheck through commit or verified rollback. The service stops new work and drains its mutable lanes
   before maintenance handoff.
 
 ## Target QML boundaries

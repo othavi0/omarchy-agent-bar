@@ -1,7 +1,6 @@
 pub mod bundle;
 pub mod maintenance;
 pub mod omarchy;
-pub mod ownership;
 pub mod paths;
 
 pub use bundle::{
@@ -14,8 +13,4 @@ pub use maintenance::{
     UNINSTALL_TTY_PHRASE, UNINSTALL_TTY_PROMPT,
 };
 pub use omarchy::{CommandOutput, CommandRunner, OmarchyError, ProcessCommandRunner};
-pub use ownership::{
-    classify_artifact, hash_bytes, hash_path, FileKind, OwnershipClass, OwnershipEvidence,
-    OwnershipRules,
-};
 pub use paths::{txid_from_bytes, validate_archive_entry_path, PathError, PluginPaths, PLUGIN_ID};

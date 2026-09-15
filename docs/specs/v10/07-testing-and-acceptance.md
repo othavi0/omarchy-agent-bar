@@ -28,9 +28,10 @@
   atomic replacement, permissions, and failure preservation.
 - `TEST-015`: Verify notification escalation, deduplication, persistence,
   recovery, reset, stale suppression, and disabled behavior.
-- `TEST-016`: Verify ownership classification, archive traversal rejection,
-  symlink rejection, migration idempotency, interrupted transaction recovery,
-  update rollback, and uninstall preservation/purge.
+- `TEST-016`: Verify archive traversal rejection, symlink rejection, and
+  uninstall preservation/purge. (Ownership classification, migration
+  idempotency, transaction recovery, and update rollback were retired with
+  the code that implemented them.)
 
 Mandatory known-defect regressions:
 
@@ -43,7 +44,6 @@ Mandatory known-defect regressions:
 - Provider order has one source.
 - Serialization failure never writes blank stdout.
 - Login cannot report success after nonzero provider exit.
-- Setup never resets an existing bar position or inline layout.
 - Update always activates the new QML through safe rescan.
 
 ## QML and plugin tests
@@ -177,8 +177,7 @@ Exact raw-input allowlists are `amp usage`, Codex `session_log`, normalized
 window ID `session`,
 `tests/fixtures/amp/usage-legacy-dollars.txt`,
 `tests/fixtures/amp/usage-free-pct.txt`,
-`tests/fixtures/status-v2/money-field.json`, and
-`tests/fixtures/migration/**`. These fixtures prove rejection/migration; tests
+and `tests/fixtures/status-v2/money-field.json`. These fixtures prove rejection; tests
 must assert their legacy or monetary fields never reach `ProviderResult`,
 schema v2, QML, cache, or logs. The bare words `usage`, `history`, `cost`,
 `credits`, `TUI`, and `Waybar` are not global regexes because negative

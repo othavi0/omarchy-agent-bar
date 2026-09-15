@@ -6,9 +6,9 @@ use std::path::{Component, Path};
 use std::process::Command;
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use thiserror::Error;
 
-use crate::plugin::ownership::hash_bytes;
 use crate::plugin::paths::{validate_archive_entry_path, PLUGIN_ID};
 
 /// Official first-class Rust target for the product bundle.
@@ -792,6 +792,11 @@ fn write_bytes_atomic(path: &Path, bytes: &[u8], mode: u32) -> Result<(), Bundle
         }
     }
     Ok(())
+}
+
+fn hash_bytes(bytes: &[u8]) -> String {
+    let digest = Sha256::digest(bytes);
+    digest.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 #[cfg(test)]
