@@ -1,5 +1,9 @@
 # Settings tabs and rail state
 
+Amended by `2026-09-14-remove-update-execution-design.md`: item 9's
+`Update automatically` toggle was removed; the About tab shows
+`Check for updates` only.
+
 Date: 2026-09-10
 Status: approved
 

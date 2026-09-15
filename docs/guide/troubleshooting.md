@@ -127,10 +127,9 @@ omarchy-restart-shell
 Confirm the settings file is valid and user-owned. Save errors leave the
 previous file intact. Use `RUST_LOG=debug` only with sanitized output.
 
-While a maintenance operation (update or uninstall) holds the exclusive
-maintenance lock, `config apply` waits for the lock after validating; it
-completes once maintenance finishes, and the settings file is untouched
-until then.
+While uninstall holds the exclusive maintenance lock, `config apply` waits
+for the lock after validating; it completes once uninstall finishes, and the
+settings file is untouched until then. `update check` takes no lock.
 
 ## Update available or update failed
 
