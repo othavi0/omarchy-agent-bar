@@ -6,7 +6,7 @@ Status: approved
 ## Context
 
 Schema v2 carries two fields the plugin never reads. `account.label` is
-extracted by the Claude, Grok, and Codex adapters, sanitized, validated,
+extracted by the Amp and Grok adapters, sanitized, validated,
 cached in `status-v2.json`, and serialized on every poll, and no QML file
 renders it. `error.code` duplicates the classification that `state`
 already carries; the UI branches on `state` and reads `error.message` and
