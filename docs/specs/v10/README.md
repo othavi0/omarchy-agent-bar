@@ -62,6 +62,13 @@ the full document; and `BUNDLE-*` entries that named `setup` or `doctor`
 drop them:
 [docs/specs/v10/amendments/2026-09-15-remove-v9-migration-design.md](amendments/2026-09-15-remove-v9-migration-design.md).
 
+The live-Quickshell-probe design, approved 2026-09-15, amends `MIG-021` and
+`BUNDLE-021`: `current.quickshellVersion` in `update check` is now probed
+from the installed `qs --version` instead of assumed to equal the build's
+own minimum, so the compatibility gate can actually fire against an
+outdated Quickshell:
+[docs/specs/v10/amendments/2026-09-15-live-quickshell-probe-design.md](amendments/2026-09-15-live-quickshell-probe-design.md).
+
 ## Product statement
 
 Agent Bar v10 is an Omarchy Quattro Quickshell plugin. Its only graphical
@@ -97,7 +104,8 @@ application, an AUR product, or a cargo-binstall product.
    [2026-09-10 Antigravity third-party windows](amendments/2026-09-10-antigravity-third-party-windows-design.md),
    [2026-09-10 Settings tabs and rail state](amendments/2026-09-10-settings-tabs-and-rail-state-design.md),
    [2026-09-14 update execution removed](amendments/2026-09-14-remove-update-execution-design.md),
-   [2026-09-15 v9 migration removed](amendments/2026-09-15-remove-v9-migration-design.md).
+   [2026-09-15 v9 migration removed](amendments/2026-09-15-remove-v9-migration-design.md),
+   [2026-09-15 live Quickshell probe](amendments/2026-09-15-live-quickshell-probe-design.md).
 
 When two statements conflict, the earlier contract in this reading order wins
 unless a later file explicitly identifies the requirement ID it refines.
