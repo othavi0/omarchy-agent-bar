@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use super::command::{
-    CacheMode, Command, ConfigCommand, ConfigInput, DoctorCommand, HelpTopic, NotificationMode,
-    ProviderId, StatusFormat, StatusOptions, UpdateCommand,
+    CacheMode, Command, ConfigCommand, ConfigInput, HelpTopic, NotificationMode, ProviderId,
+    StatusFormat, StatusOptions, UpdateCommand,
 };
 use super::exit::CliFailure;
 
@@ -51,10 +51,8 @@ fn parse_tokens(tokens: &[String]) -> Result<Command, CliFailure> {
         "status" => parse_status(&tokens[1..]),
         "login" => parse_login(&tokens[1..]),
         "config" => parse_config(&tokens[1..]),
-        "setup" => parse_setup(&tokens[1..]),
         "update" => parse_update(&tokens[1..]),
         "uninstall" => parse_uninstall(&tokens[1..]),
-        "doctor" => parse_doctor(&tokens[1..]),
         "help" => parse_help(&tokens[1..]),
         "version" => {
             if tokens.len() != 1 {
@@ -207,15 +205,6 @@ fn parse_config(tokens: &[String]) -> Result<Command, CliFailure> {
     }
 }
 
-fn parse_setup(tokens: &[String]) -> Result<Command, CliFailure> {
-    match tokens {
-        [] => Ok(Command::Setup),
-        [other, ..] => Err(CliFailure::grammar(format!(
-            "unknown argument '{other}' for setup"
-        ))),
-    }
-}
-
 fn parse_update(tokens: &[String]) -> Result<Command, CliFailure> {
     match tokens {
         [] => Ok(Command::Update(UpdateCommand::Interactive)),
@@ -232,17 +221,6 @@ fn parse_uninstall(tokens: &[String]) -> Result<Command, CliFailure> {
         [word] if word == "purge" => Ok(Command::Uninstall { purge: true }),
         [other, ..] => Err(CliFailure::grammar(format!(
             "unknown argument '{other}' for uninstall"
-        ))),
-    }
-}
-
-fn parse_doctor(tokens: &[String]) -> Result<Command, CliFailure> {
-    match tokens {
-        [word] if word == "scan" => Ok(Command::Doctor(DoctorCommand::Scan)),
-        [word] if word == "clean" => Ok(Command::Doctor(DoctorCommand::Clean)),
-        [] => Err(CliFailure::grammar("doctor requires scan or clean")),
-        [other, ..] => Err(CliFailure::grammar(format!(
-            "unknown argument '{other}' for doctor"
         ))),
     }
 }

@@ -1,5 +1,4 @@
 pub mod bundle;
-pub mod doctor;
 pub mod maintenance;
 pub mod omarchy;
 pub mod ownership;
@@ -9,7 +8,6 @@ pub use bundle::{
     BundleBuilder, BundleError, BundleFileEntry, BundleReceipt, BundleValidator,
     MINIMUM_QUICKSHELL_VERSION, OFFICIAL_TARGET, OMARCHY_CONTRACT,
 };
-pub use doctor::{default_ownership_rules, doctor_clean, doctor_scan, DoctorError, DoctorReport};
 pub use maintenance::{
     require_absolute_executable, resolve_absolute_executable, MaintenanceError, ReqwestReleaseHttp,
     UninstallConfirmation, UpdateCheck, UpdateCheckDocument, UpdateCheckProbe,

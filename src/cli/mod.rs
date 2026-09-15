@@ -3,8 +3,8 @@ mod exit;
 mod grammar;
 
 pub use command::{
-    CacheMode, Command, ConfigCommand, ConfigInput, DoctorCommand, HelpTopic, NotificationMode,
-    ProviderId, StatusFormat, StatusOptions, UpdateCommand,
+    CacheMode, Command, ConfigCommand, ConfigInput, HelpTopic, NotificationMode, ProviderId,
+    StatusFormat, StatusOptions, UpdateCommand,
 };
 pub use exit::{
     CliFailure, GENERIC_FAILURE, GRAMMAR, INTERNAL, PLUGIN, SERIALIZATION, SUCCESS, VALIDATION,
@@ -44,10 +44,8 @@ pub fn help_text(topic: Option<HelpTopic>) -> String {
             out.push_str("  agent-bar login <provider>\n");
             out.push_str("  agent-bar config show\n");
             out.push_str("  agent-bar config apply stdin|file <path>|json <value>\n");
-            out.push_str("  agent-bar setup\n");
             out.push_str("  agent-bar update [check]\n");
             out.push_str("  agent-bar uninstall [purge]\n");
-            out.push_str("  agent-bar doctor scan|clean\n");
             out.push_str("  agent-bar help [<command>]\n");
             out.push_str("  agent-bar version\n");
             out.push('\n');
@@ -73,11 +71,6 @@ pub fn help_text(topic: Option<HelpTopic>) -> String {
         Some(HelpTopic::Config) => "config show — print canonical settings JSON (read-only)\n\
              config apply stdin|file <path>|json <value> — replace settings\n"
             .to_owned(),
-        Some(HelpTopic::Setup) => {
-            "setup — migrate settings to the current schema; takes no arguments\n\
-             Install and update are 'omarchy plugin add|update othavi0.agent-bar'.\n"
-                .to_owned()
-        }
         Some(HelpTopic::Update) => format!(
             "update — print usage; no interactive flow\n\
              update check — report whether a newer release exists (read-only)\n\
@@ -89,9 +82,6 @@ pub fn help_text(topic: Option<HelpTopic>) -> String {
              Both forms require confirmation.\n"
                 .to_owned()
         }
-        Some(HelpTopic::Doctor) => "doctor scan — read-only ownership and legacy scan\n\
-             doctor clean — remove confirmed owned legacy artifacts after backup\n"
-            .to_owned(),
         Some(HelpTopic::Help) => "help [<command>] — show general or topic help\n".to_owned(),
         Some(HelpTopic::Version) => {
             "version — print the helper semantic version and exit\n".to_owned()
@@ -109,127 +99,12 @@ pub fn dispatch(command: Command) -> Result<(), CliFailure> {
             print!("{}", help_text(topic));
             Ok(())
         }
-        Command::Setup => dispatch_setup(),
         Command::Update(UpdateCommand::Interactive) => dispatch_update_interactive(),
         Command::Update(UpdateCommand::Check) => dispatch_update_check(),
         Command::Config(config) => dispatch_config(config),
         Command::Login(provider) => dispatch_login(provider),
         Command::Status(opts) => dispatch_status(opts),
         Command::Uninstall { purge } => dispatch_uninstall(purge),
-        Command::Doctor(cmd) => dispatch_doctor(cmd),
-    }
-}
-
-fn dispatch_setup() -> Result<(), CliFailure> {
-    use crate::plugin::PluginPaths;
-    use crate::settings::{default_settings_path, migrate_live_paths};
-    use crate::support::maintenance_gate::MaintenanceGate;
-    use crate::support::{Clock, SystemClock};
-
-    let home = std::env::var_os("HOME")
-        .ok_or_else(|| CliFailure::plugin("HOME is required for setup".to_string()))?;
-    let home = PathBuf::from(home);
-    let xdg_state = std::env::var_os("XDG_STATE_HOME").map(PathBuf::from);
-    let paths = PluginPaths::production(home.clone(), xdg_state);
-
-    let clock = SystemClock;
-    let stamp = format!("{}", Clock::now_utc(&clock));
-    let backup_stamp = stamp.replace(':', "-");
-
-    let gate = MaintenanceGate::open(&paths.maintenance_lock)
-        .map_err(|e| CliFailure::plugin(format!("open maintenance lock: {e}")))?;
-    let _exclusive = gate
-        .lock_exclusive()
-        .map_err(|e| CliFailure::plugin(format!("exclusive maintenance lock: {e}")))?;
-    let settings_path = default_settings_path();
-    let shell_path = home.join(".config/omarchy/shell.json");
-    let migrate_backup = paths.backup_root(&format!("setup-migrate-{backup_stamp}"));
-    let report = migrate_live_paths(&settings_path, &shell_path, &migrate_backup)
-        .map_err(|e| CliFailure::plugin(e.to_string()))?;
-    if report.already_migrated {
-        eprintln!("settings already at v10; migration skipped");
-    } else if report.settings_written {
-        eprintln!(
-            "migrated settings to v10 (shell_written={})",
-            report.shell_written
-        );
-        if !report.unknown_keys.is_empty() {
-            eprintln!(
-                "legacy keys retained in backup only: {}",
-                report.unknown_keys.join(", ")
-            );
-        }
-        if let Some(root) = report.backup_root {
-            eprintln!("migration backup: {}", root.display());
-        }
-    }
-    Ok(())
-}
-
-fn dispatch_doctor(cmd: DoctorCommand) -> Result<(), CliFailure> {
-    use crate::plugin::{default_ownership_rules, doctor_clean, doctor_scan, PluginPaths};
-    use crate::support::{Clock, SystemClock};
-
-    let home = std::env::var_os("HOME")
-        .ok_or_else(|| CliFailure::plugin("HOME is required for doctor".to_string()))?;
-    let home = PathBuf::from(home);
-    let rules = default_ownership_rules(&home);
-
-    match cmd {
-        DoctorCommand::Scan => {
-            let report = doctor_scan(&home, &[], &rules);
-            print_doctor_report("scan", &report);
-            Ok(())
-        }
-        DoctorCommand::Clean => {
-            let xdg_state = std::env::var_os("XDG_STATE_HOME").map(PathBuf::from);
-            let paths = PluginPaths::production(home.clone(), xdg_state);
-            let clock = SystemClock;
-            let stamp = format!("{}", Clock::now_utc(&clock)).replace(':', "-");
-            let backup = paths.backup_root(&format!("doctor-clean-{stamp}"));
-            let report = doctor_clean(&home, &[], &rules, &backup)
-                .map_err(|e| CliFailure::plugin(e.to_string()))?;
-            print_doctor_report("clean", &report);
-            Ok(())
-        }
-    }
-}
-
-fn print_doctor_report(mode: &str, report: &crate::plugin::DoctorReport) {
-    println!("Agent Bar doctor {mode}");
-    println!(
-        "mode: {}",
-        if report.read_only {
-            "read-only"
-        } else {
-            "clean"
-        }
-    );
-    println!("findings: {}", report.findings.len());
-    for ev in &report.findings {
-        println!(
-            "  [{}] {} — {}",
-            ev.class.as_str(),
-            ev.path.display(),
-            ev.reason
-        );
-    }
-    println!("removable (owned/legacy): {}", report.removable.len());
-    for path in &report.removable {
-        println!("  {}", path.display());
-    }
-    println!("retained (modified/ambiguous): {}", report.retained.len());
-    for path in &report.retained {
-        println!("  {}", path.display());
-    }
-    if !report.read_only {
-        println!("removed: {}", report.removed.len());
-        for path in &report.removed {
-            println!("  {}", path.display());
-        }
-        if let Some(backup) = &report.backup_root {
-            println!("backup: {}", backup.display());
-        }
     }
 }
 
