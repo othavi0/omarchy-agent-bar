@@ -54,7 +54,7 @@ percentage window, and compact rows with a progress track. Widgets do not own
 polling, provider state, settings persistence, or cache.
 
 `Service.qml` stays declarative by delegating its logic to four JS modules
-loaded beside it: `CoreService.js` (polling, generations, forced-refresh
+loaded beside it: `CoreService.js` (polling, forced-refresh
 coalescing), `CoreSettings.js` (draft and persisted settings flow),
 `CoreMaintenance.js` (update and uninstall flow), and `CoreView.js`
 (chip and popup presentation data, tooltips, severity cues).
@@ -111,9 +111,12 @@ refreshes cannot become accidental all-provider refreshes or disappear.
 A dedicated two-second private-helper `version` probe establishes health before
 provider network collection. Independent QML process lanes prevent status,
 settings, version, and maintenance requests from cancelling each other.
-Each lane has its own deadline. Timeouts finish through the lane's typed state
-transition instead of leaving a busy flag set forever. Timeouts in two distinct
-lanes before any accepted helper callback set `runtimeHealth` to `stalled`.
+Each lane is one `components/HelperLane.qml` object owning one run of its
+`Process`: it starts nothing while that process is alive, settles exactly once,
+and drops the exit of a run it already abandoned. Timeouts finish through the
+lane's typed state transition instead of leaving a busy flag set forever.
+Timeouts in two distinct lanes before any accepted helper callback set
+`runtimeHealth` to `stalled`.
 The next accepted helper callback clears the signal. While stalled, the popup
 offers `omarchy-restart-shell` through an exact argv array. Settings offers the
 same recovery action after a failed load.

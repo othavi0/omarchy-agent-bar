@@ -65,17 +65,6 @@ function settingsFailLoad(state, generation) {
   }
 }
 
-function settingsOpen(state, snapshot, generation) {
-  return {
-    phase: "clean",
-    generation: generation,
-    snapshot: snapshot,
-    draft: JSON.parse(JSON.stringify(snapshot)),
-    busy: false,
-    pendingPayload: null
-  }
-}
-
 function cloneState(state) {
   return {
     phase: state.phase,
