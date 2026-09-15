@@ -408,7 +408,6 @@ TestCase {
     xhr.open("GET", serviceUrl, false)
     xhr.send()
     var src = String(xhr.responseText)
-    verify(src.indexOf("id: settingsWriteTimeout") >= 0)
     verify(src.indexOf("id: maintenanceHandoffTimeout") >= 0)
     verify(src.indexOf("Component.onDestruction") >= 0)
   }

@@ -157,63 +157,29 @@ TestCase {
     compare(s.settingsWriteBusy, false)
   }
 
-  function test_late_timed_out_write_cannot_adopt_old_canonical() {
+  function test_a_write_corpse_cannot_undo_the_next_save() {
     var s = createService()
     finishLane(s, "settingsBootstrap", 1)
     s.openSettings("monitor-a")
     finishLane(s, "settingsRead", 0, JSON.stringify(validSettings()))
-    s.setDisplayMetric("used")
-    verify(s.saveSettings())
-    var generationA = s.activeSettingsWriteGeneration
-    var canonicalA = JSON.parse(JSON.stringify(s.settingsDraft))
-    tryVerify(function () { return s.settingsState.phase === "dirty" }, 500)
-
-    s.setDisplayMetric("remaining")
-    verify(s.saveSettings())
-    var generationB = s.activeSettingsWriteGeneration
-    verify(generationB !== generationA)
-    compare(s.settingsState.phase, "saving")
-    compare(s.settingsDraft.display.metric, "remaining")
-    verify(s.pendingSettingsPayload.indexOf('"metric":"remaining"') >= 0)
-
-    s.settingsWriteExited(0, generationA, JSON.stringify(canonicalA))
-
-    compare(s.settingsState.phase, "saving")
-    compare(s.settingsDraft.display.metric, "remaining")
-    compare(s.settingsState.snapshot.display.metric, "remaining")
     compare(s.appliedSettings.display.metric, "remaining")
-    verify(s.pendingSettingsPayload.indexOf('"metric":"remaining"') >= 0)
-    compare(Object.keys(s.timedOutLanes).length, 0)
-  }
-
-  function test_native_write_exit_keeps_new_save_intact() {
-    var s = createService()
-    finishLane(s, "settingsBootstrap", 1)
-    s.openSettings("monitor-a")
-    finishLane(s, "settingsRead", 0, JSON.stringify(validSettings()))
     s.setDisplayMetric("used")
     verify(s.saveSettings())
-    var generationA = s.activeSettingsWriteGeneration
+    var canonicalA = JSON.parse(JSON.stringify(s.settingsDraft))
+    compare(canonicalA.display.metric, "used")
     tryVerify(function () { return s.settingsState.phase === "dirty" }, 500)
+    compare(s.settingsWriteBusy, false)
+    verify(!s.saveSettings(), "the killed run still owns the lane")
 
-    s.setDisplayMetric("remaining")
-    verify(s.saveSettings())
-    var generationB = s.activeSettingsWriteGeneration
-    verify(generationB !== generationA)
-    s.settingsWriteStartedGeneration = generationA
-    var completedBefore = s.completedCallbackCount
+    finishLane(s, "settingsWrite", 0, JSON.stringify(canonicalA))
 
-    s.settingsWriteExited(0)
+    compare(s.settingsState.phase, "dirty")
+    compare(s.appliedSettings.display.metric, "remaining")
+    compare(s.settingsSaveCount, 1)
 
-    compare(s.activeSettingsWriteGeneration, generationB)
-    compare(s.settingsWriteBusy, true)
+    verify(s.saveSettings(), "the reaped lane accepts the next save")
     compare(s.settingsState.phase, "saving")
-    compare(s.settingsDraft.display.metric, "remaining")
-    compare(s.settingsState.snapshot.display.metric, "remaining")
-    verify(s.pendingSettingsPayload.indexOf('"metric":"remaining"') >= 0)
-    compare(s.pendingSettingsPayloadGeneration, generationB)
-    compare(s.completedCallbackCount, completedBefore)
-    verify(!s.timedOutLanes.settingsWrite)
+    verify(s.pendingSettingsPayload.indexOf('"metric":"used"') >= 0)
   }
 
   function test_update_check_timeout_enters_error() {

@@ -56,6 +56,7 @@ Item {
     status: statusLane,
     settingsRead: settingsReadLane,
     settingsBootstrap: settingsBootstrapLane,
+    settingsWrite: settingsWriteLane,
     maintenanceCheck: maintenanceCheckLane
   })
   readonly property int stalledLaneCount: Core.stalledLanes(timedOutLanes)
@@ -63,6 +64,7 @@ Item {
       + (statusLane.stalled ? 1 : 0)
       + (settingsReadLane.stalled ? 1 : 0)
       + (settingsBootstrapLane.stalled ? 1 : 0)
+      + (settingsWriteLane.stalled ? 1 : 0)
       + (maintenanceCheckLane.stalled ? 1 : 0)
   readonly property string runtimeHealth: Core.runtimeHealth(stalledLaneCount)
 
@@ -75,18 +77,15 @@ Item {
   readonly property bool statusBusy: statusLane.busy
   readonly property bool settingsReadBusy: settingsReadLane.busy
   readonly property bool settingsBootstrapBusy: settingsBootstrapLane.busy
-  property bool settingsWriteBusy: false
+  readonly property bool settingsWriteBusy: settingsWriteLane.busy
   readonly property bool maintenanceCheckBusy: maintenanceCheckLane.busy
   property bool maintenanceHandoffBusy: false
 
   property int settingsGeneration: 0
   property int maintenanceHandoffGeneration: 0
-  property int activeSettingsWriteGeneration: 0
   property int activeMaintenanceHandoffGeneration: 0
-  property int settingsWriteStartedGeneration: 0
   property int maintenanceHandoffStartedGeneration: 0
   property string pendingSettingsPayload: ""
-  property int pendingSettingsPayloadGeneration: 0
 
   property int refreshRequestCount: 0
   property string lastRefreshProviderId: ""
@@ -293,7 +292,7 @@ Item {
       return false
     if (!canSaveSettings())
       return false
-    if (!Core.canStartLane(settingsWriteBusy))
+    if (!settingsWriteLane.ready)
       return false
     var payloadObj = JSON.parse(JSON.stringify(settingsDraft))
     var validation = Settings.validateSettingsDraft(payloadObj)
@@ -302,10 +301,8 @@ Item {
     settingsGeneration++
     var gen = settingsGeneration
     pendingSettingsPayload = JSON.stringify(payloadObj)
-    pendingSettingsPayloadGeneration = gen
     settingsState = Settings.settingsBeginSave(settingsState, gen, payloadObj)
     settingsDraft = settingsState.draft
-    activeSettingsWriteGeneration = gen
     settingsSaveCount++
     kickSettingsWrite()
     return true
@@ -608,35 +605,33 @@ Item {
   }
 
   function kickSettingsWrite() {
-    if (!Core.canStartLane(settingsWriteBusy))
+    if (!settingsWriteLane.ready)
       return
     if (maintenanceState.blocked)
       return
     var helper = resolvedHelperPath()
     if (!helper.length)
       return
-    settingsWriteBusy = true
-    settingsWriteTimeout.restart()
-    settingsWriteProcess.stdinEnabled = true
-    settingsWriteProcess.command = Settings.settingsArgvApplyStdin(helper)
-    settingsWriteStartedGeneration = activeSettingsWriteGeneration
-    if (testMode) {
-      return
-    }
-    settingsWriteProcess.running = true
+    settingsWriteLane.start(Settings.settingsArgvApplyStdin(helper),
+                            pendingSettingsPayload,
+                            settingsState.generation)
   }
 
-  function applySettingsWriteResult(generation, ok, canonical, fromTimeout) {
-    if (!Core.shouldApplyGeneration(activeSettingsWriteGeneration, generation))
-      return
-    settingsWriteTimeout.stop()
-    settingsWriteBusy = false
-    recordCompletedCallback(!!fromTimeout, "settingsWrite")
-    if (pendingSettingsPayloadGeneration === generation) {
-      pendingSettingsPayload = ""
-      pendingSettingsPayloadGeneration = 0
+  function applySettingsWriteResult(outcome) {
+    noteLaneSettled(outcome)
+    pendingSettingsPayload = ""
+    var ok = outcome.exitCode === 0
+    var canonical = null
+    if (ok) {
+      try {
+        canonical = JSON.parse(String(outcome.stdout).trim())
+        if (!Settings.validateSettingsDraft(canonical).ok)
+          ok = false
+      } catch (e) {
+        ok = false
+      }
     }
-    settingsState = Settings.settingsFinishSave(settingsState, generation, ok, canonical)
+    settingsState = Settings.settingsFinishSave(settingsState, outcome.context, ok, canonical)
     settingsDraft = settingsState ? settingsState.draft : null
     if (ok && canonical)
       appliedSettings = canonical
@@ -707,25 +702,6 @@ Item {
     }
   }
 
-  function settingsWriteExited(exitCode, generation, stdout) {
-    var gen = generation === undefined ? settingsWriteStartedGeneration : generation
-    if (!shouldApplyProcessExit("settingsWrite", gen, activeSettingsWriteGeneration))
-      return
-    var ok = exitCode === 0
-    var canonical = null
-    if (ok) {
-      try {
-        var output = stdout === undefined ? settingsWriteOut.text || "" : stdout
-        canonical = JSON.parse(String(output).trim())
-        if (!Settings.validateSettingsDraft(canonical).ok)
-          ok = false
-      } catch (e) {
-        ok = false
-      }
-    }
-    applySettingsWriteResult(gen, ok, canonical)
-  }
-
   function maintenanceHandoffExited(exitCode, generation) {
     var gen = generation === undefined ? maintenanceHandoffStartedGeneration : generation
     if (!shouldApplyProcessExit("maintenanceHandoff", gen, activeMaintenanceHandoffGeneration))
@@ -774,6 +750,15 @@ Item {
   }
 
   HelperLane {
+    id: settingsWriteLane
+    process: settingsWriteProcess
+    stdoutSource: settingsWriteOut
+    stderrSource: settingsWriteErr
+    timeoutMs: root.settingsTimeoutMs
+    onSettled: function (outcome) { root.applySettingsWriteResult(outcome) }
+  }
+
+  HelperLane {
     id: maintenanceCheckLane
     process: maintenanceCheckProcess
     stdoutSource: maintenanceCheckOut
@@ -808,19 +793,8 @@ Item {
 
   Process {
     id: settingsWriteProcess
-    stdinEnabled: true
     stdout: StdioCollector { id: settingsWriteOut; waitForEnd: true }
     stderr: StdioCollector { id: settingsWriteErr; waitForEnd: true }
-    onStarted: {
-      // config apply stdin reads until EOF — write() alone does not deliver it;
-      // stdinEnabled=false closes the write channel (same as maintenance handoff).
-      if (root.pendingSettingsPayloadGeneration === root.settingsWriteStartedGeneration
-          && root.pendingSettingsPayload && root.pendingSettingsPayload.length) {
-        write(root.pendingSettingsPayload + "\n")
-        settingsWriteProcess.stdinEnabled = false
-      }
-    }
-    onExited: function (exitCode) { root.settingsWriteExited(exitCode) }
   }
 
   Process {
@@ -843,20 +817,6 @@ Item {
       }
     }
     onExited: function (exitCode) { root.maintenanceHandoffExited(exitCode) }
-  }
-
-  Timer {
-    id: settingsWriteTimeout
-    interval: root.settingsTimeoutMs
-    repeat: false
-    onTriggered: {
-      if (!root.settingsWriteBusy)
-        return
-      if (settingsWriteProcess.running)
-        settingsWriteProcess.running = false
-      root.recordLaneTimeout("settingsWrite", root.activeSettingsWriteGeneration)
-      root.applySettingsWriteResult(root.activeSettingsWriteGeneration, false, null, true)
-    }
   }
 
   Timer {
@@ -910,12 +870,9 @@ Item {
   }
 
   Component.onDestruction: {
-    settingsWriteTimeout.stop()
     maintenanceHandoffTimeout.stop()
     collectionDelay.stop()
     pollTimer.stop()
-    if (settingsWriteProcess.running)
-      settingsWriteProcess.running = false
     if (maintenanceHandoffProcess.running)
       maintenanceHandoffProcess.running = false
   }
