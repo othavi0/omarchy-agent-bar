@@ -8,7 +8,6 @@ use super::adapter::{
 };
 use super::catalog::{AMP, ANTIGRAVITY, CLAUDE, CODEX, GROK};
 use super::codex_app_server::{fetch_rate_limits_via_appserver, AppServerOutcome};
-use super::codex_session_log::find_latest_rate_limits;
 use super::process::{ProcessOutput, ProcessSpec};
 use super::v2_map::{
     amp_from_usage_text, antigravity_from_usage_json, claude_from_usage_json,
@@ -426,51 +425,43 @@ impl ProviderAdapter for CodexAdapter {
                 };
             }
 
-            if let Some(exe) = collection_exe(discovery) {
-                let version = crate::app_identity::VERSION;
-                let timeout = CODEX.timeout;
-                let mut outcome = fetch_rate_limits_via_appserver(exe, version, timeout).await;
-                if matches!(outcome, AppServerOutcome::TimedOut) {
-                    tokio::time::sleep(std::time::Duration::from_millis(250)).await;
-                    outcome = fetch_rate_limits_via_appserver(exe, version, timeout).await;
-                }
-                match outcome {
-                    AppServerOutcome::Ok(bytes) => {
-                        return codex_from_rate_limits_json(&bytes, context.clock.now_utc());
-                    }
-                    AppServerOutcome::Unauthenticated => {
-                        return unauthenticated(
-                            ProviderId::Codex,
-                            CODEX.display_name,
-                            "Codex is not authenticated.",
-                            login_available(discovery),
-                            CODEX.installation_url,
-                            false,
-                        );
-                    }
-                    AppServerOutcome::TimedOut | AppServerOutcome::Failed => {}
-                }
-            }
-
-            if let Some((bytes, log_timestamp)) =
-                find_latest_rate_limits(&home.join(".codex/sessions"))
-            {
-                let now = log_timestamp.unwrap_or_else(|| context.clock.now_utc());
-                return codex_from_rate_limits_json(&bytes, now);
-            }
-
-            if collection_exe(discovery).is_none() {
+            let Some(exe) = collection_exe(discovery) else {
                 return missing_collection(
                     ProviderId::Codex,
                     CODEX.display_name,
                     CODEX.installation_url,
                 );
-            }
-            ProviderResult::ProviderError {
-                id: ProviderId::Codex,
-                name: CODEX.display_name.to_owned(),
-                message: "Codex rate limits were not available.".into(),
-                retryable: true,
+            };
+
+            let version = crate::app_identity::VERSION;
+            let timeout = CODEX.timeout;
+            let outcome = super::retry::retry_once_if_transient(
+                &CODEX,
+                |outcome: &AppServerOutcome| matches!(outcome, AppServerOutcome::TimedOut),
+                || fetch_rate_limits_via_appserver(exe, version, timeout),
+            )
+            .await;
+
+            match outcome {
+                AppServerOutcome::Ok(bytes) => {
+                    codex_from_rate_limits_json(&bytes, context.clock.now_utc())
+                }
+                AppServerOutcome::Unauthenticated => unauthenticated(
+                    ProviderId::Codex,
+                    CODEX.display_name,
+                    "Codex is not authenticated.",
+                    login_available(discovery),
+                    CODEX.installation_url,
+                    false,
+                ),
+                AppServerOutcome::TimedOut | AppServerOutcome::Failed => {
+                    ProviderResult::ProviderError {
+                        id: ProviderId::Codex,
+                        name: CODEX.display_name.to_owned(),
+                        message: "Codex rate limits were not available.".into(),
+                        retryable: true,
+                    }
+                }
             }
         })
     }
@@ -2323,52 +2314,6 @@ mod tests {
         assert!(matches!(result, ProviderResult::NetworkError { .. }));
     }
 
-    #[tokio::test]
-    async fn codex_session_log_last_success_at_uses_log_timestamp_not_clock() {
-        let process = empty_process();
-        let http = ScriptedHttpClient::default();
-        let fs = MapFileSystem::default();
-
-        let home_dir = tempfile::tempdir().expect("tempdir");
-        let home = home_dir.path().to_path_buf();
-        let sessions = home.join(".codex/sessions/2026/07/28");
-        std::fs::create_dir_all(&sessions).expect("mkdir sessions");
-        let jsonl = concat!(
-            r#"{"timestamp":"2026-07-28T10:00:00Z","type":"event","payload":{"type":"token_count","rate_limits":{"primary":{"used_percent":12.5,"window_minutes":10080}}}}"#,
-            "\n",
-        );
-        std::fs::write(sessions.join("rollout.jsonl"), jsonl).expect("write jsonl");
-
-        let env = ExecutionEnvironment {
-            home,
-            path_dirs: vec![],
-            grok_home: None,
-        };
-        let clock = FixedClock(datetime!(2026-08-06 12:00:00 UTC));
-        let ctx = CollectionContext {
-            env: &env,
-            clock: &clock,
-            fs: &fs,
-            process: &process,
-            http: &http,
-            plugin_root: None,
-        };
-        let discovery = discovery_with_exe(Path::new("/nonexistent/codex"));
-        let result = CODEX_ADAPTER.collect(&ctx, &discovery).await;
-        assert_no_money(&result);
-        match result {
-            ProviderResult::Ready {
-                windows,
-                last_success_at,
-                ..
-            } => {
-                assert_eq!(windows[0].id(), "weekly");
-                assert_eq!(last_success_at, datetime!(2026-07-28 10:00:00 UTC));
-            }
-            other => panic!("{other:?}"),
-        }
-    }
-
     fn write_fake_codex_unauthenticated(dir: &Path) -> std::path::PathBuf {
         use std::os::unix::fs::PermissionsExt;
         let exe = dir.join("codex");
@@ -2389,19 +2334,10 @@ done
     }
 
     #[tokio::test]
-    async fn codex_unauthenticated_appserver_ignores_session_log() {
+    async fn codex_unauthenticated_appserver_reports_unauthenticated() {
         let dir = tempfile::tempdir().expect("tempdir");
         let home = dir.path().join("home");
-        let sessions = home.join(".codex/sessions/2026/07/28");
-        std::fs::create_dir_all(&sessions).expect("mkdir");
-        std::fs::write(
-            sessions.join("rollout.jsonl"),
-            concat!(
-                r#"{"timestamp":"2026-07-28T10:00:00Z","type":"event","payload":{"type":"token_count","rate_limits":{"primary":{"used_percent":12.5,"window_minutes":10080}}}}"#,
-                "\n"
-            ),
-        )
-        .expect("write jsonl");
+        std::fs::create_dir_all(&home).expect("mkdir home");
         let exe = write_fake_codex_unauthenticated(dir.path());
 
         let env = ExecutionEnvironment {
@@ -2439,6 +2375,65 @@ done
                 assert!(!retryable);
             }
             other => panic!("expected Unauthenticated, got {other:?}"),
+        }
+    }
+
+    fn write_fake_codex_without_app_server(dir: &Path) -> std::path::PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let exe = dir.join("codex");
+        // A pre-app-server Codex build: it does not recognize the
+        // `app-server` subcommand, prints usage, and exits non-zero without
+        // ever speaking the JSON-RPC protocol on stdout.
+        let script = r#"#!/usr/bin/env bash
+echo "error: unrecognized subcommand 'app-server'" >&2
+echo "Usage: codex [OPTIONS] [COMMAND]"
+exit 2
+"#;
+        std::fs::write(&exe, script).expect("write fake codex");
+        std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+        exe
+    }
+
+    #[tokio::test]
+    async fn codex_cli_without_app_server_is_typed_provider_error() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let home = dir.path().join("home");
+        std::fs::create_dir_all(&home).expect("mkdir home");
+        let exe = write_fake_codex_without_app_server(dir.path());
+
+        let env = ExecutionEnvironment {
+            home,
+            path_dirs: vec![],
+            grok_home: None,
+        };
+        let clock = FixedClock(datetime!(2026-08-25 12:00:00 UTC));
+        let fs = MapFileSystem::default();
+        let process = empty_process();
+        let http = ScriptedHttpClient::default();
+        let ctx = CollectionContext {
+            env: &env,
+            clock: &clock,
+            fs: &fs,
+            process: &process,
+            http: &http,
+            plugin_root: None,
+        };
+        let discovery = discovery_with_exe(&exe);
+        let result = CODEX_ADAPTER.collect(&ctx, &discovery).await;
+        match result {
+            ProviderResult::ProviderError {
+                id,
+                message,
+                retryable,
+                ..
+            } => {
+                assert_eq!(id, ProviderId::Codex);
+                assert_eq!(message, "Codex rate limits were not available.");
+                assert!(retryable);
+            }
+            other => panic!(
+                "an old Codex CLI without app-server must be a typed provider error, not a process failure: got {other:?}"
+            ),
         }
     }
 
