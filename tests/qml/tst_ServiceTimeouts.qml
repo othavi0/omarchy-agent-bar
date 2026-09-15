@@ -149,8 +149,7 @@ TestCase {
     var s = createService()
     s.applySettingsBootstrapResult(s.activeSettingsBootstrapGeneration, "", 1)
     s.openSettings("monitor-a")
-    var generation = s.activeSettingsReadGeneration
-    s.applySettingsReadResult(generation, JSON.stringify(validSettings()), 0)
+    finishLane(s, "settingsRead", 0, JSON.stringify(validSettings()))
     s.setDisplayMetric("used")
     verify(s.saveSettings())
     compare(s.settingsState.phase, "saving")
@@ -162,11 +161,7 @@ TestCase {
     var s = createService()
     s.applySettingsBootstrapResult(s.activeSettingsBootstrapGeneration, "", 1)
     s.openSettings("monitor-a")
-    s.applySettingsReadResult(
-      s.activeSettingsReadGeneration,
-      JSON.stringify(validSettings()),
-      0
-    )
+    finishLane(s, "settingsRead", 0, JSON.stringify(validSettings()))
     s.setDisplayMetric("used")
     verify(s.saveSettings())
     var generationA = s.activeSettingsWriteGeneration
@@ -195,11 +190,7 @@ TestCase {
     var s = createService()
     s.applySettingsBootstrapResult(s.activeSettingsBootstrapGeneration, "", 1)
     s.openSettings("monitor-a")
-    s.applySettingsReadResult(
-      s.activeSettingsReadGeneration,
-      JSON.stringify(validSettings()),
-      0
-    )
+    finishLane(s, "settingsRead", 0, JSON.stringify(validSettings()))
     s.setDisplayMetric("used")
     verify(s.saveSettings())
     var generationA = s.activeSettingsWriteGeneration
@@ -327,23 +318,23 @@ TestCase {
   function test_reap_clears_only_its_own_timed_out_lane() {
     var s = createService()
     s.recordLaneTimeout("status", 4)
-    s.recordLaneTimeout("settingsRead", 9)
-    s.recordLaneTimeout("settingsBootstrap", 12)
+    s.recordLaneTimeout("settingsBootstrap", 9)
+    s.recordLaneTimeout("settingsWrite", 12)
     compare(s.runtimeHealth, "stalled")
     var completedBefore = s.completedCallbackCount
 
     s.statusExited(0, 4, validEnvelope(), "")
 
     verify(!s.timedOutLanes.status)
-    verify(s.timedOutLanes.settingsRead)
+    verify(s.timedOutLanes.settingsBootstrap)
     compare(s.runtimeHealth, "stalled")
     compare(s.completedCallbackCount, completedBefore)
     verify(!Core.isLaneSettled(s.settledLanes, "status", 4))
-    verify(Core.isLaneSettled(s.settledLanes, "settingsRead", 9))
+    verify(Core.isLaneSettled(s.settledLanes, "settingsBootstrap", 9))
 
-    s.applySettingsReadResult(s.activeSettingsReadGeneration, "", 1)
+    s.openSettings("monitor-a")
+    finishLane(s, "settingsRead", 1)
     compare(Object.keys(s.timedOutLanes).length, 0)
-    verify(!Core.isLaneSettled(s.settledLanes, "settingsRead", 9))
   }
 
   function test_runtime_health_accumulates_and_real_callback_resets() {
@@ -453,14 +444,13 @@ TestCase {
     bootstrapSettings(s)
     s.kickSettingsRead()
     compare(s.settingsReadBusy, true)
-    var readGeneration = s.activeSettingsReadGeneration
 
     s.pendingMaintenanceIntention = ({ kind: "uninstall", purge: false })
     s.beginMaintenanceHandoff()
     compare(s.maintenanceState.blocked, true)
     compare(s.maintenanceHandoffBusy, false)
 
-    s.applySettingsReadResult(readGeneration, "", 1)
+    finishLane(s, "settingsRead", 1)
     compare(s.maintenanceHandoffBusy, true)
   }
 

@@ -153,6 +153,17 @@ TestCase {
     compare(rig.log.length, 0)
   }
 
+  function test_the_run_context_is_pinned_at_start() {
+    rig.lane.start(argv(), "", 7)
+    rig.proc.finish(0)
+    compare(rig.outcomes[0].context, 7)
+
+    rig.lane.start(argv(), "", 9)
+    tryCompare(rig.lane, "busy", false, 500)
+    compare(rig.outcomes[1].context, 9)
+    compare(rig.outcomes[1].timedOut, true)
+  }
+
   function test_an_accepted_run_clears_the_stall_mark() {
     rig.lane.start(argv())
     tryCompare(rig.lane, "busy", false, 500)

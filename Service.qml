@@ -53,10 +53,12 @@ Item {
   property int completedCallbackCount: 0
   readonly property var lanes: ({
     versionProbe: versionProbeLane,
+    settingsRead: settingsReadLane,
     maintenanceCheck: maintenanceCheckLane
   })
   readonly property int stalledLaneCount: Core.stalledLanes(timedOutLanes)
       + (versionProbeLane.stalled ? 1 : 0)
+      + (settingsReadLane.stalled ? 1 : 0)
       + (maintenanceCheckLane.stalled ? 1 : 0)
   readonly property string runtimeHealth: Core.runtimeHealth(stalledLaneCount)
 
@@ -67,7 +69,7 @@ Item {
   property bool collectionStarted: false
 
   property bool statusBusy: false
-  property bool settingsReadBusy: false
+  readonly property bool settingsReadBusy: settingsReadLane.busy
   property bool settingsBootstrapBusy: false
   property bool settingsWriteBusy: false
   readonly property bool maintenanceCheckBusy: maintenanceCheckLane.busy
@@ -78,12 +80,10 @@ Item {
   property int settingsBootstrapGeneration: 0
   property int maintenanceHandoffGeneration: 0
   property int activeStatusGeneration: 0
-  property int activeSettingsReadGeneration: 0
   property int activeSettingsBootstrapGeneration: 0
   property int activeSettingsWriteGeneration: 0
   property int activeMaintenanceHandoffGeneration: 0
   property int statusStartedGeneration: 0
-  property int settingsReadStartedGeneration: 0
   property int settingsBootstrapStartedGeneration: 0
   property int settingsWriteStartedGeneration: 0
   property int maintenanceHandoffStartedGeneration: 0
@@ -134,11 +134,9 @@ Item {
     clearLaneStalls()
   }
 
-  function noteLaneSettled(lane, outcome) {
-    if (outcome.timedOut) {
-      timedOutLanes = Core.recordLaneTimeout(timedOutLanes, lane)
+  function noteLaneSettled(outcome) {
+    if (outcome.timedOut)
       return
-    }
     completedCallbackCount++
     timedOutLanes = ({})
     clearLaneStalls()
@@ -215,7 +213,6 @@ Item {
     requestPopup(owner, selectedProviderId || null, "settings")
     if (!settingsState || settingsState.phase === "closed") {
       settingsGeneration++
-      activeSettingsReadGeneration = settingsGeneration
       settingsState = Settings.settingsBeginLoad(settingsGeneration)
       settingsDraft = null
       kickSettingsRead()
@@ -382,7 +379,7 @@ Item {
   }
 
   function applyUpdateCheckResult(outcome) {
-    noteLaneSettled("maintenanceCheck", outcome)
+    noteLaneSettled(outcome)
     tryMaintenanceDetach()
     maintenanceUi = Maintenance.maintenanceUiFromCheck(
       maintenanceUi,
@@ -460,7 +457,7 @@ Item {
   }
 
   function applyVersionProbeResult(outcome) {
-    noteLaneSettled("versionProbe", outcome)
+    noteLaneSettled(outcome)
     var version = Core.parseVersionStdout(outcome.stdout, outcome.stderr, outcome.exitCode)
     if (version)
       finishVersionProbeSuccess(version)
@@ -615,38 +612,28 @@ Item {
   }
 
   function kickSettingsRead() {
-    if (!Core.canStartLane(settingsReadBusy))
+    if (!settingsReadLane.ready)
       return
     var helper = resolvedHelperPath()
     if (!helper.length)
       return
-    settingsReadBusy = true
-    settingsReadTimeout.restart()
-    settingsReadProcess.command = Settings.settingsArgvShow(helper)
-    settingsReadStartedGeneration = activeSettingsReadGeneration
-    if (testMode) {
-      return
-    }
-    settingsReadProcess.running = true
+    settingsReadLane.start(Settings.settingsArgvShow(helper), "", settingsState.generation)
   }
 
-  function applySettingsReadResult(generation, stdout, exitCode, fromTimeout) {
-    if (!Core.shouldApplyGeneration(activeSettingsReadGeneration, generation))
-      return
-    settingsReadTimeout.stop()
-    settingsReadBusy = false
-    recordCompletedCallback(!!fromTimeout, "settingsRead")
+  function applySettingsReadResult(outcome) {
+    noteLaneSettled(outcome)
     tryMaintenanceDetach()
     if (!settingsState || settingsState.phase === "closed")
       return
-    if (exitCode !== 0) {
+    var generation = outcome.context
+    if (outcome.exitCode !== 0) {
       settingsState = Settings.settingsFailLoad(settingsState, generation)
       settingsDraft = null
       return
     }
     var doc = null
     try {
-      doc = JSON.parse(String(stdout || "").trim())
+      doc = JSON.parse(String(outcome.stdout || "").trim())
     } catch (e) {
       doc = null
     }
@@ -770,15 +757,6 @@ Item {
                       exitCode)
   }
 
-  function settingsReadExited(exitCode, generation, stdout) {
-    var gen = generation === undefined ? settingsReadStartedGeneration : generation
-    if (!shouldApplyProcessExit("settingsRead", gen, activeSettingsReadGeneration))
-      return
-    applySettingsReadResult(gen,
-                            stdout === undefined ? settingsReadOut.text || "" : stdout,
-                            exitCode)
-  }
-
   function settingsBootstrapExited(exitCode, generation, stdout) {
     var gen = generation === undefined ? settingsBootstrapStartedGeneration : generation
     if (!shouldApplyProcessExit("settingsBootstrap", gen, activeSettingsBootstrapGeneration))
@@ -826,6 +804,15 @@ Item {
   }
 
   HelperLane {
+    id: settingsReadLane
+    process: settingsReadProcess
+    stdoutSource: settingsReadOut
+    stderrSource: settingsReadErr
+    timeoutMs: root.settingsTimeoutMs
+    onSettled: function (outcome) { root.applySettingsReadResult(outcome) }
+  }
+
+  HelperLane {
     id: maintenanceCheckLane
     process: maintenanceCheckProcess
     stdoutSource: maintenanceCheckOut
@@ -851,7 +838,6 @@ Item {
     id: settingsReadProcess
     stdout: StdioCollector { id: settingsReadOut; waitForEnd: true }
     stderr: StdioCollector { id: settingsReadErr; waitForEnd: true }
-    onExited: function (exitCode) { root.settingsReadExited(exitCode) }
   }
 
   Process {
@@ -911,20 +897,6 @@ Item {
         statusProcess.running = false
       root.recordLaneTimeout("status", root.activeStatusGeneration)
       root.applyStatusResult(root.activeStatusGeneration, "", "timeout", 1, true)
-    }
-  }
-
-  Timer {
-    id: settingsReadTimeout
-    interval: root.settingsTimeoutMs
-    repeat: false
-    onTriggered: {
-      if (!root.settingsReadBusy)
-        return
-      if (settingsReadProcess.running)
-        settingsReadProcess.running = false
-      root.recordLaneTimeout("settingsRead", root.activeSettingsReadGeneration)
-      root.applySettingsReadResult(root.activeSettingsReadGeneration, "", 1, true)
     }
   }
 
@@ -1008,7 +980,6 @@ Item {
 
   Component.onDestruction: {
     statusTimeout.stop()
-    settingsReadTimeout.stop()
     settingsBootstrapTimeout.stop()
     settingsWriteTimeout.stop()
     maintenanceHandoffTimeout.stop()
@@ -1016,8 +987,6 @@ Item {
     pollTimer.stop()
     if (statusProcess.running)
       statusProcess.running = false
-    if (settingsReadProcess.running)
-      settingsReadProcess.running = false
     if (settingsBootstrapProcess.running)
       settingsBootstrapProcess.running = false
     if (settingsWriteProcess.running)

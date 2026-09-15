@@ -20,8 +20,9 @@ QtObject {
   property int runId: 0
   property int startedRunId: 0
   property string pendingStdin: ""
+  property var pendingContext: null
 
-  function start(argv, stdin) {
+  function start(argv, stdin, runContext) {
     if (!lane.ready)
       return false
     if (!argv || !argv.length)
@@ -29,6 +30,7 @@ QtObject {
     lane.runId++
     lane.startedRunId = lane.runId
     lane.outstanding = true
+    lane.pendingContext = runContext === undefined ? null : runContext
     lane.pendingStdin = stdin === undefined || stdin === null ? "" : String(stdin)
     lane.process.stdinEnabled = lane.pendingStdin.length > 0
     lane.process.command = argv
@@ -62,7 +64,8 @@ QtObject {
       stdout: lane.stdoutSource ? String(lane.stdoutSource.text || "") : "",
       stderr: lane.stderrSource ? String(lane.stderrSource.text || "") : "",
       timedOut: false,
-      runId: lane.startedRunId
+      runId: lane.startedRunId,
+      context: lane.pendingContext
     })
   }
 
@@ -80,13 +83,15 @@ QtObject {
       stdout: "",
       stderr: "timeout",
       timedOut: true,
-      runId: abandoned
+      runId: abandoned,
+      context: lane.pendingContext
     })
   }
 
   function settle(outcome) {
     lane.deadline.stop()
     lane.pendingStdin = ""
+    lane.pendingContext = null
     if (!outcome.timedOut)
       lane.stallMark = false
     lane.outstanding = false
