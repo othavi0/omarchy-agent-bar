@@ -44,6 +44,6 @@ still did.
 ## Consequences
 
 The status document loses two fields, the cache file stops holding an
-account label, and three adapters lose their account parsing. A reader
+account label, and two adapters lose their account parsing. A reader
 of the JSON contract has one less optional shape to think about. Nothing
 the bar shows changes.
