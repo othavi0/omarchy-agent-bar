@@ -35,21 +35,6 @@ function restartShellArgv() {
   return ["omarchy-restart-shell"]
 }
 
-// Exact xdg-terminal-exec argv the Bash helper must exec (ARCH login flow).
-function terminalHelperXdgArgv(pluginRoot, providerId) {
-  if (!pluginRoot || !Kernel.isClosedProvider(providerId))
-    return null
-  return [
-    "xdg-terminal-exec",
-    "--app-id=org.omarchy.terminal",
-    "--title=Agent Bar Login",
-    "--",
-    String(pluginRoot) + "/bin/agent-bar",
-    "login",
-    String(providerId)
-  ]
-}
-
 function updateCheckArgv(helperPath) {
   return [String(helperPath), "update", "check"]
 }

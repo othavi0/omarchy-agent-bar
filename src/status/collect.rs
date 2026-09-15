@@ -15,24 +15,6 @@ pub fn provider_status_from_result(result: ProviderResult) -> Result<ProviderSta
             rate_limit_resets_available,
         } => ProviderStatus::ready(id, name, source, plan, account, windows, last_success_at)
             .map(|status| status.with_rate_limit_resets_available(rate_limit_resets_available)),
-        ProviderResult::Stale {
-            id,
-            name,
-            plan,
-            account,
-            windows,
-            last_success_at,
-            error,
-        } => ProviderStatus::stale(
-            id,
-            name,
-            plan,
-            account,
-            windows,
-            last_success_at,
-            error,
-            ProviderAction::retry("Retry"),
-        ),
         ProviderResult::CliMissing {
             id,
             name,

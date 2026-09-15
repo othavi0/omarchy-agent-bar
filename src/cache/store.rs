@@ -127,26 +127,6 @@ impl CacheStore {
         Ok(doc)
     }
 
-    /// Replace the full document (tests / rebuild).
-    pub fn replace_all(&self, doc: &CacheDocument) -> Result<(), CacheStoreError> {
-        let _guard = self
-            .gate
-            .try_lock_shared()?
-            .ok_or(CacheStoreError::MaintenanceBlocked)?;
-        let file_lock = open_lock(&self.paths.lock)?;
-        FileExt::lock_exclusive(&file_lock)?;
-        doc.validate()?;
-        let mut bytes = serde_json::to_vec_pretty(doc).map_err(|err| {
-            CacheStoreError::Schema(CacheSchemaError::InvalidJson(err.to_string()))
-        })?;
-        if !bytes.ends_with(b"\n") {
-            bytes.push(b'\n');
-        }
-        replace_atomically(&self.paths.document, &bytes, 0o600)?;
-        FileExt::unlock(&file_lock)?;
-        Ok(())
-    }
-
     fn quarantine(&self, bytes: &[u8], reason: &str) -> Result<(), CacheStoreError> {
         if let Some(parent) = self.paths.document.parent() {
             fs::create_dir_all(parent)?;

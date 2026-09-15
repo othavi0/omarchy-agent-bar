@@ -724,11 +724,7 @@ Item {
     maintenanceHandoffTimeout.restart()
     var helper = resolvedHelperPath()
     var intention = pendingMaintenanceIntention
-    var argv = null
-    if (intention && intention.kind === "uninstall")
-      argv = Maintenance.uninstallArgv(helper, intention.purge)
-    else
-      argv = helper && helper.length ? [helper, "doctor", "scan"] : null
+    var argv = Maintenance.uninstallArgv(helper, intention.purge)
 
     if (!argv) {
       maintenanceHandoffBusy = false

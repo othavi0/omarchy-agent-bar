@@ -296,10 +296,6 @@ function foreignPopupOpen(popupOwner, selfOwner) {
   return popupOwner.owner !== selfOwner
 }
 
-function popupOwnerId(popup) {
-  return popup ? popup.owner : null
-}
-
 function popupOpenForOwner(popupOwner, owner) {
   if (!popupOwner || owner === null || owner === undefined)
     return false

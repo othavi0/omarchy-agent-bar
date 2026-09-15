@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use regex::Regex;
 use serde::Deserialize;
 use serde_json::Value;
@@ -122,14 +120,6 @@ fn next_utc_midnight(now: OffsetDateTime) -> OffsetDateTime {
         .with_hms(0, 0, 0)
         .map(|t| t.assume_utc())
         .unwrap_or(now)
-}
-
-#[derive(Debug, Deserialize)]
-struct GrokSignals {
-    #[serde(default, rename = "contextTokensUsed")]
-    context_tokens_used: Option<u64>,
-    #[serde(default, rename = "contextWindowTokens")]
-    context_window_tokens: Option<u64>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -297,55 +287,6 @@ fn grok_billing_resets_at(doc: &GrokBillingDoc) -> Option<OffsetDateTime> {
     OffsetDateTime::parse(end, &Rfc3339)
         .ok()
         .map(|ts| ts.to_offset(UtcOffset::UTC))
-}
-
-pub fn grok_from_auth_and_signals(
-    logged_in: bool,
-    account_label: Option<String>,
-    signals_json: Option<&[u8]>,
-    now: OffsetDateTime,
-    login_available: bool,
-) -> ProviderResult {
-    if !logged_in {
-        return ProviderResult::Unauthenticated {
-            id: ProviderId::Grok,
-            name: GROK.display_name.to_owned(),
-            message: "Grok is not authenticated.".into(),
-            login_available,
-            installation_url: GROK.installation_url.to_owned(),
-            retryable: false,
-        };
-    }
-
-    let mut windows = Vec::new();
-    if let Some(bytes) = signals_json {
-        if let Ok(signals) = serde_json::from_slice::<GrokSignals>(bytes) {
-            if let (Some(used), Some(window)) =
-                (signals.context_tokens_used, signals.context_window_tokens)
-            {
-                if window > 0 {
-                    let used_pct = ((used as f64) * 100.0 / (window as f64)).clamp(0.0, 100.0);
-                    let rem = (100.0 - used_pct).clamp(0.0, 100.0);
-                    if let Ok(w) = UsageWindow::try_new("context", "Context", used_pct, rem, None) {
-                        windows.push(w);
-                    }
-                }
-            }
-        }
-    }
-
-    ProviderResult::Ready {
-        id: ProviderId::Grok,
-        name: GROK.display_name.to_owned(),
-        source: DataSource::Live,
-        plan: None,
-        account: account_label.map(|label| Account {
-            label: sanitize_account_label(&label),
-        }),
-        windows,
-        last_success_at: now,
-        rate_limit_resets_available: None,
-    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -560,9 +501,6 @@ struct ClaudeWindowRaw {
 #[derive(Debug, Deserialize)]
 struct ClaudeErrorRaw {
     error_code: String,
-    #[serde(default)]
-    #[allow(dead_code)]
-    message: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -799,6 +737,7 @@ fn sanitize_account_label(raw: &str) -> String {
     cleaned
 }
 
+#[cfg(test)]
 pub fn assert_no_money(result: &ProviderResult) {
     let text = format!("{result:?}");
     for banned in ["spend", "credits", "balance", "currency", "usd", "BRL"] {
@@ -807,10 +746,6 @@ pub fn assert_no_money(result: &ProviderResult) {
             "domain result leaked monetary field '{banned}': {text}"
         );
     }
-}
-
-pub fn path_is_absolute_home(path: &Path) -> bool {
-    path.is_absolute()
 }
 
 /// Envelope of `agy --print /usage --output-format json`.

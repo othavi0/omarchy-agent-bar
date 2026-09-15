@@ -394,11 +394,9 @@ function settingsBootstrapResult(currentApplied, stdout, exitCode) {
 function settingsCanSave(state, draft) {
   if (!state)
     return false
-  if (state.phase !== "dirty" && state.phase !== "clean")
+  if (state.phase !== "dirty")
     return false
   if (state.busy || state.phase === "saving" || state.phase === "loading")
-    return false
-  if (state.phase !== "dirty")
     return false
   return validateSettingsDraft(draft).ok
 }

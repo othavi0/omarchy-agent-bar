@@ -40,17 +40,6 @@ TestCase {
     compare(argv[0], "omarchy-restart-shell")
   }
 
-  function test_terminal_helper_xdg_argv_exact() {
-    var argv = Core.terminalHelperXdgArgv("/plugin", "amp")
-    compare(argv[0], "xdg-terminal-exec")
-    compare(argv[1], "--app-id=org.omarchy.terminal")
-    compare(argv[2], "--title=Agent Bar Login")
-    compare(argv[3], "--")
-    compare(argv[4], "/plugin/bin/agent-bar")
-    compare(argv[5], "login")
-    compare(argv[6], "amp")
-  }
-
   function test_update_and_uninstall_argv() {
     var check = Core.updateCheckArgv("/bin/agent-bar")
     compare(check.join(" "), "/bin/agent-bar update check")
