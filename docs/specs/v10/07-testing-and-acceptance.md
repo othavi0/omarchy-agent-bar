@@ -173,7 +173,7 @@ no `package.metadata.binstall`, and declare no standalone/AUR metadata. These
 checks avoid a useless global rejection of the word `Waybar` while closing
 positive production surfaces.
 
-Exact raw-input allowlists are `amp usage`, Codex `session_log`, normalized
+Exact raw-input allowlists are `amp usage`, normalized
 window ID `session`,
 `tests/fixtures/amp/usage-legacy-dollars.txt`,
 `tests/fixtures/amp/usage-free-pct.txt`,

@@ -69,6 +69,14 @@ own minimum, so the compatibility gate can actually fire against an
 outdated Quickshell:
 [docs/specs/v10/amendments/2026-09-15-live-quickshell-probe-design.md](amendments/2026-09-15-live-quickshell-probe-design.md).
 
+The Codex app-server-only design, approved 2026-09-15, drops the
+session-log fallback the Codex adapter tried after `codex app-server`
+failed or timed out. Codex collection now has one path. `ARCH-022`'s
+`codex` row loses the session-log source and the "before filesystem
+fallback" retry note; the `07-testing-and-acceptance.md` raw-input
+allowlist no longer names Codex `session_log`:
+[docs/specs/v10/amendments/2026-09-15-codex-app-server-only-design.md](amendments/2026-09-15-codex-app-server-only-design.md).
+
 ## Product statement
 
 Agent Bar v10 is an Omarchy Quattro Quickshell plugin. Its only graphical
@@ -106,6 +114,8 @@ application, an AUR product, or a cargo-binstall product.
    [2026-09-14 update execution removed](amendments/2026-09-14-remove-update-execution-design.md),
    [2026-09-15 v9 migration removed](amendments/2026-09-15-remove-v9-migration-design.md),
    [2026-09-15 live Quickshell probe](amendments/2026-09-15-live-quickshell-probe-design.md).
+
+   [2026-09-15 Codex app-server only](amendments/2026-09-15-codex-app-server-only-design.md).
 
 When two statements conflict, the earlier contract in this reading order wins
 unless a later file explicitly identifies the requirement ID it refines.
