@@ -1,12 +1,22 @@
 .pragma library
 
-var CLOSED_PROVIDERS = {
-  "claude": true,
-  "codex": true,
-  "amp": true,
-  "grok": true,
-  "antigravity": true
-}
+// Order must match Rust's catalog::PROVIDERS (src/providers/catalog.rs).
+var PROVIDERS = [
+  { id: "claude", name: "Claude", icon: "claude.png", closed: true, defaultEnabled: true },
+  { id: "codex", name: "Codex", icon: "codex.png", closed: true, defaultEnabled: true },
+  { id: "amp", name: "Amp", icon: "amp.svg", closed: true, defaultEnabled: false },
+  { id: "grok", name: "Grok", icon: "grok.svg", closed: true, defaultEnabled: false },
+  { id: "antigravity", name: "Antigravity", icon: "antigravity.png", closed: true, defaultEnabled: false }
+]
+
+var CLOSED_PROVIDERS = (function () {
+  var out = {}
+  for (var i = 0; i < PROVIDERS.length; i++) {
+    if (PROVIDERS[i].closed)
+      out[PROVIDERS[i].id] = true
+  }
+  return out
+})()
 
 var ACTION_KINDS = {
   "retry": true,
@@ -264,13 +274,9 @@ function pollIntervalMs(settings) {
 function defaultSettings() {
   return {
     schemaVersion: 1,
-    providers: [
-      { id: "claude", enabled: true },
-      { id: "codex", enabled: true },
-      { id: "amp", enabled: false },
-      { id: "grok", enabled: false },
-      { id: "antigravity", enabled: false }
-    ],
+    providers: PROVIDERS.map(function (p) {
+      return { id: p.id, enabled: p.defaultEnabled }
+    }),
     display: { metric: "remaining" },
     refreshIntervalSeconds: 60,
     notifications: { enabled: true, reminderMinutes: 120 }

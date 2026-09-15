@@ -7,34 +7,23 @@ function displayMetric(settings) {
   return "remaining"
 }
 
-function providerDisplayName(id) {
+function findCatalogProvider(id) {
   var key = String(id || "")
-  if (key === "claude")
-    return "Claude"
-  if (key === "codex")
-    return "Codex"
-  if (key === "amp")
-    return "Amp"
-  if (key === "grok")
-    return "Grok"
-  if (key === "antigravity")
-    return "Antigravity"
-  return key
+  for (var i = 0; i < Kernel.PROVIDERS.length; i++) {
+    if (Kernel.PROVIDERS[i].id === key)
+      return Kernel.PROVIDERS[i]
+  }
+  return null
+}
+
+function providerDisplayName(id) {
+  var entry = findCatalogProvider(id)
+  return entry ? entry.name : String(id || "")
 }
 
 function iconFileName(id) {
-  var key = String(id || "")
-  if (key === "claude")
-    return "claude.png"
-  if (key === "codex")
-    return "codex.png"
-  if (key === "amp")
-    return "amp.svg"
-  if (key === "grok")
-    return "grok.svg"
-  if (key === "antigravity")
-    return "antigravity.png"
-  return ""
+  var entry = findCatalogProvider(id)
+  return entry ? entry.icon : ""
 }
 
 function iconUrl(id) {
