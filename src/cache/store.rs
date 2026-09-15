@@ -98,7 +98,7 @@ impl CacheStore {
         }
     }
 
-    /// Merge one provider entry, increment revision, preserve siblings.
+    #[cfg(test)]
     pub fn merge_provider(
         &self,
         id: ProviderId,
