@@ -16,9 +16,6 @@
         "id": "max",
         "label": "Max"
       },
-      "account": {
-        "label": "Personal"
-      },
       "windows": [
         {
           "id": "session",

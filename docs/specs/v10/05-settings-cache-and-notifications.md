@@ -122,6 +122,13 @@ $XDG_STATE_HOME/agent-bar/maintenance.lock
 ```
 
 - `CACHE-001`: Cache contains normalized provider data only.
+- `CACHE-001A` (added 2026-09-15): The cache entry mirrors the status row.
+  It carries no `account` and no `error.code`; `error` is `{ message,
+  retryable }`. A document written by an older helper that still carries
+  either key still loads: the cache and status structs never
+  `deny_unknown_fields` on a nested object, so an unrecognized key inside
+  a provider row is ignored, never rejected. See
+  `docs/specs/v10/amendments/2026-09-15-drop-unread-status-fields-design.md`.
 - `CACHE-002`: Cache contains no token, credential, raw provider response, raw
   headers, or raw stderr.
 - `CACHE-003`: Cache writes use the shared atomic-file primitive and restrictive

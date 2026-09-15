@@ -16,9 +16,6 @@
         "id": "super",
         "label": "SuperGrok"
       },
-      "account": {
-        "label": "Personal"
-      },
       "windows": [
         {
           "id": "session",
@@ -30,7 +27,6 @@
       ],
       "lastSuccessAt": "2026-07-26T18:40:00Z",
       "error": {
-        "code": "network_error",
         "message": "Temporary network failure while refreshing Grok.",
         "retryable": true
       },

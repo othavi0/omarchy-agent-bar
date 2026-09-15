@@ -276,7 +276,6 @@ mod tests {
             "Claude",
             DataSource::Live,
             None,
-            None,
             vec![window],
             datetime!(2026-07-26 18:42:00 UTC),
         )
@@ -300,7 +299,6 @@ mod tests {
             ProviderId::Claude,
             "Claude",
             DataSource::Live,
-            None,
             None,
             vec![window],
             datetime!(2026-07-26 18:42:00 UTC),
@@ -762,7 +760,7 @@ mod tests {
 
     #[tokio::test]
     async fn evaluate_keeps_rows_for_a_stale_provider() {
-        use crate::status::schema::{ErrorCode, ProviderAction, ProviderError};
+        use crate::status::schema::{ProviderAction, ProviderError};
 
         let dir = tempfile::tempdir().unwrap();
         let store = store_in(&dir);
@@ -781,10 +779,9 @@ mod tests {
             ProviderId::Claude,
             "Claude",
             None,
-            None,
             vec![window],
             datetime!(2026-08-20 10:00:00 UTC),
-            ProviderError::new(ErrorCode::NetworkError, "Network error.", true),
+            ProviderError::new("Network error.", true),
             ProviderAction::retry("Retry"),
         )
         .unwrap();

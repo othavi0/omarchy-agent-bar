@@ -83,14 +83,6 @@
         "label": { "type": "string", "minLength": 1 }
       }
     },
-    "account": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["label"],
-      "properties": {
-        "label": { "type": "string", "minLength": 1 }
-      }
-    },
     "window": {
       "type": "object",
       "additionalProperties": false,
@@ -109,22 +101,11 @@
         "resetsAt": { "$ref": "#/$defs/rfc3339OrNull" }
       }
     },
-    "errorCode": {
-      "type": "string",
-      "enum": [
-        "cli_not_found",
-        "authentication_required",
-        "rate_limited",
-        "network_error",
-        "provider_error"
-      ]
-    },
     "error": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["code", "message", "retryable"],
+      "required": ["message", "retryable"],
       "properties": {
-        "code": { "$ref": "#/$defs/errorCode" },
         "message": { "type": "string", "minLength": 1 },
         "retryable": { "type": "boolean" }
       }
@@ -164,7 +145,6 @@
         "state",
         "source",
         "plan",
-        "account",
         "windows",
         "lastSuccessAt",
         "error",
@@ -193,9 +173,6 @@
         },
         "plan": {
           "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/plan" }]
-        },
-        "account": {
-          "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/account" }]
         },
         "windows": {
           "type": "array",
@@ -264,9 +241,8 @@
               "error": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["code", "message", "retryable"],
+                "required": ["message", "retryable"],
                 "properties": {
-                  "code": { "const": "cli_not_found" },
                   "message": { "type": "string", "minLength": 1 },
                   "retryable": { "const": false }
                 }
@@ -300,9 +276,8 @@
               "error": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["code", "message", "retryable"],
+                "required": ["message", "retryable"],
                 "properties": {
-                  "code": { "const": "authentication_required" },
                   "message": { "type": "string", "minLength": 1 },
                   "retryable": { "type": "boolean" }
                 }
@@ -344,9 +319,8 @@
               "error": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["code", "message", "retryable"],
+                "required": ["message", "retryable"],
                 "properties": {
-                  "code": { "const": "rate_limited" },
                   "message": { "type": "string", "minLength": 1 },
                   "retryable": { "const": true }
                 }
@@ -377,9 +351,8 @@
               "error": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["code", "message", "retryable"],
+                "required": ["message", "retryable"],
                 "properties": {
-                  "code": { "const": "network_error" },
                   "message": { "type": "string", "minLength": 1 },
                   "retryable": { "const": true }
                 }
@@ -410,9 +383,8 @@
               "error": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["code", "message", "retryable"],
+                "required": ["message", "retryable"],
                 "properties": {
-                  "code": { "const": "provider_error" },
                   "message": { "type": "string", "minLength": 1 },
                   "retryable": { "type": "boolean" }
                 }

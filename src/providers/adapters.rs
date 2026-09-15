@@ -1,5 +1,5 @@
 use crate::cli::ProviderId;
-use crate::status::schema::{Account, Plan, ProviderResult};
+use crate::status::schema::{Plan, ProviderResult};
 use crate::support::redact::strip_ansi_and_controls;
 
 use super::adapter::{
@@ -199,7 +199,7 @@ impl ProviderAdapter for GrokAdapter {
                 }
             }
 
-            let GrokCredentials { token, account, .. } = creds;
+            let GrokCredentials { token, .. } = creds;
             let bearer = format!("Bearer {token}");
             let headers = [
                 ("Authorization", bearer.as_str()),
@@ -219,13 +219,11 @@ impl ProviderAdapter for GrokAdapter {
             {
                 Ok(resp) if (200..300).contains(&resp.status) => {
                     let _ = resp.final_url;
-                    let credits = grok_from_billing_json(&resp.body, account.clone(), now, login);
+                    let credits = grok_from_billing_json(&resp.body, now, login);
                     match &credits {
                         ProviderResult::Ready { windows, .. } if windows.is_empty() => {
-                            grok_monthly_fallback(
-                                context, &headers, max_body, account, now, login, credits,
-                            )
-                            .await
+                            grok_monthly_fallback(context, &headers, max_body, now, login, credits)
+                                .await
                         }
                         _ => credits,
                     }
@@ -240,7 +238,6 @@ async fn grok_monthly_fallback(
     context: &CollectionContext<'_>,
     headers: &[(&str, &str)],
     max_body: usize,
-    account: Option<String>,
     now: time::OffsetDateTime,
     login: bool,
     credits: ProviderResult,
@@ -258,7 +255,7 @@ async fn grok_monthly_fallback(
         Ok(resp) if resp.status < 500 => return credits,
         other => return http_failure(&GROK, "billing", login, other, false, true),
     };
-    let monthly = grok_from_billing_json(&resp.body, account, now, login);
+    let monthly = grok_from_billing_json(&resp.body, now, login);
     match (monthly, credits) {
         (
             ProviderResult::Ready {
@@ -271,7 +268,6 @@ async fn grok_monthly_fallback(
                 name,
                 source,
                 plan,
-                account,
                 last_success_at,
                 rate_limit_resets_available,
                 ..
@@ -281,7 +277,6 @@ async fn grok_monthly_fallback(
             name,
             source,
             plan: plan.or(monthly_plan),
-            account,
             windows,
             last_success_at,
             rate_limit_resets_available,
@@ -350,7 +345,6 @@ const GROK_TOKEN_EXPIRY_MARGIN: time::Duration = time::Duration::seconds(60);
 
 struct GrokCredentials {
     token: String,
-    account: Option<String>,
     expires_at: Option<time::OffsetDateTime>,
 }
 
@@ -412,10 +406,6 @@ fn parse_grok_credentials(bytes: &[u8]) -> Result<GrokCredentials, GrokAuthError
         if key.is_empty() {
             continue;
         }
-        let account = entry
-            .get("first_name")
-            .and_then(|v| v.as_str())
-            .map(str::to_owned);
         let expires_at = entry
             .get("expires_at")
             .and_then(|v| v.as_str())
@@ -424,7 +414,6 @@ fn parse_grok_credentials(bytes: &[u8]) -> Result<GrokCredentials, GrokAuthError
             });
         return Ok(GrokCredentials {
             token: key.to_owned(),
-            account,
             expires_at,
         });
     }
@@ -584,13 +573,7 @@ impl ProviderAdapter for ClaudeAdapter {
             {
                 Ok(resp) if (200..300).contains(&resp.status) => {
                     let _ = resp.final_url;
-                    claude_from_usage_json(
-                        &resp.body,
-                        context.clock.now_utc(),
-                        creds.plan,
-                        creds.account,
-                        login,
-                    )
+                    claude_from_usage_json(&resp.body, context.clock.now_utc(), creds.plan, login)
                 }
                 other => http_failure(&CLAUDE, "usage", login, other, true, false),
             }
@@ -601,7 +584,6 @@ impl ProviderAdapter for ClaudeAdapter {
 struct ClaudeCredentials {
     token: String,
     plan: Option<Plan>,
-    account: Option<Account>,
     expires_at_ms: Option<i64>,
 }
 
@@ -620,7 +602,6 @@ fn parse_claude_credentials(bytes: &[u8]) -> Option<ClaudeCredentials> {
     Some(ClaudeCredentials {
         token,
         plan,
-        account: None,
         expires_at_ms,
     })
 }
@@ -1169,11 +1150,8 @@ mod tests {
             );
             let result = grok_ctx_collect(&http).await;
             match result {
-                ProviderResult::Ready {
-                    windows, account, ..
-                } => {
+                ProviderResult::Ready { windows, .. } => {
                     assert!(windows.is_empty(), "status {status}: {windows:?}");
-                    assert!(account.is_some(), "status {status}");
                 }
                 other => panic!("status {status}: expected ready, got {other:?}"),
             }
@@ -1181,7 +1159,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn grok_monthly_fallback_keeps_plan_and_account_from_credits() {
+    async fn grok_monthly_fallback_keeps_plan_from_credits() {
         let credits = br#"{"config": {"subscriptionTiers": "SuperGrok",
             "currentPeriod": {"type": "USAGE_PERIOD_TYPE_WEEKLY"}}}"#;
         let monthly =
@@ -1200,26 +1178,17 @@ mod tests {
         );
         let result = grok_ctx_collect(&http).await;
         match result {
-            ProviderResult::Ready {
-                windows,
-                plan,
-                account,
-                ..
-            } => {
+            ProviderResult::Ready { windows, plan, .. } => {
                 assert_eq!(windows.len(), 1);
                 assert_eq!(windows[0].id(), "monthly");
                 assert_eq!(plan.as_ref().map(|p| p.label.as_str()), Some("SuperGrok"));
-                assert!(
-                    account.is_some(),
-                    "account label from auth.json must survive"
-                );
             }
             other => panic!("expected ready, got {other:?}"),
         }
     }
 
     #[tokio::test]
-    async fn grok_no_quota_on_either_shape_keeps_credits_account() {
+    async fn grok_no_quota_on_either_shape_stays_live_ready() {
         let credits =
             include_bytes!("../../tests/fixtures/providers/grok/billing-credits-no-quota.json");
         let monthly =
@@ -1239,13 +1208,9 @@ mod tests {
         let result = grok_ctx_collect(&http).await;
         match result {
             ProviderResult::Ready {
-                windows,
-                account,
-                source,
-                ..
+                windows, source, ..
             } => {
                 assert!(windows.is_empty());
-                assert!(account.is_some());
                 assert_eq!(source, crate::status::schema::DataSource::Live);
             }
             other => panic!("expected ready, got {other:?}"),
@@ -1624,14 +1589,11 @@ mod tests {
             "x-grok-client-mode header missing: {headers:?}"
         );
         match result {
-            ProviderResult::Ready {
-                windows, account, ..
-            } => {
+            ProviderResult::Ready { windows, .. } => {
                 assert_eq!(windows.len(), 1);
                 assert_eq!(windows[0].id(), "weekly");
                 assert_eq!(windows[0].label(), "Weekly (7d)");
                 assert!(windows.iter().all(|w| w.id() != "context"));
-                assert_eq!(account.as_ref().map(|a| a.label.as_str()), Some("Ada"));
             }
             other => panic!("{other:?}"),
         }

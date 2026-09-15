@@ -7,7 +7,7 @@ use time::format_description::well_known::Rfc3339;
 use time::{OffsetDateTime, UtcOffset};
 
 use crate::cli::ProviderId;
-use crate::status::schema::{Account, DataSource, Plan, ProviderResult, UsageWindow};
+use crate::status::schema::{DataSource, Plan, ProviderResult, UsageWindow};
 use crate::support::redact::strip_ansi_and_controls;
 
 use super::catalog::{AMP, ANTIGRAVITY, CLAUDE, CODEX, GROK};
@@ -23,8 +23,6 @@ const LABEL_GEMINI_SESSION: &str = "Gemini · 5h";
 const LABEL_THIRD_PARTY_WEEKLY: &str = "Claude/GPT · 7d";
 const LABEL_THIRD_PARTY_SESSION: &str = "Claude/GPT · 5h";
 
-static ACCOUNT_RE: LazyLock<Option<Regex>> =
-    LazyLock::new(|| Regex::new(r"Signed in as (\S+)").ok());
 static FREE_PCT_RE: LazyLock<Option<Regex>> =
     LazyLock::new(|| Regex::new(r"Amp Free:\s*([0-9.]+)%\s*remaining").ok());
 static DOLLAR_PCT_RE: LazyLock<Option<Regex>> =
@@ -38,11 +36,6 @@ static SUBSCRIPTION_RE: LazyLock<Option<Regex>> = LazyLock::new(|| {
 
 pub fn amp_from_usage_text(stdout: &str, now: OffsetDateTime) -> ProviderResult {
     let text = strip_ansi_and_controls(stdout);
-    let account = ACCOUNT_RE
-        .as_ref()
-        .and_then(|re| re.captures(&text))
-        .and_then(|c| c.get(1).map(|m| m.as_str().to_owned()));
-
     let free_pct = FREE_PCT_RE
         .as_ref()
         .and_then(|re| re.captures(&text))
@@ -114,9 +107,6 @@ pub fn amp_from_usage_text(stdout: &str, now: OffsetDateTime) -> ProviderResult 
         name: AMP.display_name.to_owned(),
         source: DataSource::Live,
         plan,
-        account: account.map(|label| Account {
-            label: sanitize_account_label(&label),
-        }),
         windows,
         last_success_at: now,
         rate_limit_resets_available: None,
@@ -189,7 +179,6 @@ fn grok_window_identity(period_type: Option<&str>) -> (String, String) {
 /// - neither shape (plans without a published quota) → Ready, empty windows
 pub fn grok_from_billing_json(
     bytes: &[u8],
-    account_label: Option<String>,
     now: OffsetDateTime,
     _login_available: bool,
 ) -> ProviderResult {
@@ -249,9 +238,6 @@ pub fn grok_from_billing_json(
         name: GROK.display_name.to_owned(),
         source: DataSource::Live,
         plan,
-        account: account_label.map(|label| Account {
-            label: sanitize_account_label(&label),
-        }),
         windows,
         last_success_at: now,
         rate_limit_resets_available: None,
@@ -421,7 +407,6 @@ pub fn codex_from_rate_limits_json(bytes: &[u8], now: OffsetDateTime) -> Provide
             label: format_plan_label(&id),
             id,
         }),
-        account: None,
         windows,
         last_success_at: now,
         rate_limit_resets_available: doc.rate_limit_resets_available,
@@ -547,7 +532,6 @@ pub fn claude_from_usage_json(
     bytes: &[u8],
     now: OffsetDateTime,
     plan: Option<Plan>,
-    account: Option<Account>,
     login_available: bool,
 ) -> ProviderResult {
     let doc: ClaudeUsageDoc = match serde_json::from_slice(bytes) {
@@ -657,7 +641,6 @@ pub fn claude_from_usage_json(
         name: CLAUDE.display_name.to_owned(),
         source: DataSource::Live,
         plan,
-        account,
         windows,
         last_success_at: now,
         rate_limit_resets_available: None,
@@ -736,15 +719,6 @@ pub(crate) fn format_plan_label(raw: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join(" ")
-}
-
-fn sanitize_account_label(raw: &str) -> String {
-    let cleaned = strip_ansi_and_controls(raw);
-    // Drop anything that looks like a token-ish secret.
-    if cleaned.len() > 64 || cleaned.contains("sk-") || cleaned.contains("eyJ") {
-        return "Account".into();
-    }
-    cleaned
 }
 
 #[cfg(test)]
@@ -885,7 +859,6 @@ pub fn antigravity_from_usage_json(stdout: &str, now: OffsetDateTime) -> Provide
         name: ANTIGRAVITY.display_name.to_owned(),
         source: DataSource::Live,
         plan: None,
-        account: None,
         windows: gemini_weekly
             .into_iter()
             .chain(gemini_session)
@@ -986,8 +959,7 @@ mod tests {
     #[test]
     fn claude_token_expired_is_unauthenticated() {
         let body = br#"{"error":{"error_code":"token_expired","message":"expired"}}"#;
-        let result =
-            claude_from_usage_json(body, datetime!(2026-07-26 18:00:00 UTC), None, None, true);
+        let result = claude_from_usage_json(body, datetime!(2026-07-26 18:00:00 UTC), None, true);
         match result {
             ProviderResult::Unauthenticated {
                 message, retryable, ..
@@ -1002,8 +974,7 @@ mod tests {
     #[test]
     fn claude_does_not_double_divide_utilization() {
         let body = br#"{"five_hour":{"utilization":42.0,"resets_at":"2026-07-26T22:00:00Z"}}"#;
-        let result =
-            claude_from_usage_json(body, datetime!(2026-07-26 18:00:00 UTC), None, None, true);
+        let result = claude_from_usage_json(body, datetime!(2026-07-26 18:00:00 UTC), None, true);
         match result {
             ProviderResult::Ready { windows, .. } => {
                 assert_eq!(windows.len(), 1);
@@ -1031,8 +1002,7 @@ mod tests {
     #[test]
     fn claude_window_accepts_epoch_resets_at() {
         let body = br#"{"five_hour":{"utilization":42.0,"resets_at":"1785272823"}}"#;
-        let result =
-            claude_from_usage_json(body, datetime!(2026-07-28 18:00:00 UTC), None, None, true);
+        let result = claude_from_usage_json(body, datetime!(2026-07-28 18:00:00 UTC), None, true);
         match result {
             ProviderResult::Ready { windows, .. } => {
                 assert_eq!(windows.len(), 1);
@@ -1049,8 +1019,7 @@ mod tests {
     #[test]
     fn claude_utilization_one_means_one_percent() {
         let body = br#"{"five_hour":{"utilization":1.0,"resets_at":"2026-07-28T22:00:00Z"}}"#;
-        let result =
-            claude_from_usage_json(body, datetime!(2026-07-28 18:00:00 UTC), None, None, true);
+        let result = claude_from_usage_json(body, datetime!(2026-07-28 18:00:00 UTC), None, true);
         match result {
             ProviderResult::Ready { windows, .. } => {
                 assert!((windows[0].used_percent() - 1.0).abs() < 0.01);
@@ -1063,8 +1032,7 @@ mod tests {
     #[test]
     fn claude_unknown_limits_empty_windows() {
         let body = br#"{"limits":[{"kind":"mystery"}]}"#;
-        let result =
-            claude_from_usage_json(body, datetime!(2026-07-26 18:00:00 UTC), None, None, true);
+        let result = claude_from_usage_json(body, datetime!(2026-07-26 18:00:00 UTC), None, true);
         match result {
             ProviderResult::Ready { windows, .. } => assert!(windows.is_empty()),
             other => panic!("{other:?}"),
@@ -1074,8 +1042,7 @@ mod tests {
     #[test]
     fn claude_reads_seven_day_oauth_apps_bucket() {
         let body = br#"{"five_hour":{"utilization":10.0,"resets_at":"2026-07-28T20:00:00Z"},"seven_day_oauth_apps":{"utilization":37.0,"resets_at":"2026-08-01T00:00:00Z"}}"#;
-        let result =
-            claude_from_usage_json(body, datetime!(2026-07-28 18:00:00 UTC), None, None, true);
+        let result = claude_from_usage_json(body, datetime!(2026-07-28 18:00:00 UTC), None, true);
         match result {
             ProviderResult::Ready { windows, .. } => {
                 assert_eq!(windows.len(), 2);
@@ -1091,8 +1058,7 @@ mod tests {
     fn claude_prefers_oauth_apps_bucket_over_seven_day() {
         let body =
             br#"{"seven_day_oauth_apps":{"utilization":30.0},"seven_day":{"utilization":60.0}}"#;
-        let result =
-            claude_from_usage_json(body, datetime!(2026-07-28 18:00:00 UTC), None, None, true);
+        let result = claude_from_usage_json(body, datetime!(2026-07-28 18:00:00 UTC), None, true);
         match result {
             ProviderResult::Ready { windows, .. } => {
                 assert_eq!(windows.len(), 1);
@@ -1235,7 +1201,7 @@ mod tests {
     fn grok_billing_weekly_window_discards_money() {
         let body = include_bytes!("../../tests/fixtures/providers/grok/billing-weekly.json");
         let now = datetime!(2026-07-27 12:00:00 UTC);
-        match grok_from_billing_json(body, Some("Ada".into()), now, true) {
+        match grok_from_billing_json(body, now, true) {
             ProviderResult::Ready { windows, plan, .. } => {
                 assert_eq!(windows.len(), 1);
                 assert_eq!(windows[0].id(), "weekly");
@@ -1253,7 +1219,7 @@ mod tests {
     fn grok_billing_ready_never_emits_context() {
         let body = include_bytes!("../../tests/fixtures/providers/grok/billing-weekly.json");
         let now = datetime!(2026-07-27 12:00:00 UTC);
-        match grok_from_billing_json(body, None, now, true) {
+        match grok_from_billing_json(body, now, true) {
             ProviderResult::Ready { windows, .. } => {
                 assert!(windows.iter().all(|w| w.id() != "context"));
             }
@@ -1266,7 +1232,7 @@ mod tests {
         let body =
             include_bytes!("../../tests/fixtures/providers/grok/billing-weekly-wrapped.json");
         let now = datetime!(2026-07-27 12:00:00 UTC);
-        let result = grok_from_billing_json(body, None, now, true);
+        let result = grok_from_billing_json(body, now, true);
         assert_no_money(&result);
         match result {
             ProviderResult::Ready { windows, .. } => {
@@ -1285,7 +1251,7 @@ mod tests {
         let json = br#"{"creditUsagePercent": 20.0,
             "currentPeriod": {"type": "USAGE_PERIOD_TYPE_MONTHLY", "end": "2026-09-01T00:00:00Z"},
             "subscriptionTiers": "pro"}"#;
-        let result = grok_from_billing_json(json, None, datetime!(2026-08-07 12:00:00 UTC), true);
+        let result = grok_from_billing_json(json, datetime!(2026-08-07 12:00:00 UTC), true);
         match result {
             ProviderResult::Ready { windows, plan, .. } => {
                 assert_eq!(windows[0].id(), "monthly");
@@ -1299,7 +1265,7 @@ mod tests {
     #[test]
     fn grok_missing_period_type_stays_weekly() {
         let json = br#"{"creditUsagePercent": 10.0}"#;
-        let result = grok_from_billing_json(json, None, datetime!(2026-08-07 12:00:00 UTC), true);
+        let result = grok_from_billing_json(json, datetime!(2026-08-07 12:00:00 UTC), true);
         match result {
             ProviderResult::Ready { windows, .. } => {
                 assert_eq!(windows[0].id(), "weekly");
@@ -1313,7 +1279,7 @@ mod tests {
     fn grok_credits_without_percent_is_ready_with_no_windows() {
         let body =
             include_bytes!("../../tests/fixtures/providers/grok/billing-credits-no-quota.json");
-        let result = grok_from_billing_json(body, None, datetime!(2026-08-26 12:00:00 UTC), true);
+        let result = grok_from_billing_json(body, datetime!(2026-08-26 12:00:00 UTC), true);
         assert_no_money(&result);
         match result {
             ProviderResult::Ready { windows, plan, .. } => {
@@ -1327,7 +1293,7 @@ mod tests {
     #[test]
     fn grok_monthly_limit_becomes_percentage_window() {
         let body = include_bytes!("../../tests/fixtures/providers/grok/billing-monthly-limit.json");
-        let result = grok_from_billing_json(body, None, datetime!(2026-08-26 12:00:00 UTC), true);
+        let result = grok_from_billing_json(body, datetime!(2026-08-26 12:00:00 UTC), true);
         assert_no_money(&result);
         match result {
             ProviderResult::Ready { windows, .. } => {
@@ -1348,7 +1314,7 @@ mod tests {
     #[test]
     fn grok_monthly_zero_limit_has_no_window() {
         let body = include_bytes!("../../tests/fixtures/providers/grok/billing-monthly-zero.json");
-        let result = grok_from_billing_json(body, None, datetime!(2026-08-26 12:00:00 UTC), true);
+        let result = grok_from_billing_json(body, datetime!(2026-08-26 12:00:00 UTC), true);
         assert_no_money(&result);
         match result {
             ProviderResult::Ready { windows, .. } => assert!(windows.is_empty()),
@@ -1359,7 +1325,7 @@ mod tests {
     #[test]
     fn grok_monthly_limit_without_used_has_no_window() {
         let json = br#"{"monthlyLimit": {"val": 100}, "billingPeriodEnd": "2026-09-01T00:00:00Z"}"#;
-        let result = grok_from_billing_json(json, None, datetime!(2026-08-26 12:00:00 UTC), true);
+        let result = grok_from_billing_json(json, datetime!(2026-08-26 12:00:00 UTC), true);
         match result {
             ProviderResult::Ready { windows, .. } => assert!(windows.is_empty(), "{windows:?}"),
             other => panic!("expected ready, got {other:?}"),
@@ -1369,7 +1335,7 @@ mod tests {
     #[test]
     fn grok_scalar_amounts_never_fail_the_credits_payload() {
         let json = br#"{"creditUsagePercent": 33.0, "used": 12.5, "monthlyLimit": 200}"#;
-        let result = grok_from_billing_json(json, None, datetime!(2026-08-26 12:00:00 UTC), true);
+        let result = grok_from_billing_json(json, datetime!(2026-08-26 12:00:00 UTC), true);
         match result {
             ProviderResult::Ready { windows, .. } => {
                 assert_eq!(windows.len(), 1);
@@ -1378,7 +1344,7 @@ mod tests {
             other => panic!("expected ready, got {other:?}"),
         }
         let json = br#"{"used": "12.5", "monthlyLimit": [200]}"#;
-        let result = grok_from_billing_json(json, None, datetime!(2026-08-26 12:00:00 UTC), true);
+        let result = grok_from_billing_json(json, datetime!(2026-08-26 12:00:00 UTC), true);
         match result {
             ProviderResult::Ready { windows, .. } => assert!(windows.is_empty()),
             other => panic!("expected ready, got {other:?}"),
@@ -1389,7 +1355,7 @@ mod tests {
     fn grok_credit_percent_wins_over_monthly_limit() {
         let json =
             br#"{"creditUsagePercent": 40.0, "monthlyLimit": {"val": 100}, "used": {"val": 10}}"#;
-        let result = grok_from_billing_json(json, None, datetime!(2026-08-26 12:00:00 UTC), true);
+        let result = grok_from_billing_json(json, datetime!(2026-08-26 12:00:00 UTC), true);
         match result {
             ProviderResult::Ready { windows, .. } => {
                 assert_eq!(windows.len(), 1);
@@ -1408,8 +1374,7 @@ mod tests {
                         "scope": {"model": {"id": "opus", "display_name": "Opus"}}}],
             "seven_day_opus": {"utilization": 55.0}
         }"#;
-        let result =
-            claude_from_usage_json(body, datetime!(2026-07-28 18:00:00 UTC), None, None, true);
+        let result = claude_from_usage_json(body, datetime!(2026-07-28 18:00:00 UTC), None, true);
         let status = crate::status::collect::provider_status_from_result(result.clone());
         assert!(status.is_ok(), "row failed schema validation: {status:?}");
         match result {
@@ -1443,8 +1408,7 @@ mod tests {
                  "is_active": false}
             ]
         }"#;
-        let result =
-            claude_from_usage_json(body, datetime!(2026-08-01 21:00:00 UTC), None, None, true);
+        let result = claude_from_usage_json(body, datetime!(2026-08-01 21:00:00 UTC), None, true);
         match result {
             ProviderResult::Ready { windows, .. } => {
                 let ids: Vec<_> = windows.iter().map(|w| w.id().to_owned()).collect();
@@ -1470,8 +1434,7 @@ mod tests {
                 {"kind": "weekly_all", "percent": 12.0, "resets_at": "2026-08-07T12:00:00+00:00"}
             ]
         }"#;
-        let result =
-            claude_from_usage_json(body, datetime!(2026-08-01 21:00:00 UTC), None, None, true);
+        let result = claude_from_usage_json(body, datetime!(2026-08-01 21:00:00 UTC), None, true);
         match result {
             ProviderResult::Ready { windows, .. } => {
                 let ids: Vec<_> = windows.iter().map(|w| w.id().to_owned()).collect();
@@ -1509,12 +1472,7 @@ mod tests {
         let result = antigravity_from_usage_json(fixture, datetime!(2026-08-21 12:00:00 UTC));
         assert_no_money(&result);
         match result {
-            ProviderResult::Ready {
-                windows,
-                plan,
-                account,
-                ..
-            } => {
+            ProviderResult::Ready { windows, plan, .. } => {
                 assert_eq!(windows.len(), 4);
 
                 assert_eq!(windows[0].id(), "gemini-weekly");
@@ -1546,7 +1504,6 @@ mod tests {
                 assert_eq!(windows[3].resets_at(), None);
 
                 assert!(plan.is_none());
-                assert!(account.is_none());
             }
             other => panic!("expected ready, got {other:?}"),
         }

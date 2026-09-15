@@ -181,7 +181,6 @@ TestCase {
         state: "ready",
         source: "live",
         plan: null,
-        account: null,
         windows: [{
           id: "session",
           label: "Session",

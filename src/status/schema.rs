@@ -126,28 +126,6 @@ impl DataSource {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ErrorCode {
-    CliNotFound,
-    AuthenticationRequired,
-    RateLimited,
-    NetworkError,
-    ProviderError,
-}
-
-impl ErrorCode {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::CliNotFound => "cli_not_found",
-            Self::AuthenticationRequired => "authentication_required",
-            Self::RateLimited => "rate_limited",
-            Self::NetworkError => "network_error",
-            Self::ProviderError => "provider_error",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
 pub enum ActionKind {
     Retry,
     Login,
@@ -167,15 +145,13 @@ impl ActionKind {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderError {
-    pub code: ErrorCode,
     pub message: String,
     pub retryable: bool,
 }
 
 impl ProviderError {
-    pub fn new(code: ErrorCode, message: impl Into<String>, retryable: bool) -> Self {
+    pub fn new(message: impl Into<String>, retryable: bool) -> Self {
         Self {
-            code,
             message: message.into(),
             retryable,
         }
@@ -229,13 +205,6 @@ impl ProviderAction {
 #[serde(rename_all = "camelCase")]
 pub struct Plan {
     pub id: String,
-    pub label: String,
-}
-
-/// Account label (sanitized; never credentials).
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Account {
     pub label: String,
 }
 
@@ -315,7 +284,6 @@ pub struct ProviderStatus {
     state: ProviderState,
     source: Option<DataSource>,
     plan: Option<Plan>,
-    account: Option<Account>,
     windows: Vec<UsageWindow>,
     #[serde(with = "time::serde::rfc3339::option")]
     last_success_at: Option<OffsetDateTime>,
@@ -386,10 +354,6 @@ impl ProviderStatus {
         self.plan.as_ref()
     }
 
-    pub fn account(&self) -> Option<&Account> {
-        self.account.as_ref()
-    }
-
     pub fn rate_limit_resets_available(&self) -> Option<u32> {
         self.rate_limit_resets_available
     }
@@ -410,7 +374,6 @@ impl ProviderStatus {
                     self.name.clone(),
                     DataSource::Cache,
                     self.plan.clone(),
-                    self.account.clone(),
                     self.windows.clone(),
                     last,
                 )
@@ -435,7 +398,6 @@ impl ProviderStatus {
             self.id(),
             self.name.clone(),
             self.plan.clone(),
-            self.account.clone(),
             self.windows.clone(),
             last,
             error,
@@ -459,7 +421,6 @@ impl ProviderStatus {
         name: impl Into<String>,
         source: DataSource,
         plan: Option<Plan>,
-        account: Option<Account>,
         windows: Vec<UsageWindow>,
         last_success_at: OffsetDateTime,
     ) -> Result<Self, SchemaError> {
@@ -471,7 +432,6 @@ impl ProviderStatus {
             state: ProviderState::Ready,
             source: Some(source),
             plan,
-            account,
             windows,
             last_success_at: Some(last_success_at),
             error: None,
@@ -480,12 +440,10 @@ impl ProviderStatus {
         })
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn stale(
         id: ProviderId,
         name: impl Into<String>,
         plan: Option<Plan>,
-        account: Option<Account>,
         windows: Vec<UsageWindow>,
         last_success_at: OffsetDateTime,
         error: ProviderError,
@@ -502,7 +460,6 @@ impl ProviderStatus {
             state: ProviderState::Stale,
             source: Some(DataSource::Cache),
             plan,
-            account,
             windows,
             last_success_at: Some(last_success_at),
             error: Some(error),
@@ -517,11 +474,6 @@ impl ProviderStatus {
         error: ProviderError,
         action: ProviderAction,
     ) -> Result<Self, SchemaError> {
-        if error.code != ErrorCode::CliNotFound {
-            return Err(SchemaError::new(
-                "cli_missing error code must be cli_not_found",
-            ));
-        }
         if action.kind != ActionKind::ViewInstallation {
             return Err(SchemaError::new(
                 "cli_missing action must be view_installation",
@@ -533,7 +485,6 @@ impl ProviderStatus {
             state: ProviderState::CliMissing,
             source: None,
             plan: None,
-            account: None,
             windows: Vec::new(),
             last_success_at: None,
             error: Some(error),
@@ -548,11 +499,6 @@ impl ProviderStatus {
         error: ProviderError,
         action: ProviderAction,
     ) -> Result<Self, SchemaError> {
-        if error.code != ErrorCode::AuthenticationRequired {
-            return Err(SchemaError::new(
-                "unauthenticated error code must be authentication_required",
-            ));
-        }
         if !matches!(
             action.kind,
             ActionKind::Login | ActionKind::ViewInstallation
@@ -567,7 +513,6 @@ impl ProviderStatus {
             state: ProviderState::Unauthenticated,
             source: None,
             plan: None,
-            account: None,
             windows: Vec::new(),
             last_success_at: None,
             error: Some(error),
@@ -582,15 +527,7 @@ impl ProviderStatus {
         error: ProviderError,
         action: ProviderAction,
     ) -> Result<Self, SchemaError> {
-        failure_state(
-            id,
-            name,
-            ProviderState::RateLimited,
-            ErrorCode::RateLimited,
-            true,
-            error,
-            action,
-        )
+        failure_state(id, name, ProviderState::RateLimited, true, error, action)
     }
 
     pub fn network_error(
@@ -599,15 +536,7 @@ impl ProviderStatus {
         error: ProviderError,
         action: ProviderAction,
     ) -> Result<Self, SchemaError> {
-        failure_state(
-            id,
-            name,
-            ProviderState::NetworkError,
-            ErrorCode::NetworkError,
-            true,
-            error,
-            action,
-        )
+        failure_state(id, name, ProviderState::NetworkError, true, error, action)
     }
 
     pub fn provider_error(
@@ -616,11 +545,6 @@ impl ProviderStatus {
         error: ProviderError,
         action: ProviderAction,
     ) -> Result<Self, SchemaError> {
-        if error.code != ErrorCode::ProviderError {
-            return Err(SchemaError::new(
-                "provider_error error code must be provider_error",
-            ));
-        }
         if action.kind != ActionKind::Retry {
             return Err(SchemaError::new("provider_error action must be retry"));
         }
@@ -630,7 +554,6 @@ impl ProviderStatus {
             state: ProviderState::ProviderError,
             source: None,
             plan: None,
-            account: None,
             windows: Vec::new(),
             last_success_at: None,
             error: Some(error),
@@ -706,18 +629,10 @@ fn failure_state(
     id: ProviderId,
     name: impl Into<String>,
     state: ProviderState,
-    expected_code: ErrorCode,
     expect_retryable: bool,
     error: ProviderError,
     action: ProviderAction,
 ) -> Result<ProviderStatus, SchemaError> {
-    if error.code != expected_code {
-        return Err(SchemaError::new(format!(
-            "{} error code must be {}",
-            state.as_str(),
-            expected_code.as_str()
-        )));
-    }
     if expect_retryable && !error.retryable {
         return Err(SchemaError::new(format!(
             "{} error must be retryable",
@@ -736,7 +651,6 @@ fn failure_state(
         state,
         source: None,
         plan: None,
-        account: None,
         windows: Vec::new(),
         last_success_at: None,
         error: Some(error),
@@ -909,7 +823,6 @@ pub enum ProviderResult {
         name: String,
         source: DataSource,
         plan: Option<Plan>,
-        account: Option<Account>,
         windows: Vec<UsageWindow>,
         last_success_at: OffsetDateTime,
         rate_limit_resets_available: Option<u32>,
@@ -1020,9 +933,6 @@ mod tests {
                 id: "max".into(),
                 label: "Max".into(),
             }),
-            Some(Account {
-                label: "Personal".into(),
-            }),
             vec![session_window()],
             ts(),
         )
@@ -1062,9 +972,6 @@ mod tests {
                     id: "plus".into(),
                     label: "Plus".into(),
                 }),
-                Some(Account {
-                    label: "Work".into(),
-                }),
                 vec![],
                 ts(),
             )
@@ -1076,19 +983,16 @@ mod tests {
                     id: "super".into(),
                     label: "SuperGrok".into(),
                 }),
-                Some(Account {
-                    label: "Personal".into(),
-                }),
                 vec![UsageWindow::try_new("session", "Session", 90.0, 10.0, None).unwrap()],
                 datetime!(2026-07-26 18:40:00 UTC),
-                ProviderError::new(ErrorCode::NetworkError, "Temporary network failure", true),
+                ProviderError::new("Temporary network failure", true),
                 ProviderAction::retry("Retry"),
             )
             .unwrap(),
             ProviderStatus::cli_missing(
                 ProviderId::Amp,
                 "Amp",
-                ProviderError::new(ErrorCode::CliNotFound, "Amp CLI was not found.", false),
+                ProviderError::new("Amp CLI was not found.", false),
                 ProviderAction::view_installation("Install guide", "https://ampcode.com/manual")
                     .unwrap(),
             )
@@ -1096,32 +1000,28 @@ mod tests {
             ProviderStatus::unauthenticated(
                 ProviderId::Claude,
                 "Claude",
-                ProviderError::new(
-                    ErrorCode::AuthenticationRequired,
-                    "Claude is not authenticated.",
-                    false,
-                ),
+                ProviderError::new("Claude is not authenticated.", false),
                 ProviderAction::login("Sign in"),
             )
             .unwrap(),
             ProviderStatus::rate_limited(
                 ProviderId::Codex,
                 "Codex",
-                ProviderError::new(ErrorCode::RateLimited, "rate limited", true),
+                ProviderError::new("rate limited", true),
                 ProviderAction::retry("Retry"),
             )
             .unwrap(),
             ProviderStatus::network_error(
                 ProviderId::Grok,
                 "Grok",
-                ProviderError::new(ErrorCode::NetworkError, "network", true),
+                ProviderError::new("network", true),
                 ProviderAction::retry("Retry"),
             )
             .unwrap(),
             ProviderStatus::provider_error(
                 ProviderId::Amp,
                 "Amp",
-                ProviderError::new(ErrorCode::ProviderError, "bad payload", false),
+                ProviderError::new("bad payload", false),
                 ProviderAction::retry("Retry"),
             )
             .unwrap(),
@@ -1153,7 +1053,7 @@ mod tests {
         let missing = ProviderStatus::cli_missing(
             ProviderId::Codex,
             "Codex",
-            ProviderError::new(ErrorCode::CliNotFound, "missing", false),
+            ProviderError::new("missing", false),
             ProviderAction::view_installation("Install guide", "https://example.com/codex")
                 .unwrap(),
         )
@@ -1179,7 +1079,6 @@ mod tests {
             "Claude",
             DataSource::Cache,
             None,
-            None,
             vec![],
             ts(),
         )
@@ -1199,7 +1098,6 @@ mod tests {
             ProviderId::Claude,
             "Claude",
             DataSource::Live,
-            None,
             None,
             vec![
                 UsageWindow::try_new("session", "Session", 10.0, 90.0, None).unwrap(),
@@ -1224,7 +1122,6 @@ mod tests {
                     ProviderId::Codex,
                     "Codex",
                     DataSource::Live,
-                    None,
                     None,
                     vec![],
                     ts(),
@@ -1373,7 +1270,7 @@ mod tests {
     fn provider_status_serializes_reset_count_only_when_present() {
         let base = serde_json::json!({
             "id": "codex", "name": "Codex", "state": "ready", "source": "live",
-            "plan": null, "account": null, "windows": [],
+            "plan": null, "windows": [],
             "lastSuccessAt": "2026-08-07T12:00:00Z", "error": null, "action": null
         });
         let mut with = base.clone();

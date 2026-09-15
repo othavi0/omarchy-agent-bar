@@ -13,11 +13,9 @@
       "state": "provider_error",
       "source": null,
       "plan": null,
-      "account": null,
       "windows": [],
       "lastSuccessAt": null,
       "error": {
-        "code": "provider_error",
         "message": "Amp returned an invalid usage payload.",
         "retryable": false
       },

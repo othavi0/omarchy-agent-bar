@@ -31,9 +31,6 @@ Representative response:
         "id": "max",
         "label": "Max"
       },
-      "account": {
-        "label": "Personal"
-      },
       "windows": [
         {
           "id": "session",
@@ -83,8 +80,8 @@ completed status envelope never serializes `loading`.
 
 ## Errors and actions
 
-Errors contain stable code, safe English message, and retryable boolean.
-Actions are limited to:
+Errors contain a safe English message and a retryable boolean. Actions are
+limited to:
 
 ```text
 retry
