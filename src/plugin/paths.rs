@@ -53,11 +53,6 @@ impl PluginPaths {
             xdg_state: agent_state,
         }
     }
-
-    /// Durable backup root for one operation (outside the target).
-    pub fn backup_root(&self, stamp: &str) -> PathBuf {
-        self.backups_dir.join(stamp)
-    }
 }
 
 /// Generate a random-looking 32-hex txid from a clock/nonce seed (tests inject).

@@ -5,6 +5,7 @@ import "CoreService.js" as Core
 import "CoreSettings.js" as Settings
 import "CoreMaintenance.js" as Maintenance
 import "CoreView.js" as View
+import "components"
 
 Item {
   id: root
@@ -30,12 +31,14 @@ Item {
   property int collectionDelayMs: 0
 
   property var snapshot: null
-  property bool refreshing: false
+  readonly property bool refreshing: statusLane.busy
   property string selectedProviderId: ""
   property var popupOwner: null
   property var settingsState: Settings.settingsClosed()
   property var settingsDraft: null
   property var appliedSettings: null
+  readonly property var resolvedSettings: appliedSettings ? appliedSettings : Core.defaultSettings()
+  readonly property var visibleProviders: View.visibleProviders(snapshot, resolvedSettings)
   property var maintenanceState: Maintenance.maintenanceIdle()
   property var maintenanceUi: Maintenance.maintenanceUiIdle("")
   property var pendingForcedTargets: Core.emptyPending()
@@ -47,52 +50,38 @@ Item {
   property string lastViewInstallationUrl: ""
   property var pendingMaintenanceIntention: null
   property string pendingMaintenancePayload: ""
-  property var timedOutLanes: ({})
-  property var settledLanes: ({})
-  property int completedCallbackCount: 0
-  readonly property string runtimeHealth: Core.runtimeHealth(timedOutLanes)
+  readonly property var lanes: ({
+    versionProbe: versionProbeLane,
+    status: statusLane,
+    settingsRead: settingsReadLane,
+    settingsBootstrap: settingsBootstrapLane,
+    settingsWrite: settingsWriteLane,
+    maintenanceCheck: maintenanceCheckLane,
+    maintenanceHandoff: maintenanceHandoffLane
+  })
+  readonly property int stalledLaneCount:
+      (versionProbeLane.stalled ? 1 : 0)
+      + (statusLane.stalled ? 1 : 0)
+      + (settingsReadLane.stalled ? 1 : 0)
+      + (settingsBootstrapLane.stalled ? 1 : 0)
+      + (settingsWriteLane.stalled ? 1 : 0)
+      + (maintenanceCheckLane.stalled ? 1 : 0)
+      + (maintenanceHandoffLane.stalled ? 1 : 0)
+  readonly property string runtimeHealth: Core.runtimeHealth(stalledLaneCount)
 
   property string helperVersion: ""
   property bool versionReady: false
   property bool versionFailed: false
-  property bool versionProbeRunning: false
   property bool collectionStarted: false
 
-  property bool statusBusy: false
-  property bool settingsReadBusy: false
-  property bool settingsBootstrapBusy: false
-  property bool settingsWriteBusy: false
-  property bool maintenanceCheckBusy: false
-  property bool maintenanceHandoffBusy: false
-
-  property int statusGeneration: 0
   property int settingsGeneration: 0
-  property int versionProbeGeneration: 0
-  property int settingsBootstrapGeneration: 0
-  property int maintenanceCheckGeneration: 0
-  property int maintenanceHandoffGeneration: 0
-  property int activeVersionProbeGeneration: 0
-  property int activeStatusGeneration: 0
-  property int activeSettingsReadGeneration: 0
-  property int activeSettingsBootstrapGeneration: 0
-  property int activeSettingsWriteGeneration: 0
-  property int activeMaintenanceCheckGeneration: 0
-  property int activeMaintenanceHandoffGeneration: 0
-  property int versionProbeStartedGeneration: 0
-  property int statusStartedGeneration: 0
-  property int settingsReadStartedGeneration: 0
-  property int settingsBootstrapStartedGeneration: 0
-  property int settingsWriteStartedGeneration: 0
-  property int maintenanceCheckStartedGeneration: 0
-  property int maintenanceHandoffStartedGeneration: 0
   property string pendingSettingsPayload: ""
-  property int pendingSettingsPayloadGeneration: 0
 
   property int refreshRequestCount: 0
   property string lastRefreshProviderId: ""
-  property int statusStartCount: 0
   property int settingsSaveCount: 0
   property bool pollEnabled: true
+  property double nowMs: Date.now()
 
   readonly property string manifestVersion: manifest && manifest.version
       ? String(manifest.version)
@@ -117,27 +106,12 @@ Item {
     )
   }
 
-  function recordLaneTimeout(lane, generation) {
-    timedOutLanes = Core.recordLaneTimeout(timedOutLanes, lane)
-    if (generation !== undefined)
-      settledLanes = Core.settleLane(settledLanes, lane, generation)
-  }
-
-  function recordCompletedCallback(fromTimeout, lane) {
-    if (fromTimeout)
+  // ARCH-021: any accepted callback clears every lane's stall mark.
+  function noteLaneSettled(outcome) {
+    if (outcome.timedOut)
       return
-    settledLanes = Core.clearSettledLane(settledLanes, lane)
-    completedCallbackCount++
-    timedOutLanes = ({})
-  }
-
-  function shouldApplyProcessExit(lane, generation, activeGeneration) {
-    if (Core.isLaneSettled(settledLanes, lane, generation)) {
-      settledLanes = Core.clearSettledLane(settledLanes, lane, generation)
-      timedOutLanes = Core.clearLaneTimeout(timedOutLanes, lane)
-      return false
-    }
-    return Core.shouldApplyGeneration(activeGeneration, generation)
+    for (var key in lanes)
+      lanes[key].clearStall()
   }
 
   // IPC refresh(providerId) — queue one cache-bypass provider refresh.
@@ -197,7 +171,6 @@ Item {
     requestPopup(owner, selectedProviderId || null, "settings")
     if (!settingsState || settingsState.phase === "closed") {
       settingsGeneration++
-      activeSettingsReadGeneration = settingsGeneration
       settingsState = Settings.settingsBeginLoad(settingsGeneration)
       settingsDraft = null
       kickSettingsRead()
@@ -281,7 +254,7 @@ Item {
       return false
     if (!canSaveSettings())
       return false
-    if (!Core.canStartLane(settingsWriteBusy))
+    if (!settingsWriteLane.ready)
       return false
     var payloadObj = JSON.parse(JSON.stringify(settingsDraft))
     var validation = Settings.validateSettingsDraft(payloadObj)
@@ -290,10 +263,8 @@ Item {
     settingsGeneration++
     var gen = settingsGeneration
     pendingSettingsPayload = JSON.stringify(payloadObj)
-    pendingSettingsPayloadGeneration = gen
     settingsState = Settings.settingsBeginSave(settingsState, gen, payloadObj)
     settingsDraft = settingsState.draft
-    activeSettingsWriteGeneration = gen
     settingsSaveCount++
     kickSettingsWrite()
     return true
@@ -351,40 +322,25 @@ Item {
   function startUpdateCheck() {
     if (maintenanceState.blocked)
       return false
-    if (!Core.canStartLane(maintenanceCheckBusy))
+    if (!maintenanceCheckLane.ready)
       return false
     syncMaintenanceVersion()
-    maintenanceCheckGeneration++
-    activeMaintenanceCheckGeneration = maintenanceCheckGeneration
-    maintenanceUi = Maintenance.maintenanceUiChecking(maintenanceUi)
-    maintenanceCheckBusy = true
-    maintenanceCheckTimeout.restart()
     var helper = resolvedHelperPath()
     if (!helper.length) {
-      maintenanceCheckTimeout.stop()
-      maintenanceCheckBusy = false
       maintenanceUi = Maintenance.maintenanceUiFromCheck(maintenanceUi, "", 1, helperVersion)
       return false
     }
-    maintenanceCheckProcess.command = Maintenance.updateCheckArgv(helper)
-    maintenanceCheckStartedGeneration = activeMaintenanceCheckGeneration
-    if (testMode) {
-      return true
-    }
-    maintenanceCheckProcess.running = true
-    return true
+    maintenanceUi = Maintenance.maintenanceUiChecking(maintenanceUi)
+    return maintenanceCheckLane.start(Maintenance.updateCheckArgv(helper))
   }
 
-  function applyUpdateCheckResult(generation, stdout, exitCode, fromTimeout) {
-    if (!Core.shouldApplyGeneration(activeMaintenanceCheckGeneration, generation))
-      return
-    maintenanceCheckTimeout.stop()
-    maintenanceCheckBusy = false
-    recordCompletedCallback(!!fromTimeout, "maintenanceCheck")
+  function applyUpdateCheckResult(outcome) {
+    noteLaneSettled(outcome)
+    tryMaintenanceDetach()
     maintenanceUi = Maintenance.maintenanceUiFromCheck(
       maintenanceUi,
-      stdout,
-      exitCode,
+      outcome.stdout,
+      outcome.exitCode,
       helperVersion || manifestVersion
     )
   }
@@ -456,11 +412,9 @@ Item {
     }
   }
 
-  function applyVersionProbeResult(generation, stdout, stderr, exitCode, fromTimeout) {
-    if (!Core.shouldApplyGeneration(activeVersionProbeGeneration, generation))
-      return
-    recordCompletedCallback(!!fromTimeout, "versionProbe")
-    var version = Core.parseVersionStdout(stdout, stderr, exitCode)
+  function applyVersionProbeResult(outcome) {
+    noteLaneSettled(outcome)
+    var version = Core.parseVersionStdout(outcome.stdout, outcome.stderr, outcome.exitCode)
     if (version)
       finishVersionProbeSuccess(version)
     else
@@ -470,7 +424,7 @@ Item {
   function tryStartProduction() {
     if (testMode)
       return
-    if (versionReady || versionProbeRunning)
+    if (versionReady || versionProbeLane.busy)
       return
     if (!resolvedHelperPath().length) {
       console.warn("Agent Bar: cannot resolve plugin root from " + Qt.resolvedUrl("."))
@@ -480,30 +434,19 @@ Item {
   }
 
   function startVersionProbe() {
-    if (versionProbeRunning || versionReady)
+    if (versionReady || !versionProbeLane.ready)
       return
     if (testMode)
-      return
-    if (!Core.canStartLane(versionProbeRunning))
       return
     var helper = resolvedHelperPath()
     if (!helper.length) {
       return
     }
-    versionProbeRunning = true
     versionFailed = false
-    versionProbeGeneration++
-    activeVersionProbeGeneration = versionProbeGeneration
-    // StdioCollector.text is read-only; waitForEnd replaces content per run.
-    versionProbe.command = [helper, "version"]
-    versionProbeStartedGeneration = activeVersionProbeGeneration
-    versionProbe.running = true
-    versionTimeout.restart()
+    versionProbeLane.start([helper, "version"])
   }
 
   function finishVersionProbeSuccess(versionText) {
-    versionTimeout.stop()
-    versionProbeRunning = false
     helperVersion = versionText
     versionReady = true
     versionFailed = false
@@ -518,8 +461,6 @@ Item {
   }
 
   function finishVersionProbeFailure() {
-    versionTimeout.stop()
-    versionProbeRunning = false
     versionReady = false
     versionFailed = true
     helperVersion = ""
@@ -536,51 +477,25 @@ Item {
       return
     if (maintenanceState.blocked)
       return
-    if (!Core.canStartLane(statusBusy))
+    if (!statusLane.ready)
       return
     var helper = resolvedHelperPath()
     if (!helper.length)
       return
-
-    statusGeneration++
-    var gen = statusGeneration
-    activeStatusGeneration = gen
     var targets = Core.takePending(pendingForcedTargets)
     pendingForcedTargets = targets.remaining
-    var argv = Core.statusArgv(helper, targets.captured)
-    var request = {
-      generation: gen,
-      argv: argv.slice(),
-      forced: targets.captured
-    }
-
-    statusBusy = true
-    refreshing = true
-    statusStartCount++
-    statusTimeout.restart()
-    // StdioCollector.text is read-only; waitForEnd replaces content per run.
-    statusProcess.command = argv
-    statusStartedGeneration = gen
-    if (testMode) {
-      return
-    }
-    statusProcess.running = true
+    statusLane.start(Core.statusArgv(helper, targets.captured))
   }
 
-  function applyStatusResult(generation, stdout, stderr, exitCode, fromTimeout) {
-    if (!Core.shouldApplyGeneration(activeStatusGeneration, generation))
-      return
-    statusTimeout.stop()
-    statusBusy = false
-    refreshing = false
-    recordCompletedCallback(!!fromTimeout, "status")
+  function applyStatusResult(outcome) {
+    noteLaneSettled(outcome)
     tryMaintenanceDetach()
 
-    if (exitCode !== 0) {
+    if (outcome.exitCode !== 0) {
       maybeFollowUpStatus()
       return
     }
-    var parsed = Core.parseStatusEnvelope(stdout, helperVersion)
+    var parsed = Core.parseStatusEnvelope(outcome.stdout, helperVersion)
     if (!parsed.ok) {
       maybeFollowUpStatus()
       return
@@ -599,64 +514,45 @@ Item {
   }
 
   function kickSettingsBootstrap() {
-    if (appliedSettings || settingsBootstrapBusy || maintenanceState.blocked)
+    if (appliedSettings || maintenanceState.blocked)
+      return
+    if (!settingsBootstrapLane.ready)
       return
     var helper = resolvedHelperPath()
     if (!helper.length)
       return
-    settingsBootstrapGeneration++
-    activeSettingsBootstrapGeneration = settingsBootstrapGeneration
-    settingsBootstrapBusy = true
-    settingsBootstrapTimeout.restart()
-    settingsBootstrapProcess.command = Settings.settingsArgvShow(helper)
-    settingsBootstrapStartedGeneration = activeSettingsBootstrapGeneration
-    if (testMode) {
-      return
-    }
-    settingsBootstrapProcess.running = true
+    settingsBootstrapLane.start(Settings.settingsArgvShow(helper))
   }
 
-  function applySettingsBootstrapResult(generation, stdout, exitCode, fromTimeout) {
-    if (!Core.shouldApplyGeneration(activeSettingsBootstrapGeneration, generation))
-      return
-    settingsBootstrapTimeout.stop()
-    settingsBootstrapBusy = false
-    recordCompletedCallback(!!fromTimeout, "settingsBootstrap")
-    appliedSettings = Settings.settingsBootstrapResult(appliedSettings, stdout, exitCode)
+  function applySettingsBootstrapResult(outcome) {
+    noteLaneSettled(outcome)
+    tryMaintenanceDetach()
+    appliedSettings = Settings.settingsBootstrapResult(appliedSettings, outcome.stdout, outcome.exitCode)
   }
 
   function kickSettingsRead() {
-    if (!Core.canStartLane(settingsReadBusy))
+    if (!settingsReadLane.ready)
       return
     var helper = resolvedHelperPath()
     if (!helper.length)
       return
-    settingsReadBusy = true
-    settingsReadTimeout.restart()
-    settingsReadProcess.command = Settings.settingsArgvShow(helper)
-    settingsReadStartedGeneration = activeSettingsReadGeneration
-    if (testMode) {
-      return
-    }
-    settingsReadProcess.running = true
+    settingsReadLane.start(Settings.settingsArgvShow(helper), "", settingsState.generation)
   }
 
-  function applySettingsReadResult(generation, stdout, exitCode, fromTimeout) {
-    if (!Core.shouldApplyGeneration(activeSettingsReadGeneration, generation))
-      return
-    settingsReadTimeout.stop()
-    settingsReadBusy = false
-    recordCompletedCallback(!!fromTimeout, "settingsRead")
+  function applySettingsReadResult(outcome) {
+    noteLaneSettled(outcome)
+    tryMaintenanceDetach()
     if (!settingsState || settingsState.phase === "closed")
       return
-    if (exitCode !== 0) {
+    var generation = outcome.context
+    if (outcome.exitCode !== 0) {
       settingsState = Settings.settingsFailLoad(settingsState, generation)
       settingsDraft = null
       return
     }
     var doc = null
     try {
-      doc = JSON.parse(String(stdout || "").trim())
+      doc = JSON.parse(String(outcome.stdout || "").trim())
     } catch (e) {
       doc = null
     }
@@ -671,35 +567,33 @@ Item {
   }
 
   function kickSettingsWrite() {
-    if (!Core.canStartLane(settingsWriteBusy))
+    if (!settingsWriteLane.ready)
       return
     if (maintenanceState.blocked)
       return
     var helper = resolvedHelperPath()
     if (!helper.length)
       return
-    settingsWriteBusy = true
-    settingsWriteTimeout.restart()
-    settingsWriteProcess.stdinEnabled = true
-    settingsWriteProcess.command = Settings.settingsArgvApplyStdin(helper)
-    settingsWriteStartedGeneration = activeSettingsWriteGeneration
-    if (testMode) {
-      return
-    }
-    settingsWriteProcess.running = true
+    settingsWriteLane.start(Settings.settingsArgvApplyStdin(helper),
+                            pendingSettingsPayload,
+                            settingsState.generation)
   }
 
-  function applySettingsWriteResult(generation, ok, canonical, fromTimeout) {
-    if (!Core.shouldApplyGeneration(activeSettingsWriteGeneration, generation))
-      return
-    settingsWriteTimeout.stop()
-    settingsWriteBusy = false
-    recordCompletedCallback(!!fromTimeout, "settingsWrite")
-    if (pendingSettingsPayloadGeneration === generation) {
-      pendingSettingsPayload = ""
-      pendingSettingsPayloadGeneration = 0
+  function applySettingsWriteResult(outcome) {
+    noteLaneSettled(outcome)
+    pendingSettingsPayload = ""
+    var ok = outcome.exitCode === 0
+    var canonical = null
+    if (ok) {
+      try {
+        canonical = JSON.parse(String(outcome.stdout).trim())
+        if (!Settings.validateSettingsDraft(canonical).ok)
+          ok = false
+      } catch (e) {
+        ok = false
+      }
     }
-    settingsState = Settings.settingsFinishSave(settingsState, generation, ok, canonical)
+    settingsState = Settings.settingsFinishSave(settingsState, outcome.context, ok, canonical)
     settingsDraft = settingsState ? settingsState.draft : null
     if (ok && canonical)
       appliedSettings = canonical
@@ -714,45 +608,26 @@ Item {
   }
 
   function tryMaintenanceDetach() {
-    if (!Maintenance.maintenanceCanDetach(maintenanceState, statusBusy, settingsWriteBusy))
+    var anyLaneBusy = statusLane.busy || settingsReadLane.busy
+        || settingsBootstrapLane.busy || settingsWriteLane.busy
+        || maintenanceCheckLane.busy
+    if (!Maintenance.maintenanceCanDetach(maintenanceState, anyLaneBusy))
       return
-    if (!Core.canStartLane(maintenanceHandoffBusy))
+    if (!maintenanceHandoffLane.ready)
       return
-    maintenanceHandoffGeneration++
-    activeMaintenanceHandoffGeneration = maintenanceHandoffGeneration
-    maintenanceHandoffBusy = true
-    maintenanceHandoffTimeout.restart()
     var helper = resolvedHelperPath()
     var intention = pendingMaintenanceIntention
-    var argv = null
-    if (intention && intention.kind === "uninstall")
-      argv = Maintenance.uninstallArgv(helper, intention.purge)
-    else
-      argv = helper && helper.length ? [helper, "doctor", "scan"] : null
-
-    if (!argv) {
-      maintenanceHandoffBusy = false
+    var argv = Maintenance.uninstallArgv(helper, intention.purge)
+    if (!argv)
       return
-    }
-    if (intention && intention.kind === "uninstall" && pendingMaintenancePayload.length) {
-      maintenanceHandoffProcess.stdinEnabled = true
-    } else {
-      maintenanceHandoffProcess.stdinEnabled = false
-    }
-    maintenanceHandoffProcess.command = argv
-    maintenanceHandoffStartedGeneration = activeMaintenanceHandoffGeneration
-    if (testMode) {
-      return
-    }
-    maintenanceHandoffProcess.running = true
+    var confirmation = intention && intention.kind === "uninstall"
+        ? pendingMaintenancePayload
+        : ""
+    maintenanceHandoffLane.start(argv, confirmation)
   }
 
-  function applyMaintenanceHandoffDone(generation, exitCode, fromTimeout) {
-    if (!Core.shouldApplyGeneration(activeMaintenanceHandoffGeneration, generation))
-      return
-    maintenanceHandoffTimeout.stop()
-    maintenanceHandoffBusy = false
-    recordCompletedCallback(!!fromTimeout, "maintenanceHandoff")
+  function applyMaintenanceHandoffDone(outcome) {
+    noteLaneSettled(outcome)
     var intention = pendingMaintenanceIntention
     pendingMaintenanceIntention = null
     pendingMaintenancePayload = ""
@@ -761,7 +636,7 @@ Item {
     if (versionReady)
       pollTimer.restart()
     if (intention && intention.kind === "uninstall") {
-      if (exitCode === 0) {
+      if (outcome.exitCode === 0) {
         maintenanceUi = Maintenance.maintenanceUiIdle(helperVersion)
         maintenanceUi.message = "Uninstall completed."
       } else {
@@ -772,247 +647,113 @@ Item {
     }
   }
 
-  function versionProbeExited(exitCode, generation, stdout, stderr) {
-    var gen = generation === undefined ? versionProbeStartedGeneration : generation
-    if (!shouldApplyProcessExit("versionProbe", gen, activeVersionProbeGeneration))
-      return
-    applyVersionProbeResult(gen,
-                            stdout === undefined ? versionOut.text || "" : stdout,
-                            stderr === undefined ? versionErr.text || "" : stderr,
-                            exitCode)
+  HelperLane {
+    id: versionProbeLane
+    process: versionProbe
+    stdoutSource: versionOut
+    stderrSource: versionErr
+    timeoutMs: root.versionProbeTimeoutMs
+    onSettled: function (outcome) { root.applyVersionProbeResult(outcome) }
   }
 
-  function statusExited(exitCode, generation, stdout, stderr) {
-    var gen = generation === undefined ? statusStartedGeneration : generation
-    if (!shouldApplyProcessExit("status", gen, activeStatusGeneration))
-      return
-    applyStatusResult(gen,
-                      stdout === undefined ? statusOut.text || "" : stdout,
-                      stderr === undefined ? statusErr.text || "" : stderr,
-                      exitCode)
+  HelperLane {
+    id: statusLane
+    process: statusProcess
+    stdoutSource: statusOut
+    stderrSource: statusErr
+    timeoutMs: root.statusTimeoutMs
+    onSettled: function (outcome) { root.applyStatusResult(outcome) }
+    // A forced refresh queued while the killed run was still dying only gets
+    // its kick once the lane reopens; callLater keeps that kick out of the
+    // lane's own state transition.
+    onReadyChanged: if (statusLane.ready) Qt.callLater(root.maybeFollowUpStatus)
   }
 
-  function settingsReadExited(exitCode, generation, stdout) {
-    var gen = generation === undefined ? settingsReadStartedGeneration : generation
-    if (!shouldApplyProcessExit("settingsRead", gen, activeSettingsReadGeneration))
-      return
-    applySettingsReadResult(gen,
-                            stdout === undefined ? settingsReadOut.text || "" : stdout,
-                            exitCode)
+  HelperLane {
+    id: settingsReadLane
+    process: settingsReadProcess
+    stdoutSource: settingsReadOut
+    stderrSource: settingsReadErr
+    timeoutMs: root.settingsTimeoutMs
+    onSettled: function (outcome) { root.applySettingsReadResult(outcome) }
   }
 
-  function settingsBootstrapExited(exitCode, generation, stdout) {
-    var gen = generation === undefined ? settingsBootstrapStartedGeneration : generation
-    if (!shouldApplyProcessExit("settingsBootstrap", gen, activeSettingsBootstrapGeneration))
-      return
-    applySettingsBootstrapResult(
-      gen,
-      stdout === undefined ? settingsBootstrapOut.text || "" : stdout,
-      exitCode
-    )
+  HelperLane {
+    id: settingsBootstrapLane
+    process: settingsBootstrapProcess
+    stdoutSource: settingsBootstrapOut
+    stderrSource: settingsBootstrapErr
+    timeoutMs: root.settingsTimeoutMs
+    onSettled: function (outcome) { root.applySettingsBootstrapResult(outcome) }
   }
 
-  function settingsWriteExited(exitCode, generation, stdout) {
-    var gen = generation === undefined ? settingsWriteStartedGeneration : generation
-    if (!shouldApplyProcessExit("settingsWrite", gen, activeSettingsWriteGeneration))
-      return
-    var ok = exitCode === 0
-    var canonical = null
-    if (ok) {
-      try {
-        var output = stdout === undefined ? settingsWriteOut.text || "" : stdout
-        canonical = JSON.parse(String(output).trim())
-        if (!Settings.validateSettingsDraft(canonical).ok)
-          ok = false
-      } catch (e) {
-        ok = false
-      }
-    }
-    applySettingsWriteResult(gen, ok, canonical)
+  HelperLane {
+    id: settingsWriteLane
+    process: settingsWriteProcess
+    stdoutSource: settingsWriteOut
+    stderrSource: settingsWriteErr
+    timeoutMs: root.settingsTimeoutMs
+    onSettled: function (outcome) { root.applySettingsWriteResult(outcome) }
   }
 
-  function maintenanceCheckExited(exitCode, generation, stdout) {
-    var gen = generation === undefined ? maintenanceCheckStartedGeneration : generation
-    if (!shouldApplyProcessExit("maintenanceCheck", gen, activeMaintenanceCheckGeneration))
-      return
-    applyUpdateCheckResult(
-      gen,
-      stdout === undefined ? maintenanceCheckOut.text || "" : stdout,
-      exitCode
-    )
+  HelperLane {
+    id: maintenanceCheckLane
+    process: maintenanceCheckProcess
+    stdoutSource: maintenanceCheckOut
+    stderrSource: maintenanceCheckErr
+    timeoutMs: root.maintenanceCheckTimeoutMs
+    onSettled: function (outcome) { root.applyUpdateCheckResult(outcome) }
   }
 
-  function maintenanceHandoffExited(exitCode, generation) {
-    var gen = generation === undefined ? maintenanceHandoffStartedGeneration : generation
-    if (!shouldApplyProcessExit("maintenanceHandoff", gen, activeMaintenanceHandoffGeneration))
-      return
-    applyMaintenanceHandoffDone(gen, exitCode)
+  HelperLane {
+    id: maintenanceHandoffLane
+    process: maintenanceHandoffProcess
+    stdoutSource: maintenanceHandoffOut
+    stderrSource: maintenanceHandoffErr
+    timeoutMs: root.maintenanceHandoffTimeoutMs
+    onSettled: function (outcome) { root.applyMaintenanceHandoffDone(outcome) }
   }
 
   Process {
     id: versionProbe
     stdout: StdioCollector { id: versionOut; waitForEnd: true }
     stderr: StdioCollector { id: versionErr; waitForEnd: true }
-    onExited: function (exitCode) { root.versionProbeExited(exitCode) }
   }
 
   Process {
     id: statusProcess
     stdout: StdioCollector { id: statusOut; waitForEnd: true }
     stderr: StdioCollector { id: statusErr; waitForEnd: true }
-    onExited: function (exitCode) { root.statusExited(exitCode) }
   }
 
   Process {
     id: settingsReadProcess
     stdout: StdioCollector { id: settingsReadOut; waitForEnd: true }
     stderr: StdioCollector { id: settingsReadErr; waitForEnd: true }
-    onExited: function (exitCode) { root.settingsReadExited(exitCode) }
   }
 
   Process {
     id: settingsBootstrapProcess
     stdout: StdioCollector { id: settingsBootstrapOut; waitForEnd: true }
     stderr: StdioCollector { id: settingsBootstrapErr; waitForEnd: true }
-    onExited: function (exitCode) { root.settingsBootstrapExited(exitCode) }
   }
 
   Process {
     id: settingsWriteProcess
-    stdinEnabled: true
     stdout: StdioCollector { id: settingsWriteOut; waitForEnd: true }
     stderr: StdioCollector { id: settingsWriteErr; waitForEnd: true }
-    onStarted: {
-      // config apply stdin reads until EOF — write() alone does not deliver it;
-      // stdinEnabled=false closes the write channel (same as maintenance handoff).
-      if (root.pendingSettingsPayloadGeneration === root.settingsWriteStartedGeneration
-          && root.pendingSettingsPayload && root.pendingSettingsPayload.length) {
-        write(root.pendingSettingsPayload + "\n")
-        settingsWriteProcess.stdinEnabled = false
-      }
-    }
-    onExited: function (exitCode) { root.settingsWriteExited(exitCode) }
   }
 
   Process {
     id: maintenanceCheckProcess
     stdout: StdioCollector { id: maintenanceCheckOut; waitForEnd: true }
     stderr: StdioCollector { id: maintenanceCheckErr; waitForEnd: true }
-    onExited: function (exitCode) { root.maintenanceCheckExited(exitCode) }
   }
 
   Process {
     id: maintenanceHandoffProcess
-    stdinEnabled: false
     stdout: StdioCollector { id: maintenanceHandoffOut; waitForEnd: true }
     stderr: StdioCollector { id: maintenanceHandoffErr; waitForEnd: true }
-    onStarted: {
-      // write() alone does not deliver EOF; stdinEnabled=false closes the write channel.
-      if (root.pendingMaintenancePayload && root.pendingMaintenancePayload.length
-          && maintenanceHandoffProcess.stdinEnabled) {
-        write(root.pendingMaintenancePayload + "\n")
-        maintenanceHandoffProcess.stdinEnabled = false
-      }
-    }
-    onExited: function (exitCode) { root.maintenanceHandoffExited(exitCode) }
-  }
-
-  Timer {
-    id: versionTimeout
-    interval: root.versionProbeTimeoutMs
-    repeat: false
-    onTriggered: {
-      if (!root.versionProbeRunning)
-        return
-      if (versionProbe.running)
-        versionProbe.running = false
-      root.recordLaneTimeout("versionProbe", root.activeVersionProbeGeneration)
-      root.applyVersionProbeResult(root.activeVersionProbeGeneration, "", "timeout", 1, true)
-    }
-  }
-
-  Timer {
-    id: statusTimeout
-    interval: root.statusTimeoutMs
-    repeat: false
-    onTriggered: {
-      if (!root.statusBusy)
-        return
-      if (statusProcess.running)
-        statusProcess.running = false
-      root.recordLaneTimeout("status", root.activeStatusGeneration)
-      root.applyStatusResult(root.activeStatusGeneration, "", "timeout", 1, true)
-    }
-  }
-
-  Timer {
-    id: settingsReadTimeout
-    interval: root.settingsTimeoutMs
-    repeat: false
-    onTriggered: {
-      if (!root.settingsReadBusy)
-        return
-      if (settingsReadProcess.running)
-        settingsReadProcess.running = false
-      root.recordLaneTimeout("settingsRead", root.activeSettingsReadGeneration)
-      root.applySettingsReadResult(root.activeSettingsReadGeneration, "", 1, true)
-    }
-  }
-
-  Timer {
-    id: settingsBootstrapTimeout
-    interval: root.settingsTimeoutMs
-    repeat: false
-    onTriggered: {
-      if (!root.settingsBootstrapBusy)
-        return
-      if (settingsBootstrapProcess.running)
-        settingsBootstrapProcess.running = false
-      root.recordLaneTimeout("settingsBootstrap", root.activeSettingsBootstrapGeneration)
-      root.applySettingsBootstrapResult(root.activeSettingsBootstrapGeneration, "", 1, true)
-    }
-  }
-
-  Timer {
-    id: settingsWriteTimeout
-    interval: root.settingsTimeoutMs
-    repeat: false
-    onTriggered: {
-      if (!root.settingsWriteBusy)
-        return
-      if (settingsWriteProcess.running)
-        settingsWriteProcess.running = false
-      root.recordLaneTimeout("settingsWrite", root.activeSettingsWriteGeneration)
-      root.applySettingsWriteResult(root.activeSettingsWriteGeneration, false, null, true)
-    }
-  }
-
-  Timer {
-    id: maintenanceCheckTimeout
-    interval: root.maintenanceCheckTimeoutMs
-    repeat: false
-    onTriggered: {
-      if (!root.maintenanceCheckBusy)
-        return
-      if (maintenanceCheckProcess.running)
-        maintenanceCheckProcess.running = false
-      root.recordLaneTimeout("maintenanceCheck", root.activeMaintenanceCheckGeneration)
-      root.applyUpdateCheckResult(root.activeMaintenanceCheckGeneration, "", 1, true)
-    }
-  }
-
-  Timer {
-    id: maintenanceHandoffTimeout
-    interval: root.maintenanceHandoffTimeoutMs
-    repeat: false
-    onTriggered: {
-      if (!root.maintenanceHandoffBusy)
-        return
-      if (maintenanceHandoffProcess.running)
-        maintenanceHandoffProcess.running = false
-      root.recordLaneTimeout("maintenanceHandoff", root.activeMaintenanceHandoffGeneration)
-      root.applyMaintenanceHandoffDone(root.activeMaintenanceHandoffGeneration, 1, true)
-    }
   }
 
   Timer {
@@ -1031,6 +772,14 @@ Item {
         return
       root.kickStatus()
     }
+  }
+
+  Timer {
+    id: nowTimer
+    interval: 30000
+    running: true
+    repeat: true
+    onTriggered: root.nowMs = Date.now()
   }
 
   IpcHandler {
@@ -1052,28 +801,8 @@ Item {
   }
 
   Component.onDestruction: {
-    versionTimeout.stop()
-    statusTimeout.stop()
-    settingsReadTimeout.stop()
-    settingsBootstrapTimeout.stop()
-    settingsWriteTimeout.stop()
-    maintenanceCheckTimeout.stop()
-    maintenanceHandoffTimeout.stop()
     collectionDelay.stop()
     pollTimer.stop()
-    if (versionProbe.running)
-      versionProbe.running = false
-    if (statusProcess.running)
-      statusProcess.running = false
-    if (settingsReadProcess.running)
-      settingsReadProcess.running = false
-    if (settingsBootstrapProcess.running)
-      settingsBootstrapProcess.running = false
-    if (settingsWriteProcess.running)
-      settingsWriteProcess.running = false
-    if (maintenanceCheckProcess.running)
-      maintenanceCheckProcess.running = false
-    if (maintenanceHandoffProcess.running)
-      maintenanceHandoffProcess.running = false
+    nowTimer.stop()
   }
 }

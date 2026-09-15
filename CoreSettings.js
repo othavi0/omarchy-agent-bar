@@ -65,17 +65,6 @@ function settingsFailLoad(state, generation) {
   }
 }
 
-function settingsOpen(state, snapshot, generation) {
-  return {
-    phase: "clean",
-    generation: generation,
-    snapshot: snapshot,
-    draft: JSON.parse(JSON.stringify(snapshot)),
-    busy: false,
-    pendingPayload: null
-  }
-}
-
 function cloneState(state) {
   return {
     phase: state.phase,
@@ -394,11 +383,9 @@ function settingsBootstrapResult(currentApplied, stdout, exitCode) {
 function settingsCanSave(state, draft) {
   if (!state)
     return false
-  if (state.phase !== "dirty" && state.phase !== "clean")
+  if (state.phase !== "dirty")
     return false
   if (state.busy || state.phase === "saving" || state.phase === "loading")
-    return false
-  if (state.phase !== "dirty")
     return false
   return validateSettingsDraft(draft).ok
 }

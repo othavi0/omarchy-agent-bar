@@ -103,33 +103,23 @@ pub enum UpdateCommand {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DoctorCommand {
-    Scan,
-    Clean,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HelpTopic {
     Status,
     Login,
     Config,
-    Setup,
     Update,
     Uninstall,
-    Doctor,
     Help,
     Version,
 }
 
 impl HelpTopic {
-    pub const ALL: [HelpTopic; 9] = [
+    pub const ALL: [HelpTopic; 7] = [
         HelpTopic::Status,
         HelpTopic::Login,
         HelpTopic::Config,
-        HelpTopic::Setup,
         HelpTopic::Update,
         HelpTopic::Uninstall,
-        HelpTopic::Doctor,
         HelpTopic::Help,
         HelpTopic::Version,
     ];
@@ -139,10 +129,8 @@ impl HelpTopic {
             HelpTopic::Status => "status",
             HelpTopic::Login => "login",
             HelpTopic::Config => "config",
-            HelpTopic::Setup => "setup",
             HelpTopic::Update => "update",
             HelpTopic::Uninstall => "uninstall",
-            HelpTopic::Doctor => "doctor",
             HelpTopic::Help => "help",
             HelpTopic::Version => "version",
         }
@@ -153,10 +141,8 @@ impl HelpTopic {
             "status" => Some(HelpTopic::Status),
             "login" => Some(HelpTopic::Login),
             "config" => Some(HelpTopic::Config),
-            "setup" => Some(HelpTopic::Setup),
             "update" => Some(HelpTopic::Update),
             "uninstall" => Some(HelpTopic::Uninstall),
-            "doctor" => Some(HelpTopic::Doctor),
             "help" => Some(HelpTopic::Help),
             "version" => Some(HelpTopic::Version),
             _ => None,
@@ -169,10 +155,8 @@ pub enum Command {
     Status(StatusOptions),
     Login(ProviderId),
     Config(ConfigCommand),
-    Setup,
     Update(UpdateCommand),
     Uninstall { purge: bool },
-    Doctor(DoctorCommand),
     Help(Option<HelpTopic>),
     Version,
 }

@@ -236,7 +236,7 @@ TestCase {
   }
 
   function test_restore_defaults_draft_only() {
-    var state = Core.settingsOpen(null, Service.defaultSettings(), 1)
+    var state = Core.settingsFinishLoad(Core.settingsBeginLoad(1), 1, Service.defaultSettings())
     state = Core.settingsMarkDirty(state)
     state.draft = Core.setProviderEnabled(state.draft, "claude", false)
     state = Core.settingsRestoreDefaults(state)
@@ -246,7 +246,7 @@ TestCase {
   }
 
   function test_restore_defaults_does_not_enable_antigravity() {
-    var state = Core.settingsOpen(null, Service.defaultSettings(), 1)
+    var state = Core.settingsFinishLoad(Core.settingsBeginLoad(1), 1, Service.defaultSettings())
     state = Core.settingsMarkDirty(state)
     state.draft = Core.setProviderEnabled(state.draft, "antigravity", true)
     state = Core.settingsRestoreDefaults(state)
@@ -261,7 +261,7 @@ TestCase {
 
   function test_cancel_restores_snapshot() {
     var snap = Service.defaultSettings()
-    var state = Core.settingsOpen(null, snap, 2)
+    var state = Core.settingsFinishLoad(Core.settingsBeginLoad(2), 2, snap)
     state.draft = Core.setDisplayMetric(state.draft, "used")
     state = Core.settingsMarkDirty(state)
     compare(state.phase, "dirty")
@@ -271,7 +271,7 @@ TestCase {
   }
 
   function test_invalid_save_disabled() {
-    var state = Core.settingsOpen(null, Service.defaultSettings(), 3)
+    var state = Core.settingsFinishLoad(Core.settingsBeginLoad(3), 3, Service.defaultSettings())
     compare(Core.settingsCanSave(state, state.draft), false)
     state = Core.settingsMarkDirty(state)
     state.draft = Core.setRefreshInterval(state.draft, 5)
@@ -290,7 +290,7 @@ TestCase {
   }
 
   function test_save_begin_captures_payload() {
-    var state = Core.settingsOpen(null, Service.defaultSettings(), 5)
+    var state = Core.settingsFinishLoad(Core.settingsBeginLoad(5), 5, Service.defaultSettings())
     state = Core.settingsMarkDirty(state)
     var payload = Core.cloneDraft(state.draft)
     payload = Core.setDisplayMetric(payload, "used")
@@ -450,33 +450,7 @@ TestCase {
     verify(src.indexOf("function cancelSettings") >= 0)
     verify(src.indexOf("function restoreSettingsDefaults") >= 0)
     verify(src.indexOf("pendingSettingsPayload") >= 0)
-    verify(src.indexOf("stdinEnabled: true") >= 0)
     verify(src.indexOf("config\", \"apply\", \"stdin\"") >= 0 || src.indexOf("settingsArgvApplyStdin") >= 0)
-  }
-
-  // Settings write mirrors the maintenance handoff EOF pattern: `config apply
-  // stdin` reads until EOF, so write() must be followed by stdinEnabled=false
-  // or the helper hangs forever and the save never lands.
-  function test_service_settings_stdin_closes_after_write() {
-    var src = read("Service.qml")
-    var proc = src.indexOf("id: settingsWriteProcess")
-    verify(proc >= 0)
-    var onStarted = src.indexOf("onStarted:", proc)
-    verify(onStarted >= 0)
-    var onExited = src.indexOf("onExited:", onStarted)
-    verify(onExited > onStarted)
-    var body = src.substring(onStarted, onExited)
-    verify(body.indexOf("write(") >= 0)
-    var writeAt = body.indexOf("write(")
-    var closeAt = body.indexOf("stdinEnabled = false", writeAt)
-    verify(closeAt > writeAt, "stdinEnabled=false must follow write for EOF")
-    var kick = src.indexOf("function kickSettingsWrite")
-    verify(kick >= 0)
-    var kickEnd = src.indexOf("function applySettingsWriteResult", kick)
-    verify(kickEnd > kick)
-    var kickBody = src.substring(kick, kickEnd)
-    verify(kickBody.indexOf("stdinEnabled = true") >= 0,
-           "kickSettingsWrite must re-arm stdin before start")
   }
 
   function test_popup_hosts_settings_view() {
@@ -512,7 +486,7 @@ TestCase {
     verify(applied !== null)
     compare(applied.providers.length, doc.providers.length)
     compare(applied.providers[applied.providers.length - 1].id, "future-provider")
-    var state = Core.settingsOpen(null, applied, 7)
+    var state = Core.settingsFinishLoad(Core.settingsBeginLoad(7), 7, applied)
     state = Core.settingsMarkDirty(state)
     var payload = JSON.parse(JSON.stringify(state.draft))
     compare(Core.validateSettingsDraft(payload).ok, true)

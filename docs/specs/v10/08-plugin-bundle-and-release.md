@@ -47,10 +47,10 @@ othavi0.agent-bar/
 
 An installed plugin directory additionally contains a `.git/` at its root:
 it is a git checkout of the distribution repository. Bundle tree validation
-(`BundleValidator::validate_tree`, `doctor`) tolerates a real `.git`
-directory sitting directly at the tree root and does not walk it; a `.git`
-anywhere deeper, or one that is itself a symlink, is not special-cased and
-still fails validation through the ordinary symlink/extra-file checks.
+(`BundleValidator::validate_tree`) tolerates a real `.git` directory
+sitting directly at the tree root and does not walk it; a `.git` anywhere
+deeper, or one that is itself a symlink, is not special-cased and still
+fails validation through the ordinary symlink/extra-file checks.
 
 - `BUNDLE-001`: The product is the `othavi0.agent-bar` plugin directory.
 - `BUNDLE-002`: `bin/agent-bar` is private and invoked by resolved absolute
@@ -334,8 +334,6 @@ Omarchy contract `1` means all of these are required:
   `plugin validate`;
 - `shell ping` and structured `shell listPlugins`.
 
-Setup preflight (for the settings-migration path only) requires regular
-readable Quattro QML components and executable Omarchy commands.
 `uninstall` preflight requires resolvable absolute paths for `omarchy` and
 `systemd-run` before consuming any confirmation or purging any state.
 `update` has no preflight, because `update check` only reads a receipt over

@@ -51,6 +51,17 @@ behavior, and `updates.automatic` are removed; `UX-042`, `SET-028`,
 removed outright:
 [docs/specs/v10/amendments/2026-09-14-remove-update-execution-design.md](amendments/2026-09-14-remove-update-execution-design.md).
 
+The v9 migration, setup, and doctor removal, approved 2026-09-15, retires
+the helper commands and code that existed only to move a v9 install onto
+v10. `setup`, `doctor scan`, and `doctor clean` are now grammar errors like
+any other unknown verb. `CLI-009`, `CLI-024`, and `CLI-025` are retired,
+and `CLI-030` narrows to cover `uninstall` only; `MIG-007` through
+`MIG-017` are retired; `SET-024` loses its `setup` clause, since a read
+still fills a missing provider in memory and the next Settings save writes
+the full document; and `BUNDLE-*` entries that named `setup` or `doctor`
+drop them:
+[docs/specs/v10/amendments/2026-09-15-remove-v9-migration-design.md](amendments/2026-09-15-remove-v9-migration-design.md).
+
 ## Product statement
 
 Agent Bar v10 is an Omarchy Quattro Quickshell plugin. Its only graphical
@@ -85,7 +96,8 @@ application, an AUR product, or a cargo-binstall product.
    (superseded),
    [2026-09-10 Antigravity third-party windows](amendments/2026-09-10-antigravity-third-party-windows-design.md),
    [2026-09-10 Settings tabs and rail state](amendments/2026-09-10-settings-tabs-and-rail-state-design.md),
-   [2026-09-14 update execution removed](amendments/2026-09-14-remove-update-execution-design.md).
+   [2026-09-14 update execution removed](amendments/2026-09-14-remove-update-execution-design.md),
+   [2026-09-15 v9 migration removed](amendments/2026-09-15-remove-v9-migration-design.md).
 
 When two statements conflict, the earlier contract in this reading order wins
 unless a later file explicitly identifies the requirement ID it refines.

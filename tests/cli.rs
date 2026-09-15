@@ -2,9 +2,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command as StdCommand;
 
 use agent_bar::cli::{
-    parse, CacheMode, Command, ConfigCommand, ConfigInput, DoctorCommand, HelpTopic,
-    NotificationMode, ProviderId, StatusFormat, StatusOptions, UpdateCommand, GRAMMAR, SUCCESS,
-    VALIDATION,
+    parse, CacheMode, Command, ConfigCommand, ConfigInput, HelpTopic, NotificationMode, ProviderId,
+    StatusFormat, StatusOptions, UpdateCommand, GRAMMAR, SUCCESS, VALIDATION,
 };
 use assert_cmd::Command as CargoBin;
 use tempfile::tempdir;
@@ -139,7 +138,7 @@ fn status_accepts_each_provider_and_format() {
 }
 
 #[test]
-fn login_config_setup_update_uninstall_doctor_forms() {
+fn login_config_update_uninstall_forms() {
     assert_eq!(
         parse(words(&["login", "grok"])).unwrap(),
         Command::Login(ProviderId::Grok)
@@ -170,7 +169,6 @@ fn login_config_setup_update_uninstall_doctor_forms() {
             r#"{"schemaVersion":1}"#.into()
         )))
     );
-    assert_eq!(parse(words(&["setup"])).unwrap(), Command::Setup);
     assert_eq!(
         parse(words(&["update"])).unwrap(),
         Command::Update(UpdateCommand::Interactive)
@@ -187,22 +185,6 @@ fn login_config_setup_update_uninstall_doctor_forms() {
         parse(words(&["uninstall", "purge"])).unwrap(),
         Command::Uninstall { purge: true }
     );
-    assert_eq!(
-        parse(words(&["doctor", "scan"])).unwrap(),
-        Command::Doctor(DoctorCommand::Scan)
-    );
-    assert_eq!(
-        parse(words(&["doctor", "clean"])).unwrap(),
-        Command::Doctor(DoctorCommand::Clean)
-    );
-}
-
-#[test]
-fn setup_rejects_any_argument() {
-    let plugins_dir = parse(words(&["setup", "plugins-dir", "/tmp/plugins"])).unwrap_err();
-    assert_eq!(plugins_dir.exit_code, GRAMMAR);
-    let other = parse(words(&["setup", "extra"])).unwrap_err();
-    assert_eq!(other.exit_code, GRAMMAR);
 }
 
 #[test]
@@ -213,6 +195,20 @@ fn update_apply_and_update_run_are_grammar_errors() {
         words(&["update", "apply"]),
         words(&["update", "apply", "10.0.0"]),
         words(&["update", "apply", "extra", "words"]),
+    ] {
+        let err = parse(extra.clone()).unwrap_err();
+        assert_eq!(err.exit_code, GRAMMAR, "{extra:?}");
+    }
+}
+
+#[test]
+fn setup_and_doctor_are_grammar_errors() {
+    for extra in [
+        words(&["setup"]),
+        words(&["setup", "extra"]),
+        words(&["doctor"]),
+        words(&["doctor", "scan"]),
+        words(&["doctor", "clean"]),
     ] {
         let err = parse(extra.clone()).unwrap_err();
         assert_eq!(err.exit_code, GRAMMAR, "{extra:?}");
@@ -342,160 +338,6 @@ fn binary_help_mentions_plugin_first_product() {
         .stdout(predicates::str::contains("Quickshell plugin"))
         .stdout(predicates::str::contains("diagnostics"))
         .stderr("");
-}
-
-#[test]
-fn binary_setup_migrates_v9_settings_to_strict_v10() {
-    let dir = tempdir().unwrap();
-    let home = dir.path().join("home");
-    let config = home.join("config");
-    let state = home.join("state");
-    let cache = home.join("cache");
-    std::fs::create_dir_all(config.join("agent-bar")).unwrap();
-    std::fs::create_dir_all(home.join(".config/omarchy")).unwrap();
-    std::fs::create_dir_all(&state).unwrap();
-    std::fs::create_dir_all(&cache).unwrap();
-
-    let v9 = std::fs::read(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/fixtures/migration/v9/settings-valid.json"),
-    )
-    .unwrap();
-    let settings_path = config.join("agent-bar/settings.json");
-    std::fs::write(&settings_path, &v9).unwrap();
-
-    let shell_path = home.join(".config/omarchy/shell.json");
-    std::fs::write(
-        &shell_path,
-        std::fs::read(
-            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("tests/fixtures/migration/v9/shell-clean.json"),
-        )
-        .unwrap(),
-    )
-    .unwrap();
-    let shell_before = std::fs::read(&shell_path).unwrap();
-
-    let helper = assert_cmd::cargo::cargo_bin("agent-bar");
-
-    let out = StdCommand::new(&helper)
-        .args(["setup"])
-        .env("HOME", &home)
-        .env("XDG_STATE_HOME", &state)
-        .env("XDG_CACHE_HOME", &cache)
-        .env("XDG_CONFIG_HOME", &config)
-        .output()
-        .unwrap();
-    assert!(
-        out.status.success(),
-        "setup failed: status={:?} stderr={}",
-        out.status.code(),
-        String::from_utf8_lossy(&out.stderr)
-    );
-
-    let show = StdCommand::new(&helper)
-        .args(["config", "show"])
-        .env("HOME", &home)
-        .env("XDG_STATE_HOME", &state)
-        .env("XDG_CACHE_HOME", &cache)
-        .env("XDG_CONFIG_HOME", &config)
-        .output()
-        .unwrap();
-    assert!(
-        show.status.success(),
-        "config show must succeed after setup migration: status={:?} stderr={}",
-        show.status.code(),
-        String::from_utf8_lossy(&show.stderr)
-    );
-    let stdout = String::from_utf8_lossy(&show.stdout);
-    assert!(
-        stdout.contains("\"schemaVersion\": 1") || stdout.contains("\"schemaVersion\":1"),
-        "expected v10 schemaVersion in config show: {stdout}"
-    );
-    assert!(
-        stdout.contains("120"),
-        "expected migrated refresh interval 120: {stdout}"
-    );
-    assert!(
-        !stdout.contains("waybar") && !stdout.contains("\"cache\""),
-        "v9 keys must not remain in config show: {stdout}"
-    );
-
-    let stored = std::fs::read(&settings_path).unwrap();
-    assert!(
-        agent_bar::settings::schema::Settings::parse_strict(&stored).is_ok(),
-        "stored settings must be strict v10 after setup"
-    );
-
-    let shell_after = std::fs::read(&shell_path).unwrap();
-    assert_eq!(
-        shell_before, shell_after,
-        "setup must not rewrite clean shell.json bytes"
-    );
-
-    let backups = state.join("agent-bar/backups");
-    assert!(
-        backups.is_dir(),
-        "setup migration must create a backup root under XDG state"
-    );
-    let mut found_v9_backup = false;
-    if let Ok(entries) = std::fs::read_dir(&backups) {
-        for entry in entries.flatten() {
-            let candidate = entry.path().join("settings/settings.json");
-            if candidate.is_file() {
-                let bak = std::fs::read(&candidate).unwrap();
-                if bak == v9 {
-                    found_v9_backup = true;
-                    break;
-                }
-            }
-        }
-    }
-    assert!(
-        found_v9_backup,
-        "v9 settings bytes must be preserved under backups/*/settings/settings.json"
-    );
-}
-
-#[test]
-fn binary_doctor_scan_is_read_only_and_exits_zero() {
-    let dir = tempdir().unwrap();
-    let home = dir.path();
-    CargoBin::cargo_bin("agent-bar")
-        .unwrap()
-        .env("HOME", home)
-        .env("XDG_STATE_HOME", home.join("state"))
-        .env("XDG_CACHE_HOME", home.join("cache"))
-        .env("XDG_CONFIG_HOME", home.join("config"))
-        .args(["doctor", "scan"])
-        .assert()
-        .code(SUCCESS)
-        .stdout(predicates::str::contains("doctor scan"))
-        .stdout(predicates::str::contains("read-only"));
-}
-
-#[test]
-fn binary_doctor_clean_backs_up_and_removes_owned_legacy() {
-    let dir = tempdir().unwrap();
-    let home = dir.path();
-    let legacy_name = concat!("usage", ".", "re", "db");
-    let legacy = home.join(".cache/agent-bar").join(legacy_name);
-    std::fs::create_dir_all(legacy.parent().unwrap()).unwrap();
-    std::fs::write(&legacy, b"/* agent-bar generated */\n").unwrap();
-
-    CargoBin::cargo_bin("agent-bar")
-        .unwrap()
-        .env("HOME", home)
-        .env("XDG_STATE_HOME", home.join("state"))
-        .env("XDG_CACHE_HOME", home.join("cache"))
-        .env("XDG_CONFIG_HOME", home.join("config"))
-        .args(["doctor", "clean"])
-        .assert()
-        .code(SUCCESS)
-        .stdout(predicates::str::contains("doctor clean"))
-        .stdout(predicates::str::contains("removed:"));
-
-    assert!(!legacy.exists(), "doctor clean must remove owned legacy");
 }
 
 #[test]

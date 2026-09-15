@@ -894,22 +894,11 @@ impl StatusEnvelope {
     }
 
     pub fn to_json_line(&self) -> Result<String, StatusOutputError> {
-        self.validate_semantics()?;
         let mut body = serde_json::to_string(self).map_err(|err| {
             StatusOutputError::serialize(format!("status serialization failed: {err}"))
         })?;
         body.push('\n');
         Ok(body)
-    }
-
-    pub fn validate_provider_order(&self, expected: &[ProviderId]) -> Result<(), SchemaError> {
-        let actual: Vec<ProviderId> = self.providers.iter().map(ProviderStatus::id).collect();
-        if actual.as_slice() != expected {
-            return Err(SchemaError::new(format!(
-                "providers must follow request/settings order; expected {expected:?}, got {actual:?}"
-            )));
-        }
-        Ok(())
     }
 }
 
@@ -924,15 +913,6 @@ pub enum ProviderResult {
         windows: Vec<UsageWindow>,
         last_success_at: OffsetDateTime,
         rate_limit_resets_available: Option<u32>,
-    },
-    Stale {
-        id: ProviderId,
-        name: String,
-        plan: Option<Plan>,
-        account: Option<Account>,
-        windows: Vec<UsageWindow>,
-        last_success_at: OffsetDateTime,
-        error: ProviderError,
     },
     CliMissing {
         id: ProviderId,
@@ -1281,35 +1261,6 @@ mod tests {
         .unwrap_err();
         assert!(err.message().contains("helperVersion"));
         assert!(err.message().contains(env!("CARGO_PKG_VERSION")));
-    }
-
-    #[test]
-    fn provider_order_validation() {
-        let envelope = package_envelope(
-            vec![
-                ready_claude(),
-                ProviderStatus::ready(
-                    ProviderId::Codex,
-                    "Codex",
-                    DataSource::Live,
-                    None,
-                    None,
-                    vec![],
-                    ts(),
-                )
-                .unwrap(),
-            ],
-            StatusRequest {
-                provider: None,
-                cache: CacheMode::Use,
-            },
-        );
-        assert!(envelope
-            .validate_provider_order(&[ProviderId::Claude, ProviderId::Codex])
-            .is_ok());
-        assert!(envelope
-            .validate_provider_order(&[ProviderId::Codex, ProviderId::Claude])
-            .is_err());
     }
 
     #[test]

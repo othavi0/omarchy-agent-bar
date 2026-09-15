@@ -115,7 +115,7 @@ where
             .map_err(|err| StatusCoordError::Io(err.to_string()))?;
 
         self.cache_coord.begin_collection();
-        let mut cache_doc = self
+        let cache_doc = self
             .cache_store
             .load()
             .map_err(|err| StatusCoordError::Cache(err.to_string()))?;
@@ -156,22 +156,35 @@ where
             }
         }
 
-        for id in to_collect {
+        let cache_doc = &cache_doc;
+        let outcomes = futures::future::join_all(to_collect.iter().map(|&id| async move {
             let started = self.clock.now_utc();
             let rev = self.cache_coord.start_generation(id, started);
             let prior = cache_doc.get(id).map(|e| e.status.clone());
             let live = self.collect_one(id).await;
-            let status = apply_stale_retention(live, prior.as_ref())?;
+            let status = apply_stale_retention(live, prior.as_ref());
             let completed = self.clock.now_utc();
+            (id, rev, started, completed, status)
+        }))
+        .await;
+
+        let mut entries = Vec::with_capacity(outcomes.len());
+        for (id, rev, started, completed, status) in outcomes {
+            let status = status?;
             let ttl = descriptor_ttl(id);
-            let entry = entry_from_status(status.clone(), started, completed, ttl);
-            cache_doc = self
-                .cache_store
-                .merge_provider(id, entry, completed)
-                .map_err(|err| StatusCoordError::Cache(err.to_string()))?;
+            entries.push((
+                id,
+                entry_from_status(status.clone(), started, completed, ttl),
+            ));
             self.cache_coord.complete_generation(rev, completed);
             statuses.retain(|s| s.id() != id);
             statuses.push(status);
+        }
+
+        if !entries.is_empty() {
+            self.cache_store
+                .merge_providers(entries, self.clock.now_utc())
+                .map_err(|err| StatusCoordError::Cache(err.to_string()))?;
         }
 
         let mut ordered = Vec::new();
@@ -862,5 +875,166 @@ mod tests {
         let hit = ready.for_cache_hit().unwrap();
         assert_eq!(hit.source(), Some(DataSource::Cache));
         assert_eq!(hit.state(), ProviderState::Ready);
+    }
+
+    struct SleepProcess(std::time::Duration);
+    impl ProcessRunner for SleepProcess {
+        fn run<'a>(
+            &'a self,
+            _spec: &'a crate::providers::process::ProcessSpec,
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = Result<ProcessOutput, ProcessError>> + Send + 'a>,
+        > {
+            let dur = self.0;
+            Box::pin(async move {
+                tokio::time::sleep(dur).await;
+                Ok(ProcessOutput {
+                    exit_code: Some(0),
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    timed_out: false,
+                    stdout_truncated: false,
+                    stderr_truncated: false,
+                })
+            })
+        }
+    }
+
+    struct SleepHttp(std::time::Duration);
+    impl HttpClient for SleepHttp {
+        fn get(
+            &self,
+            _url: &str,
+            _headers: &[(&str, &str)],
+            _max_body_bytes: usize,
+        ) -> BoxFuture<'_, Result<HttpResponse, HttpError>> {
+            let dur = self.0;
+            Box::pin(async move {
+                tokio::time::sleep(dur).await;
+                Ok(HttpResponse {
+                    status: 200,
+                    final_url: "https://cli-chat-proxy.grok.com/v1/billing".into(),
+                    body: br#"{"creditUsagePercent": 10.0}"#.to_vec(),
+                })
+            })
+        }
+    }
+
+    /// CACHE-PERF-01: a cold poll over N providers must take the wall time of
+    /// the slowest provider, not the sum of every provider's latency.
+    #[tokio::test(start_paused = true)]
+    async fn collect_runs_providers_concurrently_not_sequentially() {
+        let dir = tempfile::tempdir().unwrap();
+        let bin_dir = dir.path().join("bin");
+        std::fs::create_dir_all(&bin_dir).unwrap();
+        let amp_exe = bin_dir.join("amp");
+        std::fs::write(&amp_exe, b"#!/bin/sh\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&amp_exe, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+
+        let now = datetime!(2026-09-15 12:00:00 UTC);
+        let gate = Arc::new(MaintenanceGate::open(dir.path().join("m.lock")).unwrap());
+        let settings_store = SettingsStore::new(dir.path().join("settings.json"), gate.clone());
+        let mut settings = SettingsDocument::defaults();
+        for p in settings.providers.iter_mut() {
+            p.enabled = matches!(p.id.0, ProviderId::Amp | ProviderId::Grok);
+        }
+        settings_store.apply(&settings).unwrap();
+
+        let mut files = std::collections::HashMap::new();
+        files.insert(
+            dir.path().join("home").join(".grok").join("auth.json"),
+            br#"{"https://auth.x.ai::client":{"key":"TESTKEY","first_name":"Ada","expires_at":"2027-01-01T00:00:00Z","auth_mode":"oidc"}}"#.to_vec(),
+        );
+
+        let coord = StatusCoordinator {
+            clock: FixedClock(now),
+            fs: MapFs {
+                files: Mutex::new(files),
+            },
+            process: SleepProcess(std::time::Duration::from_millis(300)),
+            http: SleepHttp(std::time::Duration::from_millis(900)),
+            env: ExecutionEnvironment {
+                home: dir.path().join("home"),
+                path_dirs: vec![bin_dir],
+                grok_home: None,
+            },
+            settings_store,
+            cache_store: CacheStore::new(
+                CachePaths {
+                    document: dir.path().join("status-v2.json"),
+                    lock: dir.path().join("status.lock"),
+                },
+                gate.clone(),
+            ),
+            cache_coord: Arc::new(CacheCoordinator::new()),
+            notification_store: NotificationStateStore::new(
+                NotificationPaths {
+                    state: dir.path().join("nstate.json"),
+                    lock: dir.path().join("n.lock"),
+                },
+                gate.clone(),
+            ),
+            gate,
+        };
+
+        let start = tokio::time::Instant::now();
+        let envelope = coord
+            .collect(CollectRequest {
+                format: StatusFormat::Json,
+                provider: None,
+                cache: CacheMode::Bypass,
+                notifications: NotificationMode::Skip,
+            })
+            .await
+            .unwrap();
+        let elapsed = start.elapsed();
+
+        assert_eq!(envelope.providers().len(), 2);
+        assert!(
+            elapsed < std::time::Duration::from_millis(1100),
+            "expected concurrent collection near max(300ms, 900ms) = 900ms, \
+             not the sequential sum of 1200ms; got {elapsed:?}"
+        );
+        assert!(
+            elapsed >= std::time::Duration::from_millis(900),
+            "elapsed {elapsed:?} must still cover the slowest provider"
+        );
+    }
+
+    /// CACHE-PERF-02: one `collect()` over N providers writes the on-disk
+    /// cache once, bumping `revision` by exactly 1, not once per provider.
+    #[tokio::test]
+    async fn collect_writes_the_cache_once_per_poll_not_once_per_provider() {
+        let dir = tempfile::tempdir().unwrap();
+        let now = datetime!(2026-07-26 18:42:00 UTC);
+        let coord = coord_at(dir.path(), now);
+        let mut settings = coord.settings_store.show().unwrap();
+        for p in settings.providers.iter_mut() {
+            p.enabled = true;
+        }
+        coord.settings_store.apply(&settings).unwrap();
+
+        let envelope = coord
+            .collect(CollectRequest {
+                format: StatusFormat::Json,
+                provider: None,
+                cache: CacheMode::Bypass,
+                notifications: NotificationMode::Skip,
+            })
+            .await
+            .unwrap();
+        assert_eq!(envelope.providers().len(), 5);
+
+        let doc = coord.cache_store.load().unwrap();
+        assert_eq!(
+            doc.revision,
+            1,
+            "one poll over {} providers must write the cache once, not once per provider",
+            envelope.providers().len()
+        );
     }
 }

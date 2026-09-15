@@ -70,6 +70,7 @@ impl HttpClient for ReqwestHttpClient {
 }
 
 /// Test double with scripted responses.
+#[cfg(test)]
 #[derive(Debug, Default)]
 pub struct ScriptedHttpClient {
     pub responses: std::sync::Mutex<Vec<Result<HttpResponse, HttpError>>>,
@@ -77,6 +78,7 @@ pub struct ScriptedHttpClient {
     pub last_headers: std::sync::Mutex<Vec<(String, String)>>,
 }
 
+#[cfg(test)]
 impl ScriptedHttpClient {
     pub fn single(response: Result<HttpResponse, HttpError>) -> Self {
         Self {
@@ -87,6 +89,7 @@ impl ScriptedHttpClient {
     }
 }
 
+#[cfg(test)]
 impl HttpClient for ScriptedHttpClient {
     fn get(
         &self,

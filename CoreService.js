@@ -1,12 +1,22 @@
 .pragma library
 
-var CLOSED_PROVIDERS = {
-  "claude": true,
-  "codex": true,
-  "amp": true,
-  "grok": true,
-  "antigravity": true
-}
+// Order must match Rust's catalog::PROVIDERS (src/providers/catalog.rs).
+var PROVIDERS = [
+  { id: "claude", name: "Claude", icon: "claude.png", closed: true, defaultEnabled: true },
+  { id: "codex", name: "Codex", icon: "codex.png", closed: true, defaultEnabled: true },
+  { id: "amp", name: "Amp", icon: "amp.svg", closed: true, defaultEnabled: false },
+  { id: "grok", name: "Grok", icon: "grok.svg", closed: true, defaultEnabled: false },
+  { id: "antigravity", name: "Antigravity", icon: "antigravity.png", closed: true, defaultEnabled: false }
+]
+
+var CLOSED_PROVIDERS = (function () {
+  var out = {}
+  for (var i = 0; i < PROVIDERS.length; i++) {
+    if (PROVIDERS[i].closed)
+      out[PROVIDERS[i].id] = true
+  }
+  return out
+})()
 
 var ACTION_KINDS = {
   "retry": true,
@@ -45,57 +55,8 @@ function health(versionReady, versionFailed, helperVersion, manifestVersion, exp
   return "unknown"
 }
 
-function runtimeHealth(timedOutLanes) {
-  var count = 0
-  for (var lane in (timedOutLanes || {})) {
-    if (timedOutLanes[lane])
-      count++
-  }
-  return count >= 2 ? "stalled" : "ok"
-}
-
-function recordLaneTimeout(timedOutLanes, lane) {
-  var next = {}
-  for (var key in (timedOutLanes || {}))
-    next[key] = !!timedOutLanes[key]
-  next[String(lane)] = true
-  return next
-}
-
-function clearLaneTimeout(timedOutLanes, lane) {
-  var next = {}
-  for (var key in (timedOutLanes || {})) {
-    if (key !== String(lane))
-      next[key] = !!timedOutLanes[key]
-  }
-  return next
-}
-
-function settleLane(settledLanes, lane, generation) {
-  var next = {}
-  for (var key in (settledLanes || {}))
-    next[key] = settledLanes[key]
-  next[String(lane)] = Number(generation)
-  return next
-}
-
-function isLaneSettled(settledLanes, lane, generation) {
-  if (!settledLanes)
-    return false
-  var key = String(lane)
-  return Object.prototype.hasOwnProperty.call(settledLanes, key)
-      && Number(settledLanes[key]) === Number(generation)
-}
-
-function clearSettledLane(settledLanes, lane, generation) {
-  if (generation !== undefined && !isLaneSettled(settledLanes, lane, generation))
-    return settledLanes || {}
-  var next = {}
-  for (var key in settledLanes) {
-    if (key !== String(lane))
-      next[key] = settledLanes[key]
-  }
-  return next
+function runtimeHealth(stalledCount) {
+  return stalledCount >= 2 ? "stalled" : "ok"
 }
 
 function isClosedProvider(providerId) {
@@ -261,10 +222,6 @@ function parseStatusEnvelope(stdout, expectedHelperVersion) {
   return { ok: true, envelope: env }
 }
 
-function shouldApplyGeneration(activeGeneration, callbackGeneration) {
-  return activeGeneration === callbackGeneration
-}
-
 function requestPopup(current, owner, providerId, view) {
   var o = owner
   if (o === null || o === undefined)
@@ -296,10 +253,6 @@ function foreignPopupOpen(popupOwner, selfOwner) {
   return popupOwner.owner !== selfOwner
 }
 
-function popupOwnerId(popup) {
-  return popup ? popup.owner : null
-}
-
 function popupOpenForOwner(popupOwner, owner) {
   if (!popupOwner || owner === null || owner === undefined)
     return false
@@ -312,10 +265,6 @@ function popupView(popupOwner) {
   return String(popupOwner.view)
 }
 
-function canStartLane(laneBusy) {
-  return !laneBusy
-}
-
 function pollIntervalMs(settings) {
   if (settings && settings.refreshIntervalSeconds)
     return Number(settings.refreshIntervalSeconds) * 1000
@@ -325,13 +274,9 @@ function pollIntervalMs(settings) {
 function defaultSettings() {
   return {
     schemaVersion: 1,
-    providers: [
-      { id: "claude", enabled: true },
-      { id: "codex", enabled: true },
-      { id: "amp", enabled: false },
-      { id: "grok", enabled: false },
-      { id: "antigravity", enabled: false }
-    ],
+    providers: PROVIDERS.map(function (p) {
+      return { id: p.id, enabled: p.defaultEnabled }
+    }),
     display: { metric: "remaining" },
     refreshIntervalSeconds: 60,
     notifications: { enabled: true, reminderMinutes: 120 }

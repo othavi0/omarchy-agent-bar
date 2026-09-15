@@ -48,39 +48,52 @@ fn servicecore_enums_match_schema() {
         "ACTION_KINDS drifted from ActionKind"
     );
 
-    let providers = extract_keys(&js, "CLOSED_PROVIDERS");
+    let providers: BTreeSet<String> = extract_provider_table(&js)
+        .into_iter()
+        .filter(|p| p.closed)
+        .map(|p| p.id)
+        .collect();
     let expected_providers: BTreeSet<String> = ["claude", "codex", "amp", "grok", "antigravity"]
         .into_iter()
         .map(str::to_owned)
         .collect();
     assert_eq!(
         providers, expected_providers,
-        "CLOSED_PROVIDERS drifted from ProviderId"
+        "PROVIDERS drifted from ProviderId"
     );
 }
 
-fn default_settings_providers(js: &str) -> Vec<(String, bool)> {
+struct ProviderRow {
+    id: String,
+    default_enabled: bool,
+    closed: bool,
+}
+
+/// Parses `var PROVIDERS = [...]` in `CoreService.js`, the single JS-side
+/// copy of the Rust `catalog::PROVIDERS` id/order/name/icon table.
+fn extract_provider_table(js: &str) -> Vec<ProviderRow> {
     let start = js
-        .find("function defaultSettings()")
-        .expect("defaultSettings() not found in CoreService.js");
+        .find("var PROVIDERS = [")
+        .expect("PROVIDERS not found in CoreService.js")
+        + "var PROVIDERS = [".len();
     let rest = &js[start..];
-    let open = rest
-        .find("providers: [")
-        .expect("defaultSettings() has no providers array")
-        + "providers: [".len();
-    let close = open
-        + rest[open..]
-            .find(']')
-            .expect("unterminated providers array");
-    rest[open..close]
-        .split('{')
+    let end = rest.find(']').expect("unterminated PROVIDERS array");
+    let body = &rest[..end];
+    body.split('{')
         .skip(1)
         .map(|entry| {
-            let id = entry
+            let close = entry.find('}').expect("unterminated provider row");
+            let row = &entry[..close];
+            let id = row
                 .split('"')
                 .nth(1)
-                .unwrap_or_else(|| panic!("provider row without a quoted id: {entry}"));
-            (id.to_owned(), entry.contains("enabled: true"))
+                .unwrap_or_else(|| panic!("provider row without a quoted id: {row}"))
+                .to_owned();
+            ProviderRow {
+                id,
+                default_enabled: row.contains("defaultEnabled: true"),
+                closed: row.contains("closed: true"),
+            }
         })
         .collect()
 }
@@ -88,7 +101,10 @@ fn default_settings_providers(js: &str) -> Vec<(String, bool)> {
 #[test]
 fn servicecore_default_settings_match_rust_defaults() {
     let js = std::fs::read_to_string("CoreService.js").expect("read CoreService.js");
-    let js_providers = default_settings_providers(&js);
+    let js_providers: Vec<(String, bool)> = extract_provider_table(&js)
+        .into_iter()
+        .map(|p| (p.id, p.default_enabled))
+        .collect();
     let rust_providers: Vec<(String, bool)> = agent_bar::settings::schema::Settings::defaults()
         .providers
         .into_iter()
@@ -96,6 +112,23 @@ fn servicecore_default_settings_match_rust_defaults() {
         .collect();
     assert_eq!(
         js_providers, rust_providers,
-        "defaultSettings() providers drifted from Settings::defaults()"
+        "PROVIDERS defaultEnabled drifted from Settings::defaults()"
+    );
+}
+
+#[test]
+fn servicecore_provider_table_order_matches_catalog() {
+    let js = std::fs::read_to_string("CoreService.js").expect("read CoreService.js");
+    let js_ids: Vec<String> = extract_provider_table(&js)
+        .into_iter()
+        .map(|p| p.id)
+        .collect();
+    let rust_ids: Vec<String> = agent_bar::providers::catalog::PROVIDERS
+        .iter()
+        .map(|descriptor| descriptor.id.as_str().to_owned())
+        .collect();
+    assert_eq!(
+        js_ids, rust_ids,
+        "CoreService.js PROVIDERS order drifted from catalog::PROVIDERS"
     );
 }

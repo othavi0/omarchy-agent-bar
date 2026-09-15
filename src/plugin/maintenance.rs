@@ -1,7 +1,6 @@
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -237,56 +236,6 @@ impl ReleaseHttp for ReqwestReleaseHttp {
                 headers: hdrs,
                 body,
             })
-        })
-    }
-}
-
-type HeaderPairs = Vec<(String, String)>;
-type ScriptedCall = (String, HeaderPairs);
-type ScriptedResponse = Result<ReleaseHttpResponse, MaintenanceError>;
-
-/// Scripted HTTP for tests.
-#[derive(Debug, Default)]
-pub struct ScriptedReleaseHttp {
-    pub responses: Mutex<Vec<ScriptedResponse>>,
-    pub calls: Mutex<Vec<ScriptedCall>>,
-}
-
-impl ScriptedReleaseHttp {
-    pub fn with_responses(responses: Vec<Result<ReleaseHttpResponse, MaintenanceError>>) -> Self {
-        Self {
-            responses: Mutex::new(responses),
-            calls: Mutex::new(Vec::new()),
-        }
-    }
-}
-
-impl ReleaseHttp for ScriptedReleaseHttp {
-    fn get(
-        &self,
-        url: &str,
-        headers: &[(&str, &str)],
-    ) -> Result<ReleaseHttpResponse, MaintenanceError> {
-        for (k, _) in headers {
-            let lower = k.to_ascii_lowercase();
-            if lower == "authorization" || lower == "cookie" {
-                return Err(MaintenanceError::msg(
-                    "credentials must not be attached to release downloads",
-                ));
-            }
-        }
-        self.calls.lock().unwrap_or_else(|e| e.into_inner()).push((
-            url.to_string(),
-            headers
-                .iter()
-                .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
-                .collect(),
-        ));
-        let mut q = self.responses.lock().unwrap_or_else(|e| e.into_inner());
-        q.pop().unwrap_or_else(|| {
-            Err(MaintenanceError::msg(
-                "scripted release HTTP client exhausted",
-            ))
         })
     }
 }
@@ -562,10 +511,61 @@ mod tests {
     use crate::plugin::bundle::{BundleBuilder, BundleValidator};
     use crate::support::Clock;
     use std::os::unix::fs::PermissionsExt;
+    use std::sync::Mutex;
     use tempfile::tempdir;
     use time::OffsetDateTime;
 
     const ZERO_COMMIT: &str = "0000000000000000000000000000000000000000";
+
+    type HeaderPairs = Vec<(String, String)>;
+    type ScriptedCall = (String, HeaderPairs);
+    type ScriptedResponse = Result<ReleaseHttpResponse, MaintenanceError>;
+
+    /// Scripted HTTP for tests.
+    #[derive(Debug, Default)]
+    struct ScriptedReleaseHttp {
+        responses: Mutex<Vec<ScriptedResponse>>,
+        calls: Mutex<Vec<ScriptedCall>>,
+    }
+
+    impl ScriptedReleaseHttp {
+        fn with_responses(responses: Vec<Result<ReleaseHttpResponse, MaintenanceError>>) -> Self {
+            Self {
+                responses: Mutex::new(responses),
+                calls: Mutex::new(Vec::new()),
+            }
+        }
+    }
+
+    impl ReleaseHttp for ScriptedReleaseHttp {
+        fn get(
+            &self,
+            url: &str,
+            headers: &[(&str, &str)],
+        ) -> Result<ReleaseHttpResponse, MaintenanceError> {
+            for (k, _) in headers {
+                let lower = k.to_ascii_lowercase();
+                if lower == "authorization" || lower == "cookie" {
+                    return Err(MaintenanceError::msg(
+                        "credentials must not be attached to release downloads",
+                    ));
+                }
+            }
+            self.calls.lock().unwrap_or_else(|e| e.into_inner()).push((
+                url.to_string(),
+                headers
+                    .iter()
+                    .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+                    .collect(),
+            ));
+            let mut q = self.responses.lock().unwrap_or_else(|e| e.into_inner());
+            q.pop().unwrap_or_else(|| {
+                Err(MaintenanceError::msg(
+                    "scripted release HTTP client exhausted",
+                ))
+            })
+        }
+    }
 
     struct FixedClock(OffsetDateTime);
     impl Clock for FixedClock {

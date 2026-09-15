@@ -1,4 +1,4 @@
-# Plugin Integration and Ownership
+# Plugin Integration
 
 ## Installation
 
@@ -74,17 +74,12 @@ plugin directory under XDG paths and are untouched by either command.
 - removes only its own entry during uninstall, which `omarchy plugin
   remove` performs.
 
-## Settings migration
+## v9 settings
 
-Valid v9 provider enablement/order, used/remaining mode, refresh interval, and
-notification preference migrate to the strict v10 settings document through
-`agent-bar setup`, which takes no arguments and only migrates settings. It
-does not create, move, or validate any plugin tree.
-
-Invalid recognized values abort before replacement. Unknown fields remain in
-the backup/report and do not enter v10. Repeated migration is idempotent.
-
-There is no v9 runtime compatibility layer after migration.
+There is no v9 runtime compatibility layer and no migration command. A
+`settings.json` still carrying `"version": 3` and a `waybar` block is
+rejected by every v10 read; see
+[Recovering a v9 settings file](troubleshooting.md#recovering-a-v9-settings-file).
 
 ## Uninstall delegation
 
@@ -113,23 +108,6 @@ in Settings and never fetches, installs, or restarts the shell.
 `settings.json` has no `updates.automatic` toggle any more, because there
 is nothing left for it to gate. See
 [docs/specs/v10/amendments/2026-09-14-remove-update-execution-design.md](../specs/v10/amendments/2026-09-14-remove-update-execution-design.md).
-
-## Ownership
-
-Artifacts are classified as:
-
-- owned/current;
-- owned/legacy;
-- modified legacy;
-- ambiguous;
-- unrelated.
-
-Only owned/legacy may be removed automatically. A known-looking path is not
-enough; ownership requires a receipt, marker, expected content/hash, or another
-documented proof.
-
-`doctor scan` is read-only. `doctor clean` backs up before removing confirmed
-legacy. Modified and ambiguous paths remain untouched.
 
 ## Uninstall
 
