@@ -6,18 +6,19 @@ Resolve the private helper:
 PLUGIN="$HOME/.config/omarchy/plugins/othavi0.agent-bar/bin/agent-bar"
 ```
 
-## Start with doctor
+## Recovering a v9 settings file
+
+A v9 `settings.json` still carries `"version": 3` and a `waybar` block.
+Every v10 read (`status`, `config show`) rejects that document, so a
+plugin still holding one has shown no working bar since v10.0.0. There is
+no `setup` or migration command to fix it: delete or move the file, then
+open Settings once and save; the UI writes a fresh v10 document that
+already carries the full provider catalog.
 
 ```bash
-"$PLUGIN" doctor scan
+mv "$XDG_CONFIG_HOME/agent-bar/settings.json" \
+  "$XDG_CONFIG_HOME/agent-bar/settings.json.v9.bak"
 ```
-
-Doctor is read-only. `doctor scan` checks a fixed list of legacy artifact
-paths from previous Agent Bar generations, classifies each through the
-ownership rules, and reports the evidence. It does not check bundle
-integrity, settings or cache validity, shell entry placement, or
-transaction journals, and it never prints credentials or account
-identifiers.
 
 ## One provider is unavailable
 
@@ -162,19 +163,9 @@ omarchy plugin update othavi0.agent-bar && omarchy-restart-shell
 Confirm the outcome with:
 
 ```bash
-"$PLUGIN" doctor scan
 "$PLUGIN" version
+"$PLUGIN" status
 ```
-
-## Modified or ambiguous legacy files
-
-`doctor clean` removes only confirmed ownership and creates a backup:
-
-```bash
-"$PLUGIN" doctor clean
-```
-
-Modified or ambiguous paths remain for manual review.
 
 ## Collect diagnostics
 
@@ -182,10 +173,8 @@ Provide:
 
 - Agent Bar version.
 - Omarchy and Quickshell versions.
-- Sanitized `doctor scan`.
 - Exact status command and exit code.
 - Typed provider state.
-- Relevant sanitized transaction journal.
 
 Never include credential files, raw provider payloads, tokens, account labels,
 or live `shell.json` contents that expose unrelated user configuration.

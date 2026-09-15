@@ -26,14 +26,10 @@ agent-bar config apply stdin
 agent-bar config apply file <path>
 agent-bar config apply json <value>
 
-agent-bar setup
 agent-bar update
 agent-bar update check
 agent-bar uninstall
 agent-bar uninstall purge
-
-agent-bar doctor scan
-agent-bar doctor clean
 
 agent-bar help
 agent-bar help <command>
@@ -51,12 +47,8 @@ agent-bar version
 - `CLI-006`: `--help` and `--version` are the only accepted double-dash aliases.
 - `CLI-007`: Every other legacy command, alias, and flag is rejected.
 - `CLI-008`: `RUST_LOG` controls diagnostics; there is no verbose argument.
-- `CLI-009`: Since git-plugin-distribution (2026-08-05), `setup` takes no
-  arguments. It migrates settings to the current schema only; it does not
-  create, enable, or move any plugin tree, since `omarchy plugin add` is
-  the install now. Isolated testing and manual recovery use an injected
-  `HOME` (and `XDG_STATE_HOME`), not a command argument. Production uses
-  the literal Quattro plugin root under the real `HOME`.
+- `CLI-009`: **Retired**, removed by the 2026-09-15 amendment. `setup` no
+  longer exists; it is a grammar error like any other unknown verb.
 - `CLI-010`: Public help describes the plugin-first product and labels the
   helper CLI as diagnostics/recovery.
 
@@ -317,9 +309,10 @@ and the command the user runs themself:
 `omarchy plugin update othavi0.agent-bar && omarchy-restart-shell`. The
 plugin never fetches, installs, or restarts the shell on its own.
 
-- `CLI-024`: `doctor scan` is read-only.
-- `CLI-025`: `doctor clean` removes only confirmed owned legacy artifacts after
-  creating a backup.
+- `CLI-024`: **Retired**, removed by the 2026-09-15 amendment. `doctor scan`
+  no longer exists.
+- `CLI-025`: **Retired**, removed by the 2026-09-15 amendment. `doctor clean`
+  no longer exists.
 - `CLI-026`: `uninstall` preserves settings and migration backups.
 - `CLI-027`: `uninstall purge` additionally deletes settings and owned backups
   only after an explicit UI or interactive confirmation, and only before the
@@ -331,8 +324,8 @@ plugin never fetches, installs, or restarts the shell on its own.
   any other unknown argument.
 - `CLI-029A`: **Retired**, removed by the 2026-09-14 amendment. `update run`
   and its unit no longer exist.
-- `CLI-030`: Setup, update, doctor, and uninstall never touch unrelated Omarchy
-  plugins or layout entries.
+- `CLI-030`: Uninstall never touches unrelated Omarchy plugins or layout
+  entries.
 - `CLI-031`: Notification dispatch failure is reported on stderr, does not
   invalidate an otherwise valid status envelope, and does not persist a false
   deduplication success.
@@ -343,10 +336,8 @@ Accepted help topics are exactly:
 status
 login
 config
-setup
 update
 uninstall
-doctor
 help
 version
 ```

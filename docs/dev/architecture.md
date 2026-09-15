@@ -66,10 +66,10 @@ coalescing), `CoreSettings.js` (draft and persisted settings flow),
 | `cli` | Strict word grammar, dispatch, exit behavior |
 | `status` | Schema v2, human status, collection coordination |
 | `providers` | Catalog, discovery, fetch, parsing, normalization |
-| `settings` | Strict settings schema, read-only show, atomic apply, migration |
+| `settings` | Strict settings schema, read-only show, atomic apply |
 | `cache` | Normalized cache, generation lock, singleflight |
 | `notifications` | Threshold transitions, dispatch, persisted deduplication |
-| `plugin` | Paths, ownership, transactions, Omarchy, doctor, maintenance |
+| `plugin` | Paths, ownership hashing, transactions, Omarchy, maintenance |
 | `support` | Atomic files, clock, filesystem, redaction |
 
 Provider adapters receive a narrow context for process, HTTP, filesystem,

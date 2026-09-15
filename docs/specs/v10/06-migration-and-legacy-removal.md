@@ -10,19 +10,12 @@ approved.
 Since git-plugin-distribution (2026-08-05), plugin-directory mutation (fresh
 install, update, and uninstall) is delegated to the Omarchy plugin manager,
 which owns its own git-based fetch, fast-forward, validation, and rollback;
-see "Update and uninstall transactions" below. The discipline described here
-now covers only the two remaining in-process writers that still touch files
-directly: v9-to-v10 settings migration and `doctor clean`'s legacy-artifact
-removal. Both follow:
-
-```text
-preflight
-  -> plan (ownership scan for doctor clean)
-  -> backup
-  -> write (atomic replacement for settings; backup-then-remove for doctor
-     clean artifacts)
-  -> manifest
-```
+see "Update and uninstall transactions" below. Since the 2026-09-15
+amendment retired v9-to-v10 settings migration and `doctor clean`, there is
+no in-process writer left: nothing in this crate stages, backs up, or
+writes a legacy artifact or a migrated `settings.json` at runtime. The
+requirements below describe only backups that already exist on disk from
+before that amendment.
 
 - `MIG-001`: No affected path changes before preflight and backup succeed.
 - `MIG-002A`: Durable backups live under XDG state, one directory per
@@ -58,34 +51,35 @@ The manifest records:
 
 ## v9-to-v10 migration
 
-- `MIG-007`: Migration is data migration only. No v9 behavior remains callable.
-- `MIG-008`: Keep plugin ID `agent-bar.usage`. (Superseded 2026-08-06: the
-  live ID is `othavi0.agent-bar`. The v9 migration matcher still recognizes
-  the literal `agent-bar.usage` in legacy `shell.json` data on disk; see
-  `docs/specs/v10/amendments/2026-08-06-plugin-id-rename-design.md`.)
-- `MIG-009`: Preserve valid provider enablement, order, display metric, refresh
-  interval, notification preference, bar section, index, and compatible inline
-  layout.
-- `MIG-009A`: Migration is also the sole path that reconciles a current-schema
-  `settings.json` written before a provider was added to the catalog, and
-  that still contains every provider that existed when it was written: it
-  appends the missing provider at the end of the `providers` array with its
-  catalog default `enabled` value (`false` for `antigravity`) and rewrites the
-  document atomically. A document missing one of its original providers
-  instead follows the v9/defaults migration path. An ordinary read
-  (`config show`, `status`) against the pre-migration file tolerates the
-  missing provider in memory as its catalog default without writing; `apply`
-  against the same file is still rejected under `SET-006`; see `SET-024`.
-- `MIG-010`: Move Agent Bar product settings into `settings.json`.
-- `MIG-011`: Remove only Agent Bar-owned inline settings from `shell.json`.
-- `MIG-012`: Never remove and re-add an existing bar entry.
-- `MIG-013`: Never invoke an unconditional `bar plugin add` for an existing
-  entry.
-- `MIG-014`: Unknown legacy keys stay in the backup and report.
-- `MIG-015`: Invalid recognized values abort before replacement.
-- `MIG-016`: Re-running migration is idempotent.
-- `MIG-017`: A fresh install uses approved defaults and adds one entry only when
-  absent.
+- `MIG-007`: **Retired**, removed by the 2026-09-15 amendment. There is no
+  migration command; `setup` no longer exists.
+- `MIG-008`: **Retired**, removed by the 2026-09-15 amendment. The v9
+  plugin-ID matcher for legacy `agent-bar.usage` `shell.json` data is gone
+  with migration.
+- `MIG-009`: **Retired**, removed by the 2026-09-15 amendment. There is no
+  migration step to preserve provider or layout fields.
+- `MIG-009A`: **Retired**, removed by the 2026-09-15 amendment. The
+  in-place provider-injection rewrite is gone. A read still tolerates a
+  missing provider in memory, and the next Settings save from the UI writes
+  it to disk; see `SET-024`.
+- `MIG-010`: **Retired**, removed by the 2026-09-15 amendment. There is no
+  migration step to move settings into `settings.json`.
+- `MIG-011`: **Retired**, removed by the 2026-09-15 amendment. There is no
+  migration step to remove inline settings from `shell.json`.
+- `MIG-012`: **Retired**, removed by the 2026-09-15 amendment. Migration no
+  longer touches bar entries; fresh install and update stay under
+  `MIG-019A`.
+- `MIG-013`: **Retired**, removed by the 2026-09-15 amendment. Migration no
+  longer runs `bar plugin add`; the unconditional-add prohibition stays in
+  force for install and update under `MIG-019A`.
+- `MIG-014`: **Retired**, removed by the 2026-09-15 amendment. There is no
+  migration report for unknown legacy keys.
+- `MIG-015`: **Retired**, removed by the 2026-09-15 amendment. There is no
+  migration step to abort.
+- `MIG-016`: **Retired**, removed by the 2026-09-15 amendment. There is no
+  migration step to re-run.
+- `MIG-017`: **Retired**, removed by the 2026-09-15 amendment. Fresh
+  install defaults and bar-entry placement stay under `MIG-019A`.
 - `MIG-018`: Rescan reloads staged QML without altering placement.
 - `MIG-019`: Shell restart is a last resort after a valid rescan fails.
 - `MIG-019A`: Since git-plugin-distribution (2026-08-05), fresh installation
@@ -97,31 +91,17 @@ The manifest records:
 - `MIG-019B`: Update does not edit `shell.json`.
 - `MIG-019C`: Rollback restores the exact previous `shell.json` bytes.
 
-## Ownership classification
-
-```text
-owned/current
-owned/legacy
-modified legacy
-ambiguous
-unrelated
-```
-
-- `CLEAN-001`: Automatic cleanup may remove only `owned/legacy`.
-- `CLEAN-002`: Ownership requires an exact generated marker, recorded install
-  manifest, known path plus matching content/hash, or another documented proof.
-- `CLEAN-003`: Location or filename resemblance alone is not proof.
-- `CLEAN-004`: Modified legacy and ambiguous artifacts remain untouched and are
-  reported with paths and reason.
-- `CLEAN-005`: Unrelated artifacts are neither listed nor opened beyond the
-  minimum classification check.
-- `CLEAN-006`: `doctor scan` is read-only.
-- `CLEAN-007`: `doctor clean` creates a backup before removing confirmed legacy
-  artifacts.
+The doctor-facing ownership classification (`owned/current`, `owned/legacy`,
+`modified legacy`, `ambiguous`, `unrelated`) that `CLEAN-001` through
+`CLEAN-007` described is retired with `doctor scan` and `doctor clean`
+themselves by the 2026-09-15 amendment. `src/plugin/ownership.rs` stays in
+the crate: `bundle.rs` calls its `hash_bytes` for plugin-bundle SHA-256
+receipt hashing, unrelated to doctor's legacy-artifact classification.
 
 ## Installed legacy removal
 
-When ownership is proven, migration removes:
+Before the 2026-09-15 amendment retired it, migration removed, once
+ownership was proven:
 
 - generated Agent Bar Waybar module entries;
 - generated Agent Bar Waybar CSS blocks;
@@ -178,23 +158,8 @@ The implementation must prove each dependency is unused before editing
 `Cargo.toml`. It must also reassess Waybar/Pango-only and history-only
 dependencies from the actual post-refactor graph.
 
-## Doctor report
-
-`doctor scan` reports:
-
-- plugin ID, path, manifest validity, and helper/manifest version match;
-- settings validity and permissions;
-- cache validity and permissions;
-- shell entry count, section, index, and forbidden inline settings;
-- current, confirmed legacy, modified legacy, and ambiguous artifacts;
-- executable discovery for enabled providers;
-- installed Omarchy and Quickshell compatibility;
-- stale/incomplete transaction journals;
-- maintenance-gate path, permissions, and active-lock state;
-- exact actions `doctor clean` would take.
-
-The report never prints account labels, provider payloads, credentials, or
-tokens.
+`doctor scan` and `doctor clean` and the report they produced are retired
+by the 2026-09-15 amendment; see `CLI-024` and `CLI-025`.
 
 ## Terminal login helper
 
@@ -263,6 +228,9 @@ omarchy-restart-shell` themself.
 The pre-conversion stage/quarantine sibling and cross-filesystem-safe
 quarantine paths (`PluginPaths::stage_dir`, `quarantine_dir`,
 `settings_quarantine`, `cache_quarantine`, `backups_quarantine`) are no
-longer produced by any live command path. Only `PluginPaths::backup_root`
-survives, used by `setup`'s v9-to-v10 settings migration and `doctor
-clean`, each under `$XDG_STATE_HOME/agent-bar/backups/<stamp>/`.
+longer produced by any live command path. `PluginPaths::backups_dir`
+(`$XDG_STATE_HOME/agent-bar/backups/<stamp>/`) holds no live writer either
+since the 2026-09-15 amendment retired the v9-to-v10 settings migration and
+`doctor clean` that used to write there; existing backups under that path
+stay in place, and `uninstall` still preserves or, with `purge`, removes
+them (`CLI-026`, `CLI-027`).

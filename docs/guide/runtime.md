@@ -10,7 +10,7 @@
 | `$XDG_CACHE_HOME/agent-bar/status.lock` | Cross-process collection lock |
 | `$XDG_CACHE_HOME/agent-bar/notification-state-v2.json` | Alert deduplication |
 | `$XDG_CACHE_HOME/agent-bar/notification.lock` | Alert evaluation/dispatch lock |
-| `$XDG_STATE_HOME/agent-bar/backups/` | Exact settings-migration and `doctor clean` backups |
+| `$XDG_STATE_HOME/agent-bar/backups/` | Backups left by the retired v9 settings migration and `doctor clean` |
 | `$XDG_STATE_HOME/agent-bar/maintenance.lock` | Stable shared/exclusive mutation gate |
 
 Default XDG paths are `~/.config`, `~/.cache`, and `~/.local/state`.
@@ -133,9 +133,9 @@ and offers the same action.
 
 ## Privacy
 
-Logs, screenshots, checkpoints, cache, and doctor reports redact tokens,
-credentials, raw payloads, headers, and account identifiers. External display
-strings are sanitized English plain text.
+Logs, screenshots, checkpoints, and cache redact tokens, credentials, raw
+payloads, headers, and account identifiers. External display strings are
+sanitized English plain text.
 
 ## Permissions
 

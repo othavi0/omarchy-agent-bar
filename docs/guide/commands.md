@@ -70,16 +70,11 @@ returns the canonical stored document.
 
 ## Plugin integration
 
-```bash
-"$PLUGIN" setup
-"$PLUGIN" doctor scan
-"$PLUGIN" doctor clean
-```
-
-`setup` takes no arguments; it migrates settings to the current schema.
 Install and update go through `omarchy plugin add|update othavi0.agent-bar`.
-`doctor scan` never writes. `doctor clean` backs up and removes only
-confirmed owned legacy artifacts.
+There is no `setup` or `doctor` command; both were removed with the v9
+migration they existed to support. See "Recovering a v9 settings file" in
+[docs/guide/troubleshooting.md](troubleshooting.md) for the manual
+recovery path.
 
 ## Update
 

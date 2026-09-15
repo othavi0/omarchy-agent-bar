@@ -39,7 +39,7 @@ still reads (`SET-028`); the block is ignored and never written back.
   instead; see `SET-024`.
 - `SET-007`: Reads never rewrite, migrate, normalize, or delete keys.
 - `SET-008`: Missing settings return defaults without creating a file.
-- `SET-009`: Explicit apply, setup, or migration are the only writers.
+- `SET-009`: Explicit apply is the only writer.
 - `SET-010`: Writes validate first, lock, preserve the previous file, write a
   same-filesystem temporary file, sync, rename, and sync the parent directory.
 - `SET-011`: The final file is user-readable and user-writable only.
@@ -80,15 +80,10 @@ closed
   document missing a provider added after that document was written treats
   the missing provider as present with its catalog default `enabled` value,
   entirely in memory; it never writes. `apply` on the same document is still
-  strict and rejects it under `SET-006`. Only migration (`setup`, run against
-  a file whose `schemaVersion` is already current but whose `providers` array
-  predates a newly added provider, and which already contains every provider
-  that existed when the document was written) injects the missing provider at
-  the end of the array with its catalog default `enabled` value and writes
-  the rewritten document back atomically; see `MIG-009A`. A document missing
-  one of its original providers (not just a provider added later) does not
-  qualify for this in-place injection and instead follows the v9/defaults
-  migration path.
+  strict and rejects it under `SET-006`. The next Settings save from the UI
+  writes the full document, which already carries every catalog provider, so
+  the file on disk converges without a dedicated command; see the
+  2026-09-15 amendment.
 - `SET-025`: QML draft validation requires every provider the loaded QML
   knows to be present exactly once, and tolerates a well-formed row (string
   `id`, boolean `enabled`) whose id it does not know. Such a row stays in the
@@ -173,7 +168,7 @@ request
 - `CACHE-016`: Timeout terminates and reaps the process.
 - `CACHE-017`: One bounded retry is allowed only for classified transient,
   idempotent failures.
-- `CACHE-018`: Corrupt cache is moved aside, reported by doctor, and rebuilt.
+- `CACHE-018`: Corrupt cache is moved aside and rebuilt.
 - `CACHE-019`: Cache failure never replaces last good QML state with an empty
   model.
 - `CACHE-019A`: Every successful live collection, including cache bypass,
