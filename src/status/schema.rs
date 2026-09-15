@@ -894,7 +894,6 @@ impl StatusEnvelope {
     }
 
     pub fn to_json_line(&self) -> Result<String, StatusOutputError> {
-        self.validate_semantics()?;
         let mut body = serde_json::to_string(self).map_err(|err| {
             StatusOutputError::serialize(format!("status serialization failed: {err}"))
         })?;

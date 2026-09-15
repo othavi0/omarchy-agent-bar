@@ -184,7 +184,7 @@ impl Settings {
     ) -> Result<(Self, bool), SettingsError> {
         let mut value: Value = serde_json::from_slice(raw)
             .map_err(|err| SettingsError::new(format!("invalid settings JSON: {err}")))?;
-        reject_unknown_top_level(&value)?;
+        validate_legacy_updates_block(&value)?;
         if let Some(obj) = value.as_object_mut() {
             obj.remove("updates");
         }
@@ -264,79 +264,26 @@ impl Settings {
     }
 }
 
-fn reject_unknown_top_level(value: &Value) -> Result<(), SettingsError> {
-    let obj = value
+fn validate_legacy_updates_block(value: &Value) -> Result<(), SettingsError> {
+    // Legacy block written by 10.3.24 through 10.5.1: `Settings` has no
+    // `updates` field, so it must be validated and stripped here before
+    // `deny_unknown_fields` gets a chance to reject the whole document.
+    let Some(updates) = value.get("updates") else {
+        return Ok(());
+    };
+    let updates = updates
         .as_object()
-        .ok_or_else(|| SettingsError::new("settings document must be a JSON object"))?;
-    const ALLOWED: &[&str] = &[
-        "schemaVersion",
-        "providers",
-        "display",
-        "refreshIntervalSeconds",
-        "notifications",
-        "updates",
-    ];
-    for key in obj.keys() {
-        if !ALLOWED.contains(&key.as_str()) {
-            return Err(SettingsError::new(format!("unknown settings key '{key}'")));
+        .ok_or_else(|| SettingsError::new("updates must be an object"))?;
+    for (key, val) in updates {
+        if key != "automatic" {
+            return Err(SettingsError::new(format!("unknown updates key '{key}'")));
+        }
+        if !val.is_boolean() {
+            return Err(SettingsError::new("updates.automatic must be a boolean"));
         }
     }
-    if let Some(display) = obj.get("display") {
-        let display = display
-            .as_object()
-            .ok_or_else(|| SettingsError::new("display must be an object"))?;
-        for key in display.keys() {
-            if key != "metric" {
-                return Err(SettingsError::new(format!("unknown display key '{key}'")));
-            }
-        }
-    }
-    if let Some(notifications) = obj.get("notifications") {
-        let notifications = notifications
-            .as_object()
-            .ok_or_else(|| SettingsError::new("notifications must be an object"))?;
-        for key in notifications.keys() {
-            if key != "enabled" && key != "reminderMinutes" {
-                return Err(SettingsError::new(format!(
-                    "unknown notifications key '{key}'"
-                )));
-            }
-        }
-    }
-    if let Some(updates) = obj.get("updates") {
-        // Legacy block written by 10.3.24 through 10.5.1: validated here, then
-        // dropped before the struct is built so it never reaches a write.
-        let updates = updates
-            .as_object()
-            .ok_or_else(|| SettingsError::new("updates must be an object"))?;
-        for (key, val) in updates {
-            if key != "automatic" {
-                return Err(SettingsError::new(format!("unknown updates key '{key}'")));
-            }
-            if !val.is_boolean() {
-                return Err(SettingsError::new("updates.automatic must be a boolean"));
-            }
-        }
-        if !updates.contains_key("automatic") {
-            return Err(SettingsError::new("updates.automatic is required"));
-        }
-    }
-    if let Some(providers) = obj.get("providers") {
-        let providers = providers
-            .as_array()
-            .ok_or_else(|| SettingsError::new("providers must be an array"))?;
-        for (idx, item) in providers.iter().enumerate() {
-            let item = item
-                .as_object()
-                .ok_or_else(|| SettingsError::new(format!("providers[{idx}] must be an object")))?;
-            for key in item.keys() {
-                if key != "id" && key != "enabled" {
-                    return Err(SettingsError::new(format!(
-                        "unknown providers[{idx}] key '{key}'"
-                    )));
-                }
-            }
-        }
+    if !updates.contains_key("automatic") {
+        return Err(SettingsError::new("updates.automatic is required"));
     }
     Ok(())
 }
