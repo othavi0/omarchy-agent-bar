@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [10.5.4] - 2026-09-15
+
+### Changed
+
+- docs: fix the adapter list in the amendment
+- docs: name the adapters that parsed account labels
+- refactor: drop account and error.code from status
+- refactor: one failure mapping per failure kind
+- docs: drop Codex session-log fallback mentions
+- refactor: read Codex through app-server only
+- fix: probe installed Quickshell in update check
+- test: drive tst_Service through the real Service
+- docs: drop the retired migration from PRODUCT.md
+- docs: align product copy with 10.5.3
+
 ## [10.5.3] - 2026-09-15
 
 ### Changed
