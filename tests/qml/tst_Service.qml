@@ -411,18 +411,17 @@ TestCase {
     verify(src.indexOf("id: settingsReadTimeout") >= 0)
     verify(src.indexOf("id: settingsBootstrapTimeout") >= 0)
     verify(src.indexOf("id: settingsWriteTimeout") >= 0)
-    verify(src.indexOf("id: maintenanceCheckTimeout") >= 0)
     verify(src.indexOf("id: maintenanceHandoffTimeout") >= 0)
     verify(src.indexOf("Component.onDestruction") >= 0)
   }
 
   function test_runtime_health() {
-    compare(Core.runtimeHealth({}), "ok")
-    compare(Core.runtimeHealth({ settingsRead: true }), "ok")
-    compare(Core.runtimeHealth({ settingsRead: true, status: true }), "stalled")
+    compare(Core.runtimeHealth(0), "ok")
+    compare(Core.runtimeHealth(1), "ok")
+    compare(Core.runtimeHealth(2), "stalled")
     var original = { status: true }
     var next = Core.recordLaneTimeout(original, "settingsRead")
-    compare(Core.runtimeHealth(next), "stalled")
+    compare(Core.stalledLanes(next), 2)
     verify(original.settingsRead === undefined)
   }
 

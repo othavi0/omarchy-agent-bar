@@ -45,13 +45,17 @@ function health(versionReady, versionFailed, helperVersion, manifestVersion, exp
   return "unknown"
 }
 
-function runtimeHealth(timedOutLanes) {
+function runtimeHealth(stalledCount) {
+  return stalledCount >= 2 ? "stalled" : "ok"
+}
+
+function stalledLanes(timedOutLanes) {
   var count = 0
   for (var lane in (timedOutLanes || {})) {
     if (timedOutLanes[lane])
       count++
   }
-  return count >= 2 ? "stalled" : "ok"
+  return count
 }
 
 function recordLaneTimeout(timedOutLanes, lane) {

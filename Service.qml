@@ -5,6 +5,7 @@ import "CoreService.js" as Core
 import "CoreSettings.js" as Settings
 import "CoreMaintenance.js" as Maintenance
 import "CoreView.js" as View
+import "components"
 
 Item {
   id: root
@@ -50,7 +51,12 @@ Item {
   property var timedOutLanes: ({})
   property var settledLanes: ({})
   property int completedCallbackCount: 0
-  readonly property string runtimeHealth: Core.runtimeHealth(timedOutLanes)
+  readonly property var lanes: ({
+    maintenanceCheck: maintenanceCheckLane
+  })
+  readonly property int stalledLaneCount: Core.stalledLanes(timedOutLanes)
+      + (maintenanceCheckLane.stalled ? 1 : 0)
+  readonly property string runtimeHealth: Core.runtimeHealth(stalledLaneCount)
 
   property string helperVersion: ""
   property bool versionReady: false
@@ -62,28 +68,25 @@ Item {
   property bool settingsReadBusy: false
   property bool settingsBootstrapBusy: false
   property bool settingsWriteBusy: false
-  property bool maintenanceCheckBusy: false
+  readonly property bool maintenanceCheckBusy: maintenanceCheckLane.busy
   property bool maintenanceHandoffBusy: false
 
   property int statusGeneration: 0
   property int settingsGeneration: 0
   property int versionProbeGeneration: 0
   property int settingsBootstrapGeneration: 0
-  property int maintenanceCheckGeneration: 0
   property int maintenanceHandoffGeneration: 0
   property int activeVersionProbeGeneration: 0
   property int activeStatusGeneration: 0
   property int activeSettingsReadGeneration: 0
   property int activeSettingsBootstrapGeneration: 0
   property int activeSettingsWriteGeneration: 0
-  property int activeMaintenanceCheckGeneration: 0
   property int activeMaintenanceHandoffGeneration: 0
   property int versionProbeStartedGeneration: 0
   property int statusStartedGeneration: 0
   property int settingsReadStartedGeneration: 0
   property int settingsBootstrapStartedGeneration: 0
   property int settingsWriteStartedGeneration: 0
-  property int maintenanceCheckStartedGeneration: 0
   property int maintenanceHandoffStartedGeneration: 0
   property string pendingSettingsPayload: ""
   property int pendingSettingsPayloadGeneration: 0
@@ -129,6 +132,22 @@ Item {
     settledLanes = Core.clearSettledLane(settledLanes, lane)
     completedCallbackCount++
     timedOutLanes = ({})
+    clearLaneStalls()
+  }
+
+  function noteLaneSettled(lane, outcome) {
+    if (outcome.timedOut) {
+      timedOutLanes = Core.recordLaneTimeout(timedOutLanes, lane)
+      return
+    }
+    completedCallbackCount++
+    timedOutLanes = ({})
+    clearLaneStalls()
+  }
+
+  function clearLaneStalls() {
+    for (var key in lanes)
+      lanes[key].clearStall()
   }
 
   function shouldApplyProcessExit(lane, generation, activeGeneration) {
@@ -351,41 +370,25 @@ Item {
   function startUpdateCheck() {
     if (maintenanceState.blocked)
       return false
-    if (!Core.canStartLane(maintenanceCheckBusy))
+    if (!maintenanceCheckLane.ready)
       return false
     syncMaintenanceVersion()
-    maintenanceCheckGeneration++
-    activeMaintenanceCheckGeneration = maintenanceCheckGeneration
-    maintenanceUi = Maintenance.maintenanceUiChecking(maintenanceUi)
-    maintenanceCheckBusy = true
-    maintenanceCheckTimeout.restart()
     var helper = resolvedHelperPath()
     if (!helper.length) {
-      maintenanceCheckTimeout.stop()
-      maintenanceCheckBusy = false
       maintenanceUi = Maintenance.maintenanceUiFromCheck(maintenanceUi, "", 1, helperVersion)
       return false
     }
-    maintenanceCheckProcess.command = Maintenance.updateCheckArgv(helper)
-    maintenanceCheckStartedGeneration = activeMaintenanceCheckGeneration
-    if (testMode) {
-      return true
-    }
-    maintenanceCheckProcess.running = true
-    return true
+    maintenanceUi = Maintenance.maintenanceUiChecking(maintenanceUi)
+    return maintenanceCheckLane.start(Maintenance.updateCheckArgv(helper))
   }
 
-  function applyUpdateCheckResult(generation, stdout, exitCode, fromTimeout) {
-    if (!Core.shouldApplyGeneration(activeMaintenanceCheckGeneration, generation))
-      return
-    maintenanceCheckTimeout.stop()
-    maintenanceCheckBusy = false
-    recordCompletedCallback(!!fromTimeout, "maintenanceCheck")
+  function applyUpdateCheckResult(outcome) {
+    noteLaneSettled("maintenanceCheck", outcome)
     tryMaintenanceDetach()
     maintenanceUi = Maintenance.maintenanceUiFromCheck(
       maintenanceUi,
-      stdout,
-      exitCode,
+      outcome.stdout,
+      outcome.exitCode,
       helperVersion || manifestVersion
     )
   }
@@ -832,22 +835,20 @@ Item {
     applySettingsWriteResult(gen, ok, canonical)
   }
 
-  function maintenanceCheckExited(exitCode, generation, stdout) {
-    var gen = generation === undefined ? maintenanceCheckStartedGeneration : generation
-    if (!shouldApplyProcessExit("maintenanceCheck", gen, activeMaintenanceCheckGeneration))
-      return
-    applyUpdateCheckResult(
-      gen,
-      stdout === undefined ? maintenanceCheckOut.text || "" : stdout,
-      exitCode
-    )
-  }
-
   function maintenanceHandoffExited(exitCode, generation) {
     var gen = generation === undefined ? maintenanceHandoffStartedGeneration : generation
     if (!shouldApplyProcessExit("maintenanceHandoff", gen, activeMaintenanceHandoffGeneration))
       return
     applyMaintenanceHandoffDone(gen, exitCode)
+  }
+
+  HelperLane {
+    id: maintenanceCheckLane
+    process: maintenanceCheckProcess
+    stdoutSource: maintenanceCheckOut
+    stderrSource: maintenanceCheckErr
+    timeoutMs: root.maintenanceCheckTimeoutMs
+    onSettled: function (outcome) { root.applyUpdateCheckResult(outcome) }
   }
 
   Process {
@@ -899,7 +900,6 @@ Item {
     id: maintenanceCheckProcess
     stdout: StdioCollector { id: maintenanceCheckOut; waitForEnd: true }
     stderr: StdioCollector { id: maintenanceCheckErr; waitForEnd: true }
-    onExited: function (exitCode) { root.maintenanceCheckExited(exitCode) }
   }
 
   Process {
@@ -989,20 +989,6 @@ Item {
   }
 
   Timer {
-    id: maintenanceCheckTimeout
-    interval: root.maintenanceCheckTimeoutMs
-    repeat: false
-    onTriggered: {
-      if (!root.maintenanceCheckBusy)
-        return
-      if (maintenanceCheckProcess.running)
-        maintenanceCheckProcess.running = false
-      root.recordLaneTimeout("maintenanceCheck", root.activeMaintenanceCheckGeneration)
-      root.applyUpdateCheckResult(root.activeMaintenanceCheckGeneration, "", 1, true)
-    }
-  }
-
-  Timer {
     id: maintenanceHandoffTimeout
     interval: root.maintenanceHandoffTimeoutMs
     repeat: false
@@ -1058,7 +1044,6 @@ Item {
     settingsReadTimeout.stop()
     settingsBootstrapTimeout.stop()
     settingsWriteTimeout.stop()
-    maintenanceCheckTimeout.stop()
     maintenanceHandoffTimeout.stop()
     collectionDelay.stop()
     pollTimer.stop()
@@ -1072,8 +1057,6 @@ Item {
       settingsBootstrapProcess.running = false
     if (settingsWriteProcess.running)
       settingsWriteProcess.running = false
-    if (maintenanceCheckProcess.running)
-      maintenanceCheckProcess.running = false
     if (maintenanceHandoffProcess.running)
       maintenanceHandoffProcess.running = false
   }

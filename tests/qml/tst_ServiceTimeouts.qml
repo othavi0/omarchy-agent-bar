@@ -18,6 +18,39 @@ TestCase {
   property string serviceUrl: "file://" + repoRoot + "/Service.qml"
   property var service: null
 
+  // Quickshell 0.3.1: running = false is SIGTERM, so the child stays alive
+  // until its own exit arrives. The mock reports that, or the corpse window
+  // this harness has to reach would not exist.
+  function processMock(id, outId, errId) {
+    return [
+      "  QtObject {",
+      "    id: " + id,
+      "    property bool alive: false",
+      "    property bool running: false",
+      "    property var command: []",
+      "    property bool stdinEnabled: false",
+      "    property string written: \"\"",
+      "    signal started()",
+      "    signal exited(int exitCode)",
+      "    function write(data) { written += data }",
+      "    function finish(code) { alive = false; running = false; exited(code) }",
+      "    onRunningChanged: {",
+      "      if (running && !alive) { alive = true; started() }",
+      "      else if (!running && alive) running = true",
+      "    }",
+      "  }",
+      "  QtObject { id: " + outId + "; property string text: \"\" }",
+      "  QtObject { id: " + errId + "; property string text: \"\" }"
+    ].join("\n")
+  }
+
+  function finishLane(s, name, exitCode, stdout, stderr) {
+    var lane = s.lanes[name]
+    lane.stdoutSource.text = stdout === undefined ? "" : stdout
+    lane.stderrSource.text = stderr === undefined ? "" : stderr
+    lane.process.finish(exitCode)
+  }
+
   function createService() {
     var component = Qt.createComponent(serviceUrl)
     if (component.status === Component.Ready) {
@@ -37,13 +70,13 @@ TestCase {
       verify(processStart > 0 && processEnd > processStart)
       verify(source.indexOf("\n  Process {", processEnd) < 0, "every Process block sits before the first Timer")
       var processMocks = [
-        "  QtObject { id: versionProbe; property bool running: false; property var command: [] }",
-        "  QtObject { id: statusProcess; property bool running: false; property var command: [] }",
-        "  QtObject { id: settingsReadProcess; property bool running: false; property var command: [] }",
-        "  QtObject { id: settingsBootstrapProcess; property bool running: false; property var command: [] }",
-        "  QtObject { id: settingsWriteProcess; property bool running: false; property bool stdinEnabled: true; property var command: [] }",
-        "  QtObject { id: maintenanceCheckProcess; property bool running: false; property var command: [] }",
-        "  QtObject { id: maintenanceHandoffProcess; property bool running: false; property bool stdinEnabled: false; property var command: [] }",
+        processMock("versionProbe", "versionOut", "versionErr"),
+        processMock("statusProcess", "statusOut", "statusErr"),
+        processMock("settingsReadProcess", "settingsReadOut", "settingsReadErr"),
+        processMock("settingsBootstrapProcess", "settingsBootstrapOut", "settingsBootstrapErr"),
+        processMock("settingsWriteProcess", "settingsWriteOut", "settingsWriteErr"),
+        processMock("maintenanceCheckProcess", "maintenanceCheckOut", "maintenanceCheckErr"),
+        processMock("maintenanceHandoffProcess", "maintenanceHandoffOut", "maintenanceHandoffErr"),
         ""
       ].join("\n")
       source = source.slice(0, processStart) + processMocks + source.slice(processEnd)
@@ -295,7 +328,7 @@ TestCase {
     var s = createService()
     s.recordLaneTimeout("status", 4)
     s.recordLaneTimeout("settingsRead", 9)
-    s.recordLaneTimeout("maintenanceCheck", 12)
+    s.recordLaneTimeout("settingsBootstrap", 12)
     compare(s.runtimeHealth, "stalled")
     var completedBefore = s.completedCallbackCount
 
@@ -307,7 +340,6 @@ TestCase {
     compare(s.completedCallbackCount, completedBefore)
     verify(!Core.isLaneSettled(s.settledLanes, "status", 4))
     verify(Core.isLaneSettled(s.settledLanes, "settingsRead", 9))
-    verify(Core.isLaneSettled(s.settledLanes, "maintenanceCheck", 12))
 
     s.applySettingsReadResult(s.activeSettingsReadGeneration, "", 1)
     compare(Object.keys(s.timedOutLanes).length, 0)
@@ -364,7 +396,7 @@ TestCase {
     var s = createService()
     bootstrapSettings(s)
     s.checkForUpdates()
-    s.applyUpdateCheckResult(s.activeMaintenanceCheckGeneration, availableCheck(), 0)
+    finishLane(s, "maintenanceCheck", 0, availableCheck())
     compare(s.maintenanceUi.phase, "update_available")
     compare(s.pendingMaintenanceIntention, null)
     compare(s.maintenanceState.blocked, false)
@@ -406,14 +438,13 @@ TestCase {
     bootstrapSettings(s)
     s.checkForUpdates()
     compare(s.maintenanceCheckBusy, true)
-    var checkGeneration = s.activeMaintenanceCheckGeneration
 
     s.pendingMaintenanceIntention = ({ kind: "uninstall", purge: false })
     s.beginMaintenanceHandoff()
     compare(s.maintenanceState.blocked, true)
     compare(s.maintenanceHandoffBusy, false)
 
-    s.applyUpdateCheckResult(checkGeneration, availableCheck(), 0)
+    finishLane(s, "maintenanceCheck", 0, availableCheck())
     compare(s.maintenanceHandoffBusy, true)
   }
 
@@ -467,7 +498,7 @@ TestCase {
     var s = createService()
     s.applySettingsBootstrapResult(s.activeSettingsBootstrapGeneration, "", 1)
     s.checkForUpdates()
-    s.applyUpdateCheckResult(s.activeMaintenanceCheckGeneration, availableCheck(), 0)
+    finishLane(s, "maintenanceCheck", 0, availableCheck())
     compare(s.maintenanceUi.phase, "update_available")
     compare(s.pendingMaintenanceIntention, null)
   }
