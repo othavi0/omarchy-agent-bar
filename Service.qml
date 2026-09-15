@@ -54,11 +54,13 @@ Item {
   readonly property var lanes: ({
     versionProbe: versionProbeLane,
     settingsRead: settingsReadLane,
+    settingsBootstrap: settingsBootstrapLane,
     maintenanceCheck: maintenanceCheckLane
   })
   readonly property int stalledLaneCount: Core.stalledLanes(timedOutLanes)
       + (versionProbeLane.stalled ? 1 : 0)
       + (settingsReadLane.stalled ? 1 : 0)
+      + (settingsBootstrapLane.stalled ? 1 : 0)
       + (maintenanceCheckLane.stalled ? 1 : 0)
   readonly property string runtimeHealth: Core.runtimeHealth(stalledLaneCount)
 
@@ -70,21 +72,18 @@ Item {
 
   property bool statusBusy: false
   readonly property bool settingsReadBusy: settingsReadLane.busy
-  property bool settingsBootstrapBusy: false
+  readonly property bool settingsBootstrapBusy: settingsBootstrapLane.busy
   property bool settingsWriteBusy: false
   readonly property bool maintenanceCheckBusy: maintenanceCheckLane.busy
   property bool maintenanceHandoffBusy: false
 
   property int statusGeneration: 0
   property int settingsGeneration: 0
-  property int settingsBootstrapGeneration: 0
   property int maintenanceHandoffGeneration: 0
   property int activeStatusGeneration: 0
-  property int activeSettingsBootstrapGeneration: 0
   property int activeSettingsWriteGeneration: 0
   property int activeMaintenanceHandoffGeneration: 0
   property int statusStartedGeneration: 0
-  property int settingsBootstrapStartedGeneration: 0
   property int settingsWriteStartedGeneration: 0
   property int maintenanceHandoffStartedGeneration: 0
   property string pendingSettingsPayload: ""
@@ -584,31 +583,20 @@ Item {
   }
 
   function kickSettingsBootstrap() {
-    if (appliedSettings || settingsBootstrapBusy || maintenanceState.blocked)
+    if (appliedSettings || maintenanceState.blocked)
+      return
+    if (!settingsBootstrapLane.ready)
       return
     var helper = resolvedHelperPath()
     if (!helper.length)
       return
-    settingsBootstrapGeneration++
-    activeSettingsBootstrapGeneration = settingsBootstrapGeneration
-    settingsBootstrapBusy = true
-    settingsBootstrapTimeout.restart()
-    settingsBootstrapProcess.command = Settings.settingsArgvShow(helper)
-    settingsBootstrapStartedGeneration = activeSettingsBootstrapGeneration
-    if (testMode) {
-      return
-    }
-    settingsBootstrapProcess.running = true
+    settingsBootstrapLane.start(Settings.settingsArgvShow(helper))
   }
 
-  function applySettingsBootstrapResult(generation, stdout, exitCode, fromTimeout) {
-    if (!Core.shouldApplyGeneration(activeSettingsBootstrapGeneration, generation))
-      return
-    settingsBootstrapTimeout.stop()
-    settingsBootstrapBusy = false
-    recordCompletedCallback(!!fromTimeout, "settingsBootstrap")
+  function applySettingsBootstrapResult(outcome) {
+    noteLaneSettled(outcome)
     tryMaintenanceDetach()
-    appliedSettings = Settings.settingsBootstrapResult(appliedSettings, stdout, exitCode)
+    appliedSettings = Settings.settingsBootstrapResult(appliedSettings, outcome.stdout, outcome.exitCode)
   }
 
   function kickSettingsRead() {
@@ -757,17 +745,6 @@ Item {
                       exitCode)
   }
 
-  function settingsBootstrapExited(exitCode, generation, stdout) {
-    var gen = generation === undefined ? settingsBootstrapStartedGeneration : generation
-    if (!shouldApplyProcessExit("settingsBootstrap", gen, activeSettingsBootstrapGeneration))
-      return
-    applySettingsBootstrapResult(
-      gen,
-      stdout === undefined ? settingsBootstrapOut.text || "" : stdout,
-      exitCode
-    )
-  }
-
   function settingsWriteExited(exitCode, generation, stdout) {
     var gen = generation === undefined ? settingsWriteStartedGeneration : generation
     if (!shouldApplyProcessExit("settingsWrite", gen, activeSettingsWriteGeneration))
@@ -813,6 +790,15 @@ Item {
   }
 
   HelperLane {
+    id: settingsBootstrapLane
+    process: settingsBootstrapProcess
+    stdoutSource: settingsBootstrapOut
+    stderrSource: settingsBootstrapErr
+    timeoutMs: root.settingsTimeoutMs
+    onSettled: function (outcome) { root.applySettingsBootstrapResult(outcome) }
+  }
+
+  HelperLane {
     id: maintenanceCheckLane
     process: maintenanceCheckProcess
     stdoutSource: maintenanceCheckOut
@@ -844,7 +830,6 @@ Item {
     id: settingsBootstrapProcess
     stdout: StdioCollector { id: settingsBootstrapOut; waitForEnd: true }
     stderr: StdioCollector { id: settingsBootstrapErr; waitForEnd: true }
-    onExited: function (exitCode) { root.settingsBootstrapExited(exitCode) }
   }
 
   Process {
@@ -897,20 +882,6 @@ Item {
         statusProcess.running = false
       root.recordLaneTimeout("status", root.activeStatusGeneration)
       root.applyStatusResult(root.activeStatusGeneration, "", "timeout", 1, true)
-    }
-  }
-
-  Timer {
-    id: settingsBootstrapTimeout
-    interval: root.settingsTimeoutMs
-    repeat: false
-    onTriggered: {
-      if (!root.settingsBootstrapBusy)
-        return
-      if (settingsBootstrapProcess.running)
-        settingsBootstrapProcess.running = false
-      root.recordLaneTimeout("settingsBootstrap", root.activeSettingsBootstrapGeneration)
-      root.applySettingsBootstrapResult(root.activeSettingsBootstrapGeneration, "", 1, true)
     }
   }
 
@@ -980,15 +951,12 @@ Item {
 
   Component.onDestruction: {
     statusTimeout.stop()
-    settingsBootstrapTimeout.stop()
     settingsWriteTimeout.stop()
     maintenanceHandoffTimeout.stop()
     collectionDelay.stop()
     pollTimer.stop()
     if (statusProcess.running)
       statusProcess.running = false
-    if (settingsBootstrapProcess.running)
-      settingsBootstrapProcess.running = false
     if (settingsWriteProcess.running)
       settingsWriteProcess.running = false
     if (maintenanceHandoffProcess.running)

@@ -147,7 +147,7 @@ TestCase {
 
   function test_settings_write_timeout_returns_dirty() {
     var s = createService()
-    s.applySettingsBootstrapResult(s.activeSettingsBootstrapGeneration, "", 1)
+    finishLane(s, "settingsBootstrap", 1)
     s.openSettings("monitor-a")
     finishLane(s, "settingsRead", 0, JSON.stringify(validSettings()))
     s.setDisplayMetric("used")
@@ -159,7 +159,7 @@ TestCase {
 
   function test_late_timed_out_write_cannot_adopt_old_canonical() {
     var s = createService()
-    s.applySettingsBootstrapResult(s.activeSettingsBootstrapGeneration, "", 1)
+    finishLane(s, "settingsBootstrap", 1)
     s.openSettings("monitor-a")
     finishLane(s, "settingsRead", 0, JSON.stringify(validSettings()))
     s.setDisplayMetric("used")
@@ -188,7 +188,7 @@ TestCase {
 
   function test_native_write_exit_keeps_new_save_intact() {
     var s = createService()
-    s.applySettingsBootstrapResult(s.activeSettingsBootstrapGeneration, "", 1)
+    finishLane(s, "settingsBootstrap", 1)
     s.openSettings("monitor-a")
     finishLane(s, "settingsRead", 0, JSON.stringify(validSettings()))
     s.setDisplayMetric("used")
@@ -241,7 +241,7 @@ TestCase {
 
   function test_late_timed_out_status_cannot_replace_new_request() {
     var s = createService()
-    s.applySettingsBootstrapResult(s.activeSettingsBootstrapGeneration, "", 1)
+    finishLane(s, "settingsBootstrap", 1)
     s.beginCollection()
     var generationA = s.activeStatusGeneration
     tryCompare(s, "statusBusy", false, 500)
@@ -278,20 +278,19 @@ TestCase {
     verify(!s.timedOutLanes.status)
   }
 
-  function test_late_timed_out_bootstrap_cannot_replace_new_request() {
+  function test_a_timed_out_bootstrap_holds_the_lane_until_its_corpse_reports() {
     var s = createService()
-    var generationA = s.activeSettingsBootstrapGeneration
     tryCompare(s, "settingsBootstrapBusy", false, 500)
     s.kickSettingsBootstrap()
-    var generationB = s.activeSettingsBootstrapGeneration
-    verify(generationB !== generationA)
+    compare(s.settingsBootstrapBusy, false)
 
-    s.settingsBootstrapExited(0, generationA, JSON.stringify(validSettings()))
-
-    compare(s.activeSettingsBootstrapGeneration, generationB)
-    compare(s.settingsBootstrapBusy, true)
+    finishLane(s, "settingsBootstrap", 0, JSON.stringify(validSettings()))
     compare(s.appliedSettings, null)
-    compare(Object.keys(s.timedOutLanes).length, 0)
+
+    s.kickSettingsBootstrap()
+    compare(s.settingsBootstrapBusy, true)
+    finishLane(s, "settingsBootstrap", 0, JSON.stringify(validSettings()))
+    verify(s.appliedSettings !== null)
   }
 
   function test_settled_exit_is_ignored_completely() {
@@ -318,19 +317,19 @@ TestCase {
   function test_reap_clears_only_its_own_timed_out_lane() {
     var s = createService()
     s.recordLaneTimeout("status", 4)
-    s.recordLaneTimeout("settingsBootstrap", 9)
-    s.recordLaneTimeout("settingsWrite", 12)
+    s.recordLaneTimeout("settingsWrite", 9)
+    s.recordLaneTimeout("maintenanceHandoff", 12)
     compare(s.runtimeHealth, "stalled")
     var completedBefore = s.completedCallbackCount
 
     s.statusExited(0, 4, validEnvelope(), "")
 
     verify(!s.timedOutLanes.status)
-    verify(s.timedOutLanes.settingsBootstrap)
+    verify(s.timedOutLanes.settingsWrite)
     compare(s.runtimeHealth, "stalled")
     compare(s.completedCallbackCount, completedBefore)
     verify(!Core.isLaneSettled(s.settledLanes, "status", 4))
-    verify(Core.isLaneSettled(s.settledLanes, "settingsBootstrap", 9))
+    verify(Core.isLaneSettled(s.settledLanes, "settingsWrite", 9))
 
     s.openSettings("monitor-a")
     finishLane(s, "settingsRead", 1)
@@ -339,7 +338,7 @@ TestCase {
 
   function test_runtime_health_accumulates_and_real_callback_resets() {
     var s = createService()
-    s.applySettingsBootstrapResult(s.activeSettingsBootstrapGeneration, "", 1)
+    finishLane(s, "settingsBootstrap", 1)
     s.openSettings("monitor-a")
     tryVerify(function () { return s.settingsState.phase === "load_failed" }, 500)
     compare(s.runtimeHealth, "ok")
@@ -356,7 +355,7 @@ TestCase {
 
   function test_health_reports_stalled_first() {
     var s = createService()
-    s.applySettingsBootstrapResult(s.activeSettingsBootstrapGeneration, "", 1)
+    finishLane(s, "settingsBootstrap", 1)
     s.openSettings("monitor-a")
     tryVerify(function () { return s.settingsState.phase === "load_failed" }, 500)
     s.checkForUpdates()
@@ -375,7 +374,7 @@ TestCase {
   }
 
   function bootstrapSettings(s) {
-    s.applySettingsBootstrapResult(s.activeSettingsBootstrapGeneration, JSON.stringify(validSettings()), 0)
+    finishLane(s, "settingsBootstrap", 0, JSON.stringify(validSettings()))
     verify(s.appliedSettings !== null)
   }
 
@@ -458,14 +457,13 @@ TestCase {
     var s = createService()
     s.kickSettingsBootstrap()
     compare(s.settingsBootstrapBusy, true)
-    var bootstrapGeneration = s.activeSettingsBootstrapGeneration
 
     s.pendingMaintenanceIntention = ({ kind: "uninstall", purge: false })
     s.beginMaintenanceHandoff()
     compare(s.maintenanceState.blocked, true)
     compare(s.maintenanceHandoffBusy, false)
 
-    s.applySettingsBootstrapResult(bootstrapGeneration, "", 1)
+    finishLane(s, "settingsBootstrap", 1)
     compare(s.maintenanceHandoffBusy, true)
   }
 
@@ -486,7 +484,7 @@ TestCase {
 
   function test_manual_check_still_waits_for_a_click() {
     var s = createService()
-    s.applySettingsBootstrapResult(s.activeSettingsBootstrapGeneration, "", 1)
+    finishLane(s, "settingsBootstrap", 1)
     s.checkForUpdates()
     finishLane(s, "maintenanceCheck", 0, availableCheck())
     compare(s.maintenanceUi.phase, "update_available")
