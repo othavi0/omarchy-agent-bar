@@ -1,6 +1,7 @@
 import QtQuick
 import QtTest
 import "../../CoreService.js" as Core
+import "../../CoreView.js" as View
 
 TestCase {
   id: testCase
@@ -603,5 +604,35 @@ TestCase {
     compare(s.settingsState.pendingPayload.display.metric, "used")
     compare(s.settingsState.pendingPayload.notifications.reminderMinutes, 240)
     compare(s.lanes.settingsWrite.stdinText.indexOf('"metric":"used"') >= 0, true)
+  }
+
+  function test_visible_providers_derives_from_snapshot_and_updates_on_change() {
+    var s = createService()
+    s.appliedSettings = validSettings()
+    compare(s.visibleProviders.length, 2)
+    compare(s.visibleProviders[0].id, "claude")
+    compare(s.visibleProviders[0].state, "loading")
+    compare(s.visibleProviders[1].id, "codex")
+
+    s.snapshot = {
+      schemaVersion: 2,
+      helperVersion: "10.3.17",
+      generatedAt: "2026-08-26T12:00:00Z",
+      request: { provider: null, cache: "use" },
+      providers: [
+        { id: "claude", name: "Claude", state: "ready", source: "live", plan: null,
+          account: null, windows: [], lastSuccessAt: "2026-08-26T12:00:00Z",
+          error: null, action: null },
+        { id: "codex", name: "Codex", state: "ready", source: "live", plan: null,
+          account: null, windows: [], lastSuccessAt: "2026-08-26T12:00:00Z",
+          error: null, action: null }
+      ]
+    }
+
+    compare(s.visibleProviders.length, 2)
+    compare(s.visibleProviders[0].state, "ready")
+    compare(s.visibleProviders[0].source, "live")
+    compare(JSON.stringify(s.visibleProviders),
+        JSON.stringify(View.visibleProviders(s.snapshot, s.appliedSettings)))
   }
 }

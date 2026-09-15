@@ -14,7 +14,6 @@ Item {
   property double nowMs: Date.now()
   property color foreground: Color.foreground
   property string fontFamily: Style.font.family
-  property url iconBase: Qt.resolvedUrl("icons/")
 
   signal providerSelected(string providerId)
   signal settingsClicked()
@@ -43,10 +42,7 @@ Item {
   property var _railFocusItems: []
 
   function iconUrl(id) {
-    var name = Core.iconFileName(id)
-    if (!name.length)
-      return ""
-    return String(root.iconBase) + name
+    return Core.iconUrl(id)
   }
 
   function collectFocusTargets() {

@@ -27,18 +27,15 @@ KeyboardPanel {
       ? !!contentLoader.item.editorOwnsFocus
       : false
 
-  readonly property var appliedSettings: {
-    if (agentService && agentService.appliedSettings)
-      return agentService.appliedSettings
-    return Service.defaultSettings()
-  }
+  readonly property var resolvedSettings: agentService
+      ? agentService.resolvedSettings
+      : Service.defaultSettings()
 
-  readonly property var railProviders: Core.visibleProviders(
-    agentService ? agentService.snapshot : null,
-    appliedSettings
-  )
+  readonly property var railProviders: agentService
+      ? agentService.visibleProviders
+      : Core.visibleProviders(null, resolvedSettings)
 
-  readonly property string displayMetric: Core.displayMetric(appliedSettings)
+  readonly property string displayMetric: Core.displayMetric(resolvedSettings)
   property string settingsTab: "providers"
 
   readonly property string selectedId: {
@@ -57,7 +54,7 @@ KeyboardPanel {
   readonly property var selectedProvider: Core.resolveSelectedProvider(
     agentService ? agentService.snapshot : null,
     selectedId,
-    appliedSettings
+    resolvedSettings
   )
 
   readonly property string view: Service.popupView(agentService ? agentService.popupOwner : null)
@@ -271,7 +268,6 @@ KeyboardPanel {
         nowMs: root.owner && root.owner.nowMs !== undefined ? root.owner.nowMs : Date.now()
         foreground: Color.foreground
         fontFamily: Style.font.family
-        iconBase: Qt.resolvedUrl("icons/")
         onProviderSelected: function (id) { root.selectProvider(id) }
         onSettingsClicked: root.openSettings()
       }
@@ -403,7 +399,6 @@ KeyboardPanel {
       agentService: root.agentService
       foreground: Color.foreground
       fontFamily: Style.font.family
-      iconBase: Qt.resolvedUrl("icons/")
     }
   }
 }

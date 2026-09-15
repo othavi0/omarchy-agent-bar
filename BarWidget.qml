@@ -15,30 +15,20 @@ BarWidget {
       ? bar.shell.serviceFor(moduleName)
       : null
 
-  readonly property var appliedSettings: {
-    if (agentService && agentService.appliedSettings)
-      return agentService.appliedSettings
-    return Service.defaultSettings()
-  }
+  readonly property var resolvedSettings: agentService
+      ? agentService.resolvedSettings
+      : Service.defaultSettings()
 
-  readonly property string displayMetric: Core.displayMetric(appliedSettings)
+  readonly property string displayMetric: Core.displayMetric(resolvedSettings)
 
-  readonly property var chipProviders: Core.visibleProviders(
-    agentService ? agentService.snapshot : null,
-    appliedSettings
-  )
+  readonly property var chipProviders: agentService
+      ? agentService.visibleProviders
+      : Core.visibleProviders(null, resolvedSettings)
 
   readonly property color chipForeground: bar ? bar.foreground : Color.foreground
   readonly property string chipFontFamily: bar ? bar.fontFamily : "monospace"
 
-  property double nowMs: Date.now()
-  Timer {
-    id: nowTimer
-    interval: 30000
-    running: true
-    repeat: true
-    onTriggered: root.nowMs = Date.now()
-  }
+  readonly property double nowMs: agentService ? agentService.nowMs : Date.now()
 
   readonly property bool foreignDismissActive: Service.foreignPopupOpen(
     agentService ? agentService.popupOwner : null,
@@ -46,10 +36,7 @@ BarWidget {
   )
 
   function iconUrl(providerId) {
-    var name = Core.iconFileName(providerId)
-    if (!name.length)
-      return ""
-    return Qt.resolvedUrl("icons/" + name)
+    return Core.iconUrl(providerId)
   }
 
   function handleChipPress(providerId, button) {

@@ -22,6 +22,7 @@ TestCase {
   property string widgetUrl: "file://" + repoRoot + "/BarWidget.qml"
   property string chipUrl: "file://" + repoRoot + "/components/ProviderChip.qml"
   property string coreViewUrl: "file://" + repoRoot + "/CoreView.js"
+  property string serviceUrl: "file://" + repoRoot + "/Service.qml"
 
   Item {
     id: fakeShell
@@ -163,7 +164,11 @@ TestCase {
     var src = String(xhr.responseText)
     verify(src.indexOf("serviceFor(moduleName)") >= 0)
     verify(src.indexOf("moduleName: \"othavi0.agent-bar\"") >= 0)
-    verify(src.indexOf("Qt.resolvedUrl") >= 0)
+    verify(src.indexOf("Core.iconUrl(providerId)") >= 0,
+        "BarWidget must resolve icons through the shared CoreView helper")
+
+    var coreView = sourceAt(coreViewUrl)
+    verify(coreView.indexOf("Qt.resolvedUrl") >= 0)
   }
 
   function test_visible_providers_settings_order_and_filter() {
@@ -505,9 +510,14 @@ TestCase {
     }
 
     var widget = sourceAt(widgetUrl)
-    verify(widget.indexOf("interval: 30000") >= 0)
-    verify(widget.indexOf("onTriggered: root.nowMs = Date.now()") >= 0)
+    verify(widget.indexOf("Timer") < 0, widgetUrl + " must read the shared now tick from the Service")
+    verify(widget.indexOf("agentService.nowMs") >= 0,
+        "BarWidget must read the shared now tick from the Service")
     verify(widget.indexOf("root.displayMetric, root.nowMs") >= 0)
+
+    var service = sourceAt(serviceUrl)
+    verify(service.indexOf("interval: 30000") >= 0)
+    verify(service.indexOf("onTriggered: root.nowMs = Date.now()") >= 0)
   }
 
   function test_source_chip_is_widgetbutton_no_wheel() {

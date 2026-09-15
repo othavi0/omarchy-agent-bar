@@ -37,6 +37,8 @@ Item {
   property var settingsState: Settings.settingsClosed()
   property var settingsDraft: null
   property var appliedSettings: null
+  readonly property var resolvedSettings: appliedSettings ? appliedSettings : Core.defaultSettings()
+  readonly property var visibleProviders: View.visibleProviders(snapshot, resolvedSettings)
   property var maintenanceState: Maintenance.maintenanceIdle()
   property var maintenanceUi: Maintenance.maintenanceUiIdle("")
   property var pendingForcedTargets: Core.emptyPending()
@@ -79,6 +81,7 @@ Item {
   property string lastRefreshProviderId: ""
   property int settingsSaveCount: 0
   property bool pollEnabled: true
+  property double nowMs: Date.now()
 
   readonly property string manifestVersion: manifest && manifest.version
       ? String(manifest.version)
@@ -771,6 +774,14 @@ Item {
     }
   }
 
+  Timer {
+    id: nowTimer
+    interval: 30000
+    running: true
+    repeat: true
+    onTriggered: root.nowMs = Date.now()
+  }
+
   IpcHandler {
     target: "othavi0.agent-bar"
     function health(expectedVersion: string): string { return root.health(expectedVersion) }
@@ -792,5 +803,6 @@ Item {
   Component.onDestruction: {
     collectionDelay.stop()
     pollTimer.stop()
+    nowTimer.stop()
   }
 }
