@@ -52,16 +52,18 @@ Item {
   property var settledLanes: ({})
   property int completedCallbackCount: 0
   readonly property var lanes: ({
+    versionProbe: versionProbeLane,
     maintenanceCheck: maintenanceCheckLane
   })
   readonly property int stalledLaneCount: Core.stalledLanes(timedOutLanes)
+      + (versionProbeLane.stalled ? 1 : 0)
       + (maintenanceCheckLane.stalled ? 1 : 0)
   readonly property string runtimeHealth: Core.runtimeHealth(stalledLaneCount)
 
   property string helperVersion: ""
   property bool versionReady: false
   property bool versionFailed: false
-  property bool versionProbeRunning: false
+  readonly property bool versionProbeRunning: versionProbeLane.busy
   property bool collectionStarted: false
 
   property bool statusBusy: false
@@ -73,16 +75,13 @@ Item {
 
   property int statusGeneration: 0
   property int settingsGeneration: 0
-  property int versionProbeGeneration: 0
   property int settingsBootstrapGeneration: 0
   property int maintenanceHandoffGeneration: 0
-  property int activeVersionProbeGeneration: 0
   property int activeStatusGeneration: 0
   property int activeSettingsReadGeneration: 0
   property int activeSettingsBootstrapGeneration: 0
   property int activeSettingsWriteGeneration: 0
   property int activeMaintenanceHandoffGeneration: 0
-  property int versionProbeStartedGeneration: 0
   property int statusStartedGeneration: 0
   property int settingsReadStartedGeneration: 0
   property int settingsBootstrapStartedGeneration: 0
@@ -460,11 +459,9 @@ Item {
     }
   }
 
-  function applyVersionProbeResult(generation, stdout, stderr, exitCode, fromTimeout) {
-    if (!Core.shouldApplyGeneration(activeVersionProbeGeneration, generation))
-      return
-    recordCompletedCallback(!!fromTimeout, "versionProbe")
-    var version = Core.parseVersionStdout(stdout, stderr, exitCode)
+  function applyVersionProbeResult(outcome) {
+    noteLaneSettled("versionProbe", outcome)
+    var version = Core.parseVersionStdout(outcome.stdout, outcome.stderr, outcome.exitCode)
     if (version)
       finishVersionProbeSuccess(version)
     else
@@ -484,30 +481,19 @@ Item {
   }
 
   function startVersionProbe() {
-    if (versionProbeRunning || versionReady)
+    if (versionReady || !versionProbeLane.ready)
       return
     if (testMode)
-      return
-    if (!Core.canStartLane(versionProbeRunning))
       return
     var helper = resolvedHelperPath()
     if (!helper.length) {
       return
     }
-    versionProbeRunning = true
     versionFailed = false
-    versionProbeGeneration++
-    activeVersionProbeGeneration = versionProbeGeneration
-    // StdioCollector.text is read-only; waitForEnd replaces content per run.
-    versionProbe.command = [helper, "version"]
-    versionProbeStartedGeneration = activeVersionProbeGeneration
-    versionProbe.running = true
-    versionTimeout.restart()
+    versionProbeLane.start([helper, "version"])
   }
 
   function finishVersionProbeSuccess(versionText) {
-    versionTimeout.stop()
-    versionProbeRunning = false
     helperVersion = versionText
     versionReady = true
     versionFailed = false
@@ -522,8 +508,6 @@ Item {
   }
 
   function finishVersionProbeFailure() {
-    versionTimeout.stop()
-    versionProbeRunning = false
     versionReady = false
     versionFailed = true
     helperVersion = ""
@@ -776,16 +760,6 @@ Item {
     }
   }
 
-  function versionProbeExited(exitCode, generation, stdout, stderr) {
-    var gen = generation === undefined ? versionProbeStartedGeneration : generation
-    if (!shouldApplyProcessExit("versionProbe", gen, activeVersionProbeGeneration))
-      return
-    applyVersionProbeResult(gen,
-                            stdout === undefined ? versionOut.text || "" : stdout,
-                            stderr === undefined ? versionErr.text || "" : stderr,
-                            exitCode)
-  }
-
   function statusExited(exitCode, generation, stdout, stderr) {
     var gen = generation === undefined ? statusStartedGeneration : generation
     if (!shouldApplyProcessExit("status", gen, activeStatusGeneration))
@@ -843,6 +817,15 @@ Item {
   }
 
   HelperLane {
+    id: versionProbeLane
+    process: versionProbe
+    stdoutSource: versionOut
+    stderrSource: versionErr
+    timeoutMs: root.versionProbeTimeoutMs
+    onSettled: function (outcome) { root.applyVersionProbeResult(outcome) }
+  }
+
+  HelperLane {
     id: maintenanceCheckLane
     process: maintenanceCheckProcess
     stdoutSource: maintenanceCheckOut
@@ -855,7 +838,6 @@ Item {
     id: versionProbe
     stdout: StdioCollector { id: versionOut; waitForEnd: true }
     stderr: StdioCollector { id: versionErr; waitForEnd: true }
-    onExited: function (exitCode) { root.versionProbeExited(exitCode) }
   }
 
   Process {
@@ -916,20 +898,6 @@ Item {
       }
     }
     onExited: function (exitCode) { root.maintenanceHandoffExited(exitCode) }
-  }
-
-  Timer {
-    id: versionTimeout
-    interval: root.versionProbeTimeoutMs
-    repeat: false
-    onTriggered: {
-      if (!root.versionProbeRunning)
-        return
-      if (versionProbe.running)
-        versionProbe.running = false
-      root.recordLaneTimeout("versionProbe", root.activeVersionProbeGeneration)
-      root.applyVersionProbeResult(root.activeVersionProbeGeneration, "", "timeout", 1, true)
-    }
   }
 
   Timer {
@@ -1039,7 +1007,6 @@ Item {
   }
 
   Component.onDestruction: {
-    versionTimeout.stop()
     statusTimeout.stop()
     settingsReadTimeout.stop()
     settingsBootstrapTimeout.stop()
@@ -1047,8 +1014,6 @@ Item {
     maintenanceHandoffTimeout.stop()
     collectionDelay.stop()
     pollTimer.stop()
-    if (versionProbe.running)
-      versionProbe.running = false
     if (statusProcess.running)
       statusProcess.running = false
     if (settingsReadProcess.running)

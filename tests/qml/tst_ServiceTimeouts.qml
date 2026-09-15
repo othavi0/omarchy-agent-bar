@@ -95,7 +95,7 @@ TestCase {
     service.maintenanceCheckTimeoutMs = 50
     service.maintenanceHandoffTimeoutMs = 50
     service.collectionDelayMs = 10000
-    service.applyVersionProbeResult(service.activeVersionProbeGeneration, "10.3.17\n", "", 0)
+    service.applyVersionProbeResult({ ok: true, exitCode: 0, stdout: "10.3.17\n", stderr: "", timedOut: false })
     return service
   }
 
