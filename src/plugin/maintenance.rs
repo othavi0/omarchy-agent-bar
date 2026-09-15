@@ -13,6 +13,7 @@ use crate::plugin::bundle::{
 };
 use crate::plugin::omarchy::OmarchyError;
 use crate::plugin::paths::{PathError, PLUGIN_ID};
+use crate::providers::{ProcessRunner, ProcessSpec, TokioProcessRunner};
 use crate::support::Clock;
 
 /// This repository's committed `bundle.json` release receipt: the sole
@@ -257,6 +258,72 @@ impl Default for UpdateCheckProbe {
             omarchy_contract: OMARCHY_CONTRACT,
         }
     }
+}
+
+/// Argv this probe runs to discover the installed Quickshell.
+const QUICKSHELL_VERSION_PROBE_ARGV0: &str = "qs";
+/// Short budget: `update check` must stay responsive even if `qs` hangs.
+const QUICKSHELL_PROBE_TIMEOUT: Duration = Duration::from_secs(2);
+
+impl UpdateCheckProbe {
+    /// Probe the installed Quickshell for `current.quickshellVersion`
+    /// (2026-09-15 live-probe amendment) instead of assuming the build
+    /// minimum. A probe failure is typed fallback data, never a process
+    /// failure: it falls back to `MINIMUM_QUICKSHELL_VERSION` with a stderr
+    /// warning.
+    pub fn live() -> Self {
+        match tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+        {
+            Ok(rt) => rt.block_on(Self::probe_with_runner(&TokioProcessRunner)),
+            Err(e) => Self::fallback(&format!("tokio runtime: {e}")),
+        }
+    }
+
+    async fn probe_with_runner<R: ProcessRunner>(runner: &R) -> Self {
+        let spec = ProcessSpec::new(QUICKSHELL_VERSION_PROBE_ARGV0, ["--version"])
+            .with_timeout(QUICKSHELL_PROBE_TIMEOUT);
+        match runner.run(&spec).await {
+            Ok(out) if out.timed_out => Self::fallback("qs --version timed out"),
+            Ok(out) if out.exit_code != Some(0) => Self::fallback(&format!(
+                "qs --version exited {:?}: {}",
+                out.exit_code,
+                out.stderr.trim()
+            )),
+            Ok(out) => match parse_quickshell_version(&out.stdout) {
+                Some(quickshell_version) => Self {
+                    quickshell_version,
+                    ..Self::default()
+                },
+                None => Self::fallback(&format!(
+                    "qs --version produced no parseable version: {:?}",
+                    out.stdout.trim()
+                )),
+            },
+            Err(e) => Self::fallback(&format!("failed to run qs --version: {e}")),
+        }
+    }
+
+    fn fallback(reason: &str) -> Self {
+        eprintln!(
+            "agent-bar: warning: could not probe installed Quickshell ({reason}); \
+             assuming build minimum {MINIMUM_QUICKSHELL_VERSION}"
+        );
+        Self::default()
+    }
+}
+
+/// First whitespace-delimited token that parses as a semantic version, e.g.
+/// `0.3.1` out of `Quickshell 0.3.1 (revision , distributed by Arch Linux)`.
+fn parse_quickshell_version(stdout: &str) -> Option<String> {
+    stdout.split_whitespace().find_map(|token| {
+        let trimmed = token.trim_matches(|c: char| !c.is_ascii_digit() && c != '.');
+        if trimmed.is_empty() {
+            return None;
+        }
+        semver::Version::parse(trimmed).ok().map(|v| v.to_string())
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -509,6 +576,7 @@ pub fn require_absolute_executable(path: &str) -> Result<(), MaintenanceError> {
 mod tests {
     use super::*;
     use crate::plugin::bundle::{BundleBuilder, BundleValidator};
+    use crate::providers::{ProcessError, ProcessOutput};
     use crate::support::Clock;
     use std::os::unix::fs::PermissionsExt;
     use std::sync::Mutex;
@@ -748,6 +816,27 @@ mod tests {
         let probe = UpdateCheckProbe {
             current_version: "10.0.0".into(),
             quickshell_version: "0.3.0".into(),
+            ..UpdateCheckProbe::default()
+        };
+        let doc = UpdateCheck::run(&http, &clock, &probe, false).unwrap();
+        assert!(!doc.available);
+        assert!(doc.latest_compatible.is_none());
+    }
+
+    /// A probe reporting an installed Quickshell older than the receipt's
+    /// minimum must never offer the release, even though the receipt itself
+    /// is newer (BUNDLE-021 compatibility gate).
+    #[test]
+    fn update_check_below_minimum_quickshell_yields_no_offer() {
+        let http = ScriptedReleaseHttp::with_responses(vec![Ok(ReleaseHttpResponse {
+            status: 200,
+            headers: vec![],
+            body: receipt_json("10.1.0", MINIMUM_QUICKSHELL_VERSION),
+        })]);
+        let clock = FixedClock(OffsetDateTime::now_utc());
+        let probe = UpdateCheckProbe {
+            current_version: "10.0.0".into(),
+            quickshell_version: "0.2.9".into(),
             ..UpdateCheckProbe::default()
         };
         let doc = UpdateCheck::run(&http, &clock, &probe, false).unwrap();
@@ -1009,5 +1098,103 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.to_string().contains("operation"));
+    }
+
+    #[test]
+    fn quickshell_version_parses_from_qs_version_output() {
+        assert_eq!(
+            parse_quickshell_version("Quickshell 0.3.1 (revision , distributed by Arch Linux)"),
+            Some("0.3.1".to_string())
+        );
+        assert_eq!(parse_quickshell_version("garbage, no version here"), None);
+        assert_eq!(parse_quickshell_version(""), None);
+    }
+
+    struct ScriptedProcessRunner(Mutex<Vec<Result<ProcessOutput, ProcessError>>>);
+
+    impl ScriptedProcessRunner {
+        fn once(result: Result<ProcessOutput, ProcessError>) -> Self {
+            Self(Mutex::new(vec![result]))
+        }
+    }
+
+    impl ProcessRunner for ScriptedProcessRunner {
+        fn run<'a>(
+            &'a self,
+            _spec: &'a ProcessSpec,
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = Result<ProcessOutput, ProcessError>> + Send + 'a>,
+        > {
+            let result = self
+                .0
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .pop()
+                .expect("scripted process runner exhausted");
+            Box::pin(async move { result })
+        }
+    }
+
+    fn scripted_stdout(stdout: &str) -> ProcessOutput {
+        ProcessOutput {
+            exit_code: Some(0),
+            stdout: stdout.to_string(),
+            stderr: String::new(),
+            timed_out: false,
+            stdout_truncated: false,
+            stderr_truncated: false,
+        }
+    }
+
+    #[tokio::test]
+    async fn live_probe_parses_the_installed_quickshell_version() {
+        let runner = ScriptedProcessRunner::once(Ok(scripted_stdout(
+            "Quickshell 0.3.1 (revision , distributed by Arch Linux)",
+        )));
+        let probe = UpdateCheckProbe::probe_with_runner(&runner).await;
+        assert_eq!(probe.quickshell_version, "0.3.1");
+        assert_eq!(probe.target, OFFICIAL_TARGET);
+    }
+
+    #[tokio::test]
+    async fn live_probe_falls_back_when_output_is_unparsable() {
+        let runner = ScriptedProcessRunner::once(Ok(scripted_stdout("garbage output\n")));
+        let probe = UpdateCheckProbe::probe_with_runner(&runner).await;
+        assert_eq!(probe.quickshell_version, MINIMUM_QUICKSHELL_VERSION);
+    }
+
+    #[tokio::test]
+    async fn live_probe_falls_back_when_qs_exits_nonzero() {
+        let runner = ScriptedProcessRunner::once(Ok(ProcessOutput {
+            exit_code: Some(127),
+            stdout: String::new(),
+            stderr: "command not found".into(),
+            timed_out: false,
+            stdout_truncated: false,
+            stderr_truncated: false,
+        }));
+        let probe = UpdateCheckProbe::probe_with_runner(&runner).await;
+        assert_eq!(probe.quickshell_version, MINIMUM_QUICKSHELL_VERSION);
+    }
+
+    #[tokio::test]
+    async fn live_probe_falls_back_when_qs_times_out() {
+        let runner = ScriptedProcessRunner::once(Ok(ProcessOutput {
+            exit_code: None,
+            stdout: String::new(),
+            stderr: String::new(),
+            timed_out: true,
+            stdout_truncated: false,
+            stderr_truncated: false,
+        }));
+        let probe = UpdateCheckProbe::probe_with_runner(&runner).await;
+        assert_eq!(probe.quickshell_version, MINIMUM_QUICKSHELL_VERSION);
+    }
+
+    #[tokio::test]
+    async fn live_probe_falls_back_when_spawn_fails() {
+        let runner = ScriptedProcessRunner::once(Err(ProcessError::Spawn("no such file".into())));
+        let probe = UpdateCheckProbe::probe_with_runner(&runner).await;
+        assert_eq!(probe.quickshell_version, MINIMUM_QUICKSHELL_VERSION);
     }
 }

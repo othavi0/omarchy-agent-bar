@@ -202,6 +202,12 @@ omarchy-restart-shell` themself.
   forcing `available`/`latestCompatible` null, whenever the live plugin root
   has no `.git` directory, since a pre-conversion tree cannot be
   fast-forwarded and must be reinstalled through `omarchy plugin add`.
+  Amended by the 2026-09-15 live-Quickshell-probe design
+  (`docs/specs/v10/amendments/2026-09-15-live-quickshell-probe-design.md`):
+  `current.quickshellVersion` is the version the installed `qs --version`
+  reports, probed with a 2-second timeout through the argv-only process
+  seam, falling back to the build's `MINIMUM_QUICKSHELL_VERSION` with a
+  stderr warning when the probe fails or its output does not parse.
 - `MIG-022`: `uninstall` purges only Agent Bar's own XDG state (with
   `purge`) under the exclusive maintenance lock, then detaches
   unconditionally to `omarchy plugin remove othavi0.agent-bar --yes`, which

@@ -288,7 +288,7 @@ fn dispatch_update_check() -> Result<(), CliFailure> {
 
     let http = ReqwestReleaseHttp::new().map_err(|e| CliFailure::plugin(e.to_string()))?;
     let clock = SystemClock;
-    let probe = UpdateCheckProbe::default();
+    let probe = UpdateCheckProbe::live();
     let doc = UpdateCheck::run(&http, &clock, &probe, reinstall_required()?)
         .map_err(|e| CliFailure::plugin(e.to_string()))?;
     let json = doc
