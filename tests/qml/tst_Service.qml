@@ -458,23 +458,6 @@ TestCase {
     s.destroy()
   }
 
-  function test_service_pins_started_generation_in_kick() {
-    var xhr = new XMLHttpRequest()
-    xhr.open("GET", serviceUrl, false)
-    xhr.send()
-    var src = String(xhr.responseText)
-    verify(src.indexOf("onStarted: root.versionProbeStartedGeneration") < 0)
-    verify(src.indexOf("onStarted: root.statusStartedGeneration") < 0)
-    verify(src.indexOf("onStarted: root.settingsReadStartedGeneration") < 0)
-    verify(src.indexOf("onStarted: root.settingsBootstrapStartedGeneration") < 0)
-    verify(src.indexOf("root.settingsWriteStartedGeneration = root.activeSettingsWriteGeneration\n      // Write") < 0)
-    verify(src.indexOf("onStarted: root.maintenanceCheckStartedGeneration") < 0)
-    verify(src.indexOf("root.maintenanceHandoffStartedGeneration = root.activeMaintenanceHandoffGeneration\n      // BUNDLE") < 0)
-    var pin = src.indexOf("statusStartedGeneration = gen")
-    var start = src.indexOf("statusProcess.running = true", pin)
-    verify(pin >= 0 && start > pin)
-  }
-
   // Live Quattro: duplicate Component.onCompleted → "Property value set multiple times"
   // and the service never loads (bar chips disappear).
   function test_service_qml_has_single_component_on_completed() {

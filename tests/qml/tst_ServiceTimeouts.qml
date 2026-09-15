@@ -239,45 +239,6 @@ TestCase {
     tryCompare(s, "statusBusy", false, 500)
   }
 
-  function test_late_timed_out_status_cannot_replace_new_request() {
-    var s = createService()
-    finishLane(s, "settingsBootstrap", 1)
-    s.beginCollection()
-    var generationA = s.activeStatusGeneration
-    tryCompare(s, "statusBusy", false, 500)
-    s.kickStatus()
-    var generationB = s.activeStatusGeneration
-    verify(generationB !== generationA)
-
-    s.statusExited(0, generationA, validEnvelope(), "")
-
-    compare(s.activeStatusGeneration, generationB)
-    compare(s.statusBusy, true)
-    compare(s.snapshot, null)
-    compare(Object.keys(s.timedOutLanes).length, 0)
-  }
-
-  function test_native_status_exit_keeps_new_request_intact() {
-    var s = createService()
-    s.beginCollection()
-    var generationA = s.activeStatusGeneration
-    tryCompare(s, "statusBusy", false, 500)
-    s.kickStatus()
-    var generationB = s.activeStatusGeneration
-    verify(generationB !== generationA)
-    s.statusStartedGeneration = generationA
-    var completedBefore = s.completedCallbackCount
-
-    s.statusExited(0)
-
-    compare(s.activeStatusGeneration, generationB)
-    compare(s.statusBusy, true)
-    compare(s.refreshing, true)
-    compare(s.snapshot, null)
-    compare(s.completedCallbackCount, completedBefore)
-    verify(!s.timedOutLanes.status)
-  }
-
   function test_a_timed_out_bootstrap_holds_the_lane_until_its_corpse_reports() {
     var s = createService()
     tryCompare(s, "settingsBootstrapBusy", false, 500)
@@ -293,47 +254,48 @@ TestCase {
     verify(s.appliedSettings !== null)
   }
 
-  function test_settled_exit_is_ignored_completely() {
+  function test_a_status_corpse_never_becomes_the_next_runs_result() {
     var s = createService()
+    finishLane(s, "settingsBootstrap", 1)
     s.beginCollection()
-    var generationA = s.activeStatusGeneration
-    s.statusBusy = false
-    s.kickStatus()
-    var generationB = s.activeStatusGeneration
-    var completedBefore = s.completedCallbackCount
-    s.recordLaneTimeout("settingsRead")
-    s.recordLaneTimeout("status", generationA)
-
-    s.statusExited(0, generationA, validEnvelope(), "")
-
-    compare(s.activeStatusGeneration, generationB)
     compare(s.statusBusy, true)
+    s.refreshAll(true)
+    tryCompare(s.lanes.status, "stalled", true, 500)
+    compare(s.statusBusy, false)
+    verify(!Core.pendingIsEmpty(s.pendingForcedTargets),
+           "the forced refresh waits for the killed run to report")
+
+    finishLane(s, "status", 0, validEnvelope())
+
     compare(s.snapshot, null)
-    compare(s.completedCallbackCount, completedBefore)
-    verify(s.timedOutLanes.settingsRead)
-    verify(!s.timedOutLanes.status)
+    tryVerify(function () { return Core.pendingIsEmpty(s.pendingForcedTargets) }, 500)
+    compare(s.statusBusy, true)
+    compare(s.refreshing, true)
   }
 
-  function test_reap_clears_only_its_own_timed_out_lane() {
+  function test_a_reaped_corpse_clears_only_its_own_lane() {
     var s = createService()
-    s.recordLaneTimeout("status", 4)
-    s.recordLaneTimeout("settingsWrite", 9)
-    s.recordLaneTimeout("maintenanceHandoff", 12)
-    compare(s.runtimeHealth, "stalled")
+    s.beginCollection()
+    s.openSettings("monitor-a")
+    s.checkForUpdates()
+    tryCompare(s, "runtimeHealth", "stalled", 500)
+    compare(s.lanes.status.stalled, true)
     var completedBefore = s.completedCallbackCount
 
-    s.statusExited(0, 4, validEnvelope(), "")
+    finishLane(s, "status", 0, validEnvelope())
 
-    verify(!s.timedOutLanes.status)
-    verify(s.timedOutLanes.settingsWrite)
+    compare(s.lanes.status.stalled, false)
+    compare(s.lanes.settingsRead.stalled, true)
+    compare(s.lanes.maintenanceCheck.stalled, true)
     compare(s.runtimeHealth, "stalled")
+    compare(s.snapshot, null)
     compare(s.completedCallbackCount, completedBefore)
-    verify(!Core.isLaneSettled(s.settledLanes, "status", 4))
-    verify(Core.isLaneSettled(s.settledLanes, "settingsWrite", 9))
 
-    s.openSettings("monitor-a")
-    finishLane(s, "settingsRead", 1)
-    compare(Object.keys(s.timedOutLanes).length, 0)
+    s.kickStatus()
+    finishLane(s, "status", 0, validEnvelope())
+    compare(s.runtimeHealth, "ok")
+    compare(s.lanes.settingsRead.stalled, false)
+    verify(s.snapshot !== null)
   }
 
   function test_runtime_health_accumulates_and_real_callback_resets() {
@@ -344,12 +306,8 @@ TestCase {
     compare(s.runtimeHealth, "ok")
     s.checkForUpdates()
     tryCompare(s, "runtimeHealth", "stalled", 500)
-    var generation = s.activeStatusGeneration
-    if (!s.statusBusy) {
-      s.kickStatus()
-      generation = s.activeStatusGeneration
-    }
-    s.applyStatusResult(generation, validEnvelope(), "", 0)
+    s.kickStatus()
+    finishLane(s, "status", 0, validEnvelope())
     compare(s.runtimeHealth, "ok")
   }
 
@@ -400,14 +358,13 @@ TestCase {
     bootstrapSettings(s)
     s.kickStatus()
     compare(s.statusBusy, true)
-    var statusGeneration = s.activeStatusGeneration
 
     s.pendingMaintenanceIntention = ({ kind: "uninstall", purge: false })
     s.beginMaintenanceHandoff()
     compare(s.maintenanceState.blocked, true)
     compare(s.maintenanceHandoffBusy, false)
 
-    s.applyStatusResult(statusGeneration, validEnvelope(), "", 0)
+    finishLane(s, "status", 0, validEnvelope())
     compare(s.maintenanceHandoffBusy, true)
   }
 
@@ -415,11 +372,10 @@ TestCase {
     var s = createService()
     bootstrapSettings(s)
     s.kickStatus()
-    var statusGeneration = s.activeStatusGeneration
     s.pendingMaintenanceIntention = ({ kind: "uninstall", purge: false })
     s.beginMaintenanceHandoff()
     compare(s.maintenanceHandoffBusy, false)
-    s.applyStatusResult(statusGeneration, "", "boom", 1)
+    finishLane(s, "status", 1, "", "boom")
     compare(s.maintenanceHandoffBusy, true)
   }
 

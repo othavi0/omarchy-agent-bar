@@ -31,7 +31,7 @@ Item {
   property int collectionDelayMs: 0
 
   property var snapshot: null
-  property bool refreshing: false
+  readonly property bool refreshing: statusLane.busy
   property string selectedProviderId: ""
   property var popupOwner: null
   property var settingsState: Settings.settingsClosed()
@@ -53,12 +53,14 @@ Item {
   property int completedCallbackCount: 0
   readonly property var lanes: ({
     versionProbe: versionProbeLane,
+    status: statusLane,
     settingsRead: settingsReadLane,
     settingsBootstrap: settingsBootstrapLane,
     maintenanceCheck: maintenanceCheckLane
   })
   readonly property int stalledLaneCount: Core.stalledLanes(timedOutLanes)
       + (versionProbeLane.stalled ? 1 : 0)
+      + (statusLane.stalled ? 1 : 0)
       + (settingsReadLane.stalled ? 1 : 0)
       + (settingsBootstrapLane.stalled ? 1 : 0)
       + (maintenanceCheckLane.stalled ? 1 : 0)
@@ -70,20 +72,17 @@ Item {
   readonly property bool versionProbeRunning: versionProbeLane.busy
   property bool collectionStarted: false
 
-  property bool statusBusy: false
+  readonly property bool statusBusy: statusLane.busy
   readonly property bool settingsReadBusy: settingsReadLane.busy
   readonly property bool settingsBootstrapBusy: settingsBootstrapLane.busy
   property bool settingsWriteBusy: false
   readonly property bool maintenanceCheckBusy: maintenanceCheckLane.busy
   property bool maintenanceHandoffBusy: false
 
-  property int statusGeneration: 0
   property int settingsGeneration: 0
   property int maintenanceHandoffGeneration: 0
-  property int activeStatusGeneration: 0
   property int activeSettingsWriteGeneration: 0
   property int activeMaintenanceHandoffGeneration: 0
-  property int statusStartedGeneration: 0
   property int settingsWriteStartedGeneration: 0
   property int maintenanceHandoffStartedGeneration: 0
   property string pendingSettingsPayload: ""
@@ -91,7 +90,6 @@ Item {
 
   property int refreshRequestCount: 0
   property string lastRefreshProviderId: ""
-  property int statusStartCount: 0
   property int settingsSaveCount: 0
   property bool pollEnabled: true
 
@@ -520,51 +518,25 @@ Item {
       return
     if (maintenanceState.blocked)
       return
-    if (!Core.canStartLane(statusBusy))
+    if (!statusLane.ready)
       return
     var helper = resolvedHelperPath()
     if (!helper.length)
       return
-
-    statusGeneration++
-    var gen = statusGeneration
-    activeStatusGeneration = gen
     var targets = Core.takePending(pendingForcedTargets)
     pendingForcedTargets = targets.remaining
-    var argv = Core.statusArgv(helper, targets.captured)
-    var request = {
-      generation: gen,
-      argv: argv.slice(),
-      forced: targets.captured
-    }
-
-    statusBusy = true
-    refreshing = true
-    statusStartCount++
-    statusTimeout.restart()
-    // StdioCollector.text is read-only; waitForEnd replaces content per run.
-    statusProcess.command = argv
-    statusStartedGeneration = gen
-    if (testMode) {
-      return
-    }
-    statusProcess.running = true
+    statusLane.start(Core.statusArgv(helper, targets.captured))
   }
 
-  function applyStatusResult(generation, stdout, stderr, exitCode, fromTimeout) {
-    if (!Core.shouldApplyGeneration(activeStatusGeneration, generation))
-      return
-    statusTimeout.stop()
-    statusBusy = false
-    refreshing = false
-    recordCompletedCallback(!!fromTimeout, "status")
+  function applyStatusResult(outcome) {
+    noteLaneSettled(outcome)
     tryMaintenanceDetach()
 
-    if (exitCode !== 0) {
+    if (outcome.exitCode !== 0) {
       maybeFollowUpStatus()
       return
     }
-    var parsed = Core.parseStatusEnvelope(stdout, helperVersion)
+    var parsed = Core.parseStatusEnvelope(outcome.stdout, helperVersion)
     if (!parsed.ok) {
       maybeFollowUpStatus()
       return
@@ -735,16 +707,6 @@ Item {
     }
   }
 
-  function statusExited(exitCode, generation, stdout, stderr) {
-    var gen = generation === undefined ? statusStartedGeneration : generation
-    if (!shouldApplyProcessExit("status", gen, activeStatusGeneration))
-      return
-    applyStatusResult(gen,
-                      stdout === undefined ? statusOut.text || "" : stdout,
-                      stderr === undefined ? statusErr.text || "" : stderr,
-                      exitCode)
-  }
-
   function settingsWriteExited(exitCode, generation, stdout) {
     var gen = generation === undefined ? settingsWriteStartedGeneration : generation
     if (!shouldApplyProcessExit("settingsWrite", gen, activeSettingsWriteGeneration))
@@ -778,6 +740,19 @@ Item {
     stderrSource: versionErr
     timeoutMs: root.versionProbeTimeoutMs
     onSettled: function (outcome) { root.applyVersionProbeResult(outcome) }
+  }
+
+  HelperLane {
+    id: statusLane
+    process: statusProcess
+    stdoutSource: statusOut
+    stderrSource: statusErr
+    timeoutMs: root.statusTimeoutMs
+    onSettled: function (outcome) { root.applyStatusResult(outcome) }
+    // A forced refresh queued while the killed run was still dying only gets
+    // its kick once the lane reopens; callLater keeps that kick out of the
+    // lane's own state transition.
+    onReadyChanged: if (statusLane.ready) Qt.callLater(root.maybeFollowUpStatus)
   }
 
   HelperLane {
@@ -817,7 +792,6 @@ Item {
     id: statusProcess
     stdout: StdioCollector { id: statusOut; waitForEnd: true }
     stderr: StdioCollector { id: statusErr; waitForEnd: true }
-    onExited: function (exitCode) { root.statusExited(exitCode) }
   }
 
   Process {
@@ -869,20 +843,6 @@ Item {
       }
     }
     onExited: function (exitCode) { root.maintenanceHandoffExited(exitCode) }
-  }
-
-  Timer {
-    id: statusTimeout
-    interval: root.statusTimeoutMs
-    repeat: false
-    onTriggered: {
-      if (!root.statusBusy)
-        return
-      if (statusProcess.running)
-        statusProcess.running = false
-      root.recordLaneTimeout("status", root.activeStatusGeneration)
-      root.applyStatusResult(root.activeStatusGeneration, "", "timeout", 1, true)
-    }
   }
 
   Timer {
@@ -950,13 +910,10 @@ Item {
   }
 
   Component.onDestruction: {
-    statusTimeout.stop()
     settingsWriteTimeout.stop()
     maintenanceHandoffTimeout.stop()
     collectionDelay.stop()
     pollTimer.stop()
-    if (statusProcess.running)
-      statusProcess.running = false
     if (settingsWriteProcess.running)
       settingsWriteProcess.running = false
     if (maintenanceHandoffProcess.running)
