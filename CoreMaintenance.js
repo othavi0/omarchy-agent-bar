@@ -13,10 +13,10 @@ function maintenanceCanStartWrite(maint) {
   return !maint || !maint.blocked
 }
 
-function maintenanceCanDetach(maint, statusBusy, settingsWriteBusy) {
+function maintenanceCanDetach(maint, anyLaneBusy) {
   if (!maint || maint.phase !== "handoff")
     return false
-  return !statusBusy && !settingsWriteBusy
+  return !anyLaneBusy
 }
 
 function loginDetachedArgv(pluginRoot, providerId) {

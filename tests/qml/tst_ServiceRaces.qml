@@ -153,11 +153,14 @@ TestCase {
     h.statusBusy = true
     h.settingsWriteBusy = true
     h.maintenanceState = Maintenance.maintenanceBeginHandoff(h.maintenanceState)
-    compare(Maintenance.maintenanceCanDetach(h.maintenanceState, h.statusBusy, h.settingsWriteBusy), false)
+    compare(Maintenance.maintenanceCanDetach(h.maintenanceState,
+        h.statusBusy || h.settingsReadBusy || h.settingsWriteBusy || h.maintenanceCheckBusy), false)
     h.statusBusy = false
-    compare(Maintenance.maintenanceCanDetach(h.maintenanceState, h.statusBusy, h.settingsWriteBusy), false)
+    compare(Maintenance.maintenanceCanDetach(h.maintenanceState,
+        h.statusBusy || h.settingsReadBusy || h.settingsWriteBusy || h.maintenanceCheckBusy), false)
     h.settingsWriteBusy = false
-    compare(Maintenance.maintenanceCanDetach(h.maintenanceState, h.statusBusy, h.settingsWriteBusy), true)
+    compare(Maintenance.maintenanceCanDetach(h.maintenanceState,
+        h.statusBusy || h.settingsReadBusy || h.settingsWriteBusy || h.maintenanceCheckBusy), true)
   }
 
   function test_stale_status_callback_does_not_apply() {

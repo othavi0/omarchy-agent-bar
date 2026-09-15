@@ -381,6 +381,7 @@ Item {
     maintenanceCheckTimeout.stop()
     maintenanceCheckBusy = false
     recordCompletedCallback(!!fromTimeout, "maintenanceCheck")
+    tryMaintenanceDetach()
     maintenanceUi = Maintenance.maintenanceUiFromCheck(
       maintenanceUi,
       stdout,
@@ -622,6 +623,7 @@ Item {
     settingsBootstrapTimeout.stop()
     settingsBootstrapBusy = false
     recordCompletedCallback(!!fromTimeout, "settingsBootstrap")
+    tryMaintenanceDetach()
     appliedSettings = Settings.settingsBootstrapResult(appliedSettings, stdout, exitCode)
   }
 
@@ -647,6 +649,7 @@ Item {
     settingsReadTimeout.stop()
     settingsReadBusy = false
     recordCompletedCallback(!!fromTimeout, "settingsRead")
+    tryMaintenanceDetach()
     if (!settingsState || settingsState.phase === "closed")
       return
     if (exitCode !== 0) {
@@ -714,7 +717,9 @@ Item {
   }
 
   function tryMaintenanceDetach() {
-    if (!Maintenance.maintenanceCanDetach(maintenanceState, statusBusy, settingsWriteBusy))
+    var anyLaneBusy = statusBusy || settingsReadBusy || settingsBootstrapBusy
+        || settingsWriteBusy || maintenanceCheckBusy
+    if (!Maintenance.maintenanceCanDetach(maintenanceState, anyLaneBusy))
       return
     if (!Core.canStartLane(maintenanceHandoffBusy))
       return
