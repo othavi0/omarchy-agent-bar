@@ -48,9 +48,7 @@ pub fn format_human(envelope: &StatusEnvelope) -> String {
 mod tests {
     use super::*;
     use crate::cli::{CacheMode, ProviderId};
-    use crate::status::schema::{
-        Account, DataSource, Plan, ProviderStatus, StatusRequest, UsageWindow,
-    };
+    use crate::status::schema::{DataSource, Plan, ProviderStatus, StatusRequest, UsageWindow};
     use time::macros::datetime;
 
     #[test]
@@ -62,9 +60,6 @@ mod tests {
             Some(Plan {
                 id: "max".into(),
                 label: "Max".into(),
-            }),
-            Some(Account {
-                label: "Personal".into(),
             }),
             vec![UsageWindow::try_new("session", "Session", 42.0, 58.0, None).unwrap()],
             datetime!(2026-07-26 18:42:00 UTC),

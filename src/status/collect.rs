@@ -1,6 +1,4 @@
-use super::schema::{
-    ErrorCode, ProviderAction, ProviderError, ProviderResult, ProviderStatus, SchemaError,
-};
+use super::schema::{ProviderAction, ProviderError, ProviderResult, ProviderStatus, SchemaError};
 
 pub fn provider_status_from_result(result: ProviderResult) -> Result<ProviderStatus, SchemaError> {
     match result {
@@ -9,11 +7,10 @@ pub fn provider_status_from_result(result: ProviderResult) -> Result<ProviderSta
             name,
             source,
             plan,
-            account,
             windows,
             last_success_at,
             rate_limit_resets_available,
-        } => ProviderStatus::ready(id, name, source, plan, account, windows, last_success_at)
+        } => ProviderStatus::ready(id, name, source, plan, windows, last_success_at)
             .map(|status| status.with_rate_limit_resets_available(rate_limit_resets_available)),
         ProviderResult::CliMissing {
             id,
@@ -23,7 +20,7 @@ pub fn provider_status_from_result(result: ProviderResult) -> Result<ProviderSta
         } => ProviderStatus::cli_missing(
             id,
             name,
-            ProviderError::new(ErrorCode::CliNotFound, message, false),
+            ProviderError::new(message, false),
             ProviderAction::view_installation("Install guide", installation_url)?,
         ),
         ProviderResult::Unauthenticated {
@@ -42,20 +39,20 @@ pub fn provider_status_from_result(result: ProviderResult) -> Result<ProviderSta
             ProviderStatus::unauthenticated(
                 id,
                 name,
-                ProviderError::new(ErrorCode::AuthenticationRequired, message, retryable),
+                ProviderError::new(message, retryable),
                 action,
             )
         }
         ProviderResult::RateLimited { id, name, message } => ProviderStatus::rate_limited(
             id,
             name,
-            ProviderError::new(ErrorCode::RateLimited, message, true),
+            ProviderError::new(message, true),
             ProviderAction::retry("Retry"),
         ),
         ProviderResult::NetworkError { id, name, message } => ProviderStatus::network_error(
             id,
             name,
-            ProviderError::new(ErrorCode::NetworkError, message, true),
+            ProviderError::new(message, true),
             ProviderAction::retry("Retry"),
         ),
         ProviderResult::ProviderError {
@@ -66,7 +63,7 @@ pub fn provider_status_from_result(result: ProviderResult) -> Result<ProviderSta
         } => ProviderStatus::provider_error(
             id,
             name,
-            ProviderError::new(ErrorCode::ProviderError, message, retryable),
+            ProviderError::new(message, retryable),
             ProviderAction::retry("Retry"),
         ),
     }
@@ -86,7 +83,6 @@ mod tests {
             name: "Claude".into(),
             source: DataSource::Live,
             plan: None,
-            account: None,
             windows: vec![UsageWindow::try_new("session", "Session", 10.0, 90.0, None).unwrap()],
             last_success_at: datetime!(2026-07-26 18:42:00 UTC),
             rate_limit_resets_available: None,

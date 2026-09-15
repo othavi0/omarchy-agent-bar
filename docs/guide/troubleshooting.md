@@ -45,11 +45,15 @@ substitute percentage.
 
 ## Codex Retry loops with “rate limits not available”
 
-Ensure the Codex CLI is logged in. Agent Bar collects Codex rate limits in two
-ordered tiers: `codex app-server` JSON-RPC `account/rateLimits/read` first,
-then the newest valid rate-limit event under `~/.codex/sessions`. When the
-session-log tier is used, `lastSuccessAt` reflects that event's own
-timestamp, not collection time — the data may be hours or days old.
+Ensure the Codex CLI is logged in and supports the `app-server` subcommand.
+Agent Bar collects Codex rate limits through the `codex app-server` JSON-RPC
+`account/rateLimits/read` method only. A Codex CLI older than the
+app-server subcommand reports this `provider_error` on every attempt.
+Update Codex to a build that supports `app-server`, then retry:
+
+```bash
+"$PLUGIN" status provider codex format human cache bypass
+```
 
 ## Antigravity CLI 1.1.11 or newer is required.
 
@@ -127,10 +131,9 @@ omarchy-restart-shell
 Confirm the settings file is valid and user-owned. Save errors leave the
 previous file intact. Use `RUST_LOG=debug` only with sanitized output.
 
-While a maintenance operation (update or uninstall) holds the exclusive
-maintenance lock, `config apply` waits for the lock after validating; it
-completes once maintenance finishes, and the settings file is untouched
-until then.
+While uninstall holds the exclusive maintenance lock, `config apply` waits
+for the lock after validating; it completes once uninstall finishes, and the
+settings file is untouched until then. `update check` takes no lock.
 
 ## Update available or update failed
 

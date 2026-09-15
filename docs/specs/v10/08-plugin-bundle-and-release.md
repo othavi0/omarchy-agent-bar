@@ -266,7 +266,11 @@ agent-bar update check
 - `BUNDLE-021`: `update check` returns a machine-readable document
   containing current version, latest compatible version, availability,
   release-notes URL, target, and `reinstallRequired`. It carries no
-  archive/checksum/source-commit fields.
+  archive/checksum/source-commit fields. Amended by the 2026-09-15
+  live-Quickshell-probe design
+  (`docs/specs/v10/amendments/2026-09-15-live-quickshell-probe-design.md`):
+  `current.quickshellVersion` is probed from the installed `qs --version`
+  rather than assumed to equal the build's own minimum.
 - `BUNDLE-022`: **Retired**, removed by the 2026-09-14 amendment.
   `update apply` no longer exists; the plugin never delegates to
   `omarchy plugin update ... --yes` itself.
@@ -306,8 +310,11 @@ The exact successful `update check` response is:
 ```
 
 `latestCompatible` is `null` when the receipt's target/contract are
-incompatible with the local install, or when `reinstallRequired` is `true`.
-Otherwise it describes the receipt's version, including the current version
+incompatible with the local install, when the receipt's
+`minimumQuickshellVersion` exceeds `current.quickshellVersion` (the version
+probed from the installed `qs --version`, falling back to the build minimum
+when the probe fails), or when `reinstallRequired` is `true`. Otherwise it
+describes the receipt's version, including the current version
 when no newer version exists. `available` is true exactly when that version
 is strictly newer than `current.version`, and is always `false` when
 `reinstallRequired` is `true`. A `reinstallRequired` document must have

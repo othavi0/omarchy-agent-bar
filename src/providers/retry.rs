@@ -1,6 +1,28 @@
 use super::adapter::{HttpClient, HttpError, HttpResponse};
 use super::catalog::ProviderDescriptor;
 
+/// Run `op` once; if the result is judged transient, wait the descriptor's
+/// retry delay (when it has one) and run `op` a second and final time.
+/// Shared by every adapter's single-retry policy, HTTP or subprocess alike.
+pub(crate) async fn retry_once_if_transient<T, Fut>(
+    descriptor: &ProviderDescriptor,
+    is_transient: impl Fn(&T) -> bool,
+    mut op: impl FnMut() -> Fut,
+) -> T
+where
+    Fut: std::future::Future<Output = T>,
+{
+    let first = op().await;
+    if !is_transient(&first) {
+        return first;
+    }
+    let Some(delay) = descriptor.retry_delay() else {
+        return first;
+    };
+    tokio::time::sleep(delay).await;
+    op().await
+}
+
 /// GET with at most one extra attempt after a transient network error,
 /// honoring the descriptor's retry policy and delay.
 pub(crate) async fn http_get_with_retry(
@@ -10,16 +32,12 @@ pub(crate) async fn http_get_with_retry(
     headers: &[(&str, &str)],
     max_body_bytes: usize,
 ) -> Result<HttpResponse, HttpError> {
-    match http.get(url, headers, max_body_bytes).await {
-        Err(HttpError::Network(first)) => {
-            let Some(delay) = descriptor.retry_delay() else {
-                return Err(HttpError::Network(first));
-            };
-            tokio::time::sleep(delay).await;
-            http.get(url, headers, max_body_bytes).await
-        }
-        other => other,
-    }
+    retry_once_if_transient(
+        descriptor,
+        |result: &Result<HttpResponse, HttpError>| matches!(result, Err(HttpError::Network(_))),
+        || http.get(url, headers, max_body_bytes),
+    )
+    .await
 }
 
 #[cfg(test)]

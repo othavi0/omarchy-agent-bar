@@ -107,9 +107,6 @@ Representative response:
         "id": "max",
         "label": "Max"
       },
-      "account": {
-        "label": "Personal"
-      },
       "windows": [
         {
           "id": "session",
@@ -148,8 +145,9 @@ provider_error
   absent or rejected, independent of login-executable availability.
 - `JSON-005`: `rate_limited`, `network_error`, and `provider_error` apply when
   no usable cached result exists.
-- `JSON-006`: If usable cached data exists after a temporary failure, state is
-  `stale` and `error.code` carries the precise cause.
+- `JSON-006` (amended 2026-09-15): If usable cached data exists after a
+  temporary failure, state is `stale`. `error.message` and `error.retryable`
+  carry the failure; `error.code` is retired.
 - `JSON-007`: Missing CLI and authentication failures do not present obsolete
   usage as connected.
 - `JSON-008`: `loading` belongs to the shared service model before a final
@@ -171,8 +169,9 @@ provider_error
   order.
 - `JSON-017`: Explicit `provider <id>` returns one supported provider even if
   disabled in normal settings.
-- `JSON-018`: Plan and account are structured objects or `null`.
-- `JSON-019`: Account labels are sanitized and must not contain credentials.
+- `JSON-018` (amended 2026-09-15): Plan is a structured object or `null`.
+- `JSON-019`: **Retired**, removed by the 2026-09-15 amendment. `account` no
+  longer exists in the schema.
 - `JSON-020`: Provider windows have stable IDs and English labels.
 - `JSON-021`: `lastSuccessAt` records the data generation, not the current
   display time.
@@ -211,16 +210,16 @@ Completed provider state truth table:
 | State | `source` | `windows` | `lastSuccessAt` | `error` | `action` |
 | --- | --- | --- | --- | --- | --- |
 | `ready` | `live` or `cache` | zero or more | required | `null` | `null` |
-| `stale` | `cache` | zero or more retained | required | retryable cause | `retry` |
-| `cli_missing` | `null` | empty | `null` | `cli_not_found` | `view_installation` |
-| `unauthenticated` | `null` | empty | `null` | `authentication_required` | `login` or `view_installation` |
-| `rate_limited` | `null` | empty | `null` | `rate_limited` | `retry` |
-| `network_error` | `null` | empty | `null` | `network_error` | `retry` |
-| `provider_error` | `null` | empty | `null` | `provider_error` | `retry` |
+| `stale` | `cache` | zero or more retained | required | non-null | `retry` |
+| `cli_missing` | `null` | empty | `null` | non-null, not retryable | `view_installation` |
+| `unauthenticated` | `null` | empty | `null` | non-null | `login` or `view_installation` |
+| `rate_limited` | `null` | empty | `null` | non-null, retryable | `retry` |
+| `network_error` | `null` | empty | `null` | non-null, retryable | `retry` |
+| `provider_error` | `null` | empty | `null` | non-null | `retry` |
 
 `stale` exists for a retryable refresh failure with a retained prior ready
 result. A previously ready provider with no percentage window retains its
-plan/account/last-success state, remains `stale`, and renders `—`; it never
+plan/last-success state, remains `stale`, and renders `—`; it never
 fabricates a window.
 
 ### Discovery-to-state mapping
@@ -247,11 +246,9 @@ to `cli_missing`.
   "state": "cli_missing",
   "source": null,
   "plan": null,
-  "account": null,
   "windows": [],
   "lastSuccessAt": null,
   "error": {
-    "code": "cli_not_found",
     "message": "Amp CLI was not found.",
     "retryable": false
   },

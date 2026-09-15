@@ -14,17 +14,22 @@ reliable glanceable answer to:
 
 Agent Bar is a Quickshell plugin, not a general terminal application. The bar
 provides the glanceable state. The consolidated popup provides quota details,
-provider actions, Settings, update, and uninstall without requiring the user to
-learn a CLI: the update and uninstall buttons delegate to the Omarchy plugin
-manager (`omarchy plugin update|remove`), which owns the actual mutation.
+provider actions, Settings, an update check, and uninstall without requiring
+the user to learn a CLI: Settings About checks for updates and, when one is
+available, shows the install command
+(`omarchy plugin update othavi0.agent-bar && omarchy-restart-shell`) for the
+user to run themselves; nothing in the plugin installs it. The uninstall
+button delegates to the Omarchy plugin manager (`omarchy plugin remove`),
+which owns the actual mutation.
 
 Success means:
 
 - every visible value comes from normalized provider data;
 - all monitors share one state and polling source;
 - stale and partial failures remain understandable;
-- Settings changes are recoverable; update and uninstall are explicit,
-  confirmed actions delegated to the Omarchy plugin manager;
+- Settings changes are recoverable; update is a read-only check with the
+  install command shown for the user to run, and uninstall is an explicit,
+  confirmed action delegated to the Omarchy plugin manager;
 - pointer, keyboard, focus, scrolling, themes, and absence of Agent
   Bar-authored motion work as native Quattro behavior;
 - the plugin never leaks credentials or raw provider output.
@@ -56,8 +61,8 @@ Included:
 - Typed missing/auth/network/rate/provider states.
 - Provider login delegation through the official CLI.
 - Provider enablement/order, used/remaining, interval, and notifications.
-- Plugin update and uninstall delegated to the Omarchy plugin manager;
-  settings migration with backup.
+- Plugin update check (install command shown for the user to run) and
+  uninstall delegated to the Omarchy plugin manager.
 
 Removed:
 

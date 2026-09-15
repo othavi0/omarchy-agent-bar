@@ -90,9 +90,12 @@ expired; Amp, Codex, and Antigravity always resolve it.
   (windows are read by their stable bucket ids); a CLI older than
   1.1.11 is refused without ever running the usage command, because older
   builds forward `/usage` to the model as an ordinary prompt.
-- Codex retries the app-server RPC once manually (short sleep, one re-run)
-  when it times out — independent of, and in addition to, the catalog-level
-  retry policy used for HTTP providers.
+- Codex retries the app-server RPC through the same shared retry helper HTTP
+  providers use (`providers::retry::retry_once_if_transient`), one extra
+  attempt after the catalog's retry delay when the first attempt times out.
+  There is no other collection path: an app-server failure or a CLI that
+  does not support `app-server` is a typed provider error, never a
+  filesystem read.
 
 ## Normalization
 
@@ -149,8 +152,11 @@ marker was chosen because upstream exposes no typed signal, and live QA with
 a signed-out Codex is the check.
 
 Prove unauthenticated explicitly: a signed-out account must never fall through
-to obsolete on-disk usage (`JSON-007`); add a test that pairs the signed-out
-signal with a stale local fixture and asserts `unauthenticated`.
+to obsolete local data (`JSON-007`). For a provider with a local fallback
+(Grok's `auth.json`), add a test that pairs the signed-out signal with a
+stale local fixture and asserts `unauthenticated`. Codex has no local
+fallback, so its signed-out test only needs to assert the app-server
+outcome maps to `unauthenticated`.
 
 ## Required fixtures
 

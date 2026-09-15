@@ -106,7 +106,6 @@ TestCase {
       state: state || "ready",
       source: state === "ready" ? "live" : (state === "stale" ? "cache" : null),
       plan: null,
-      account: null,
       windows: windows,
       lastSuccessAt: state === "ready" || state === "stale" ? "2026-07-26T18:42:00Z" : null,
       error: null,

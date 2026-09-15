@@ -7,7 +7,6 @@ pub use collect::provider_status_from_result;
 pub use coordinator::{CollectRequest, StatusCoordError, StatusCoordinator};
 pub use human::format_human;
 pub use schema::{
-    Account, ActionKind, DataSource, ErrorCode, Plan, ProviderAction, ProviderError,
-    ProviderResult, ProviderState, ProviderStatus, SchemaError, StatusEnvelope, StatusOutputError,
-    StatusRequest, UsageWindow,
+    ActionKind, DataSource, Plan, ProviderAction, ProviderError, ProviderResult, ProviderState,
+    ProviderStatus, SchemaError, StatusEnvelope, StatusOutputError, StatusRequest, UsageWindow,
 };
