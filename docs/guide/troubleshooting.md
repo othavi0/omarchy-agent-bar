@@ -45,11 +45,15 @@ substitute percentage.
 
 ## Codex Retry loops with “rate limits not available”
 
-Ensure the Codex CLI is logged in. Agent Bar collects Codex rate limits in two
-ordered tiers: `codex app-server` JSON-RPC `account/rateLimits/read` first,
-then the newest valid rate-limit event under `~/.codex/sessions`. When the
-session-log tier is used, `lastSuccessAt` reflects that event's own
-timestamp, not collection time — the data may be hours or days old.
+Ensure the Codex CLI is logged in and supports the `app-server` subcommand.
+Agent Bar collects Codex rate limits through the `codex app-server` JSON-RPC
+`account/rateLimits/read` method only. A Codex CLI older than the
+app-server subcommand reports this `provider_error` on every attempt.
+Update Codex to a build that supports `app-server`, then retry:
+
+```bash
+"$PLUGIN" status provider codex format human cache bypass
+```
 
 ## Antigravity CLI 1.1.11 or newer is required.
 

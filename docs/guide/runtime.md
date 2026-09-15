@@ -105,7 +105,8 @@ provider's TTL instead.
 ## Provider data sources
 
 - Claude may use local credentials plus provider HTTP.
-- Codex may use app-server with a bounded local fallback.
+- Codex uses the `codex app-server` JSON-RPC only. A Codex CLI older than
+  the app-server subcommand reports a typed provider error instead.
 - Amp uses its official usage command.
 - Grok may use local auth for an authenticated billing HTTPS request. The
   CLI's access token lives six hours; when it is expired and the `grok`
