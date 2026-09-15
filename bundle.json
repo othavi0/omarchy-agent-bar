@@ -1,23 +1,23 @@
 {
   "schemaVersion": 1,
   "pluginId": "othavi0.agent-bar",
-  "version": "10.5.2",
+  "version": "10.5.3",
   "target": "x86_64-unknown-linux-gnu",
   "omarchyContract": 1,
   "minimumQuickshellVersion": "0.3.0",
-  "sourceCommit": "3898a981b27abe536f52b81076b4e3780c90d034",
-  "buildRun": "https://github.com/othavi0/omarchy-agent-bar/actions/runs/34888201628",
+  "sourceCommit": "d141587984c0f2abd14a90d0fb852b6cec50f18f",
+  "buildRun": "https://github.com/othavi0/omarchy-agent-bar/actions/runs/34991470617",
   "files": [
     {
       "path": "BarWidget.qml",
-      "sha256": "05019b31e7ec84b1d6b0bf0a30998378c483be02aeb353da9b6585f9c3b117f9",
-      "size": 7417,
+      "sha256": "9f093b1998004d524d22626a7c59b9d0bca39425fa762241b653524367c4b1ce",
+      "size": 7202,
       "mode": "0644"
     },
     {
       "path": "CoreMaintenance.js",
-      "sha256": "001eedf97ecbbe12055977e3220c4d2a12a14736abe66001e44d3385eb835c2c",
-      "size": 6030,
+      "sha256": "694bad60d26679c84a333717dc7ea74008fa4c92d4bb76766ae387c736baca71",
+      "size": 5502,
       "mode": "0644"
     },
     {
@@ -28,20 +28,20 @@
     },
     {
       "path": "CoreService.js",
-      "sha256": "dcc1df27611b345ea4df478d1db9d9fabd6b1899fadd9fce836eff04eb325855",
-      "size": 8653,
+      "sha256": "ffbae24bf6b8631733e59f851db498a13c5be5db985943eb0097c4e3b086862a",
+      "size": 7667,
       "mode": "0644"
     },
     {
       "path": "CoreSettings.js",
-      "sha256": "e78603d30246c24952bc4452fae53e68b53c675709ff7fd6d2d70284980dc930",
-      "size": 12008,
+      "sha256": "00ecb2b67956d778c472d0f9d078394a4bac51e766667d0b6b732f139a030627",
+      "size": 11699,
       "mode": "0644"
     },
     {
       "path": "CoreView.js",
-      "sha256": "21f9cf0b80e9ef521fdc161eb975171401b680944f11be7ad2a8e5b9323a490b",
-      "size": 17758,
+      "sha256": "eed375756ada5e4b22beaa6800431cd5c90d8e934f70e6f60672a184be3d2700",
+      "size": 17718,
       "mode": "0644"
     },
     {
@@ -58,14 +58,14 @@
     },
     {
       "path": "Popup.qml",
-      "sha256": "8a2eb09190ec5f4926d82c994dc50c26fe03a035344092b7b4cfa76ece2d2911",
-      "size": 13182,
+      "sha256": "f0ddb65aa03d88f38b56488e8546bf2a09da284fb9844b949d2461c541276868",
+      "size": 13056,
       "mode": "0644"
     },
     {
       "path": "ProviderRail.qml",
-      "sha256": "910f57af8324db2aa4034aa87854d54f8ae1773ded670286d12891784d5ad251",
-      "size": 7221,
+      "sha256": "dd92a9fbca8f0da5c8953658d3bd27436c9fd367d4a398dc2b03ec9a49e79563",
+      "size": 7084,
       "mode": "0644"
     },
     {
@@ -82,20 +82,20 @@
     },
     {
       "path": "Service.qml",
-      "sha256": "cdf529d286eb8e853708686003b96cf05586e9147e26dd08cdf67cc3a2ed2a3b",
-      "size": 34444,
+      "sha256": "ac4ca9826d393fa0adb85197247198b94c4cb79ec2c5f4b8934bfd7ce064761d",
+      "size": 23486,
       "mode": "0644"
     },
     {
       "path": "SettingsView.qml",
-      "sha256": "50bb9e25247abe546e68ccec69e9bf0dec414773386cf51ff1c2ec1717b9ea11",
-      "size": 14515,
+      "sha256": "5e19a0e28bed4aef8d2a5e0c1eeb9607452555397a980f9f6db77d4bfde1349f",
+      "size": 14378,
       "mode": "0644"
     },
     {
       "path": "bin/agent-bar",
-      "sha256": "494685fdf5ec7724fe6a688b771e7942583182f45cbc8fc621c5ed6f35c1e0c0",
-      "size": 4108312,
+      "sha256": "e571cadf227c14714bfb936c3bf393a4653f4ded310ff916769d49ac916867e8",
+      "size": 4064288,
       "mode": "0755"
     },
     {
@@ -114,6 +114,12 @@
       "path": "components/HeaderTag.qml",
       "sha256": "174482a7d1667ab0f323e30d8251f7ef70313e254215b568f2ccfb7a885c43d7",
       "size": 1043,
+      "mode": "0644"
+    },
+    {
+      "path": "components/HelperLane.qml",
+      "sha256": "dfbe75a5771729f6d5bff171142ca72ccf88db11b8540842250c818bf97af006",
+      "size": 3037,
       "mode": "0644"
     },
     {
@@ -190,7 +196,7 @@
     },
     {
       "path": "manifest.json",
-      "sha256": "cb56ba42eed171bddadb3e6998b7800c8a17879380ccd7b8260096bd0d9033a9",
+      "sha256": "4a88de6e591fd49f10cd0502f4ceca508fa2d0904d14dd975e9dc824683616cb",
       "size": 632,
       "mode": "0644"
     },

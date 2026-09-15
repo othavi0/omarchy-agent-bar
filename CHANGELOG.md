@@ -122,6 +122,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `This plan does not publish a usage percentage.` (PROD-031 / UX-032A
   amended).
 
+## [10.5.3] - 2026-09-15
+
+### Changed
+
+- refactor: one provider table in JS
+- refactor: validate the status document once
+- refactor: derive the visible providers once
+- refactor: delete the per-lane generation triple
+- refactor: run maintenanceHandoff through HelperLane
+- refactor: run settingsWrite through HelperLane
+- refactor: run status through HelperLane
+- refactor: run settingsBootstrap through HelperLane
+- refactor: run settingsRead through HelperLane
+- refactor: run versionProbe through HelperLane
+- refactor: run maintenanceCheck through HelperLane
+- refactor: add HelperLane with a fake-process test
+- chore: fold ownership hashing into bundle
+- docs: retire v9 migration contract
+- chore: gate merge_provider to tests
+- perf: cache Amp's usage regexes across polls
+- perf: collect providers concurrently
+- perf: write the status cache once per poll
+- chore: drop v9 migration, setup, and doctor
+- fix: wait for every helper lane before uninstall
+- chore: remove dead code across helper and QML
+
 ## [10.5.2] - 2026-09-14
 
 ### Changed
