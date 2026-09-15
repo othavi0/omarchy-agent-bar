@@ -135,7 +135,8 @@ TestCase {
       pollEnabled = false
     }
     function tryDetach() {
-      return Maintenance.maintenanceCanDetach(maintenanceState, statusBusy, settingsWriteBusy)
+      return Maintenance.maintenanceCanDetach(maintenanceState,
+          statusBusy || settingsReadBusy || settingsWriteBusy)
     }
     Timer {
       id: delay

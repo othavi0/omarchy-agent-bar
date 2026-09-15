@@ -401,6 +401,53 @@ TestCase {
     compare(s.maintenanceHandoffBusy, true)
   }
 
+  function test_handoff_waiting_on_maintenance_check_starts_when_check_finishes() {
+    var s = createService()
+    bootstrapSettings(s)
+    s.checkForUpdates()
+    compare(s.maintenanceCheckBusy, true)
+    var checkGeneration = s.activeMaintenanceCheckGeneration
+
+    s.pendingMaintenanceIntention = ({ kind: "uninstall", purge: false })
+    s.beginMaintenanceHandoff()
+    compare(s.maintenanceState.blocked, true)
+    compare(s.maintenanceHandoffBusy, false)
+
+    s.applyUpdateCheckResult(checkGeneration, availableCheck(), 0)
+    compare(s.maintenanceHandoffBusy, true)
+  }
+
+  function test_handoff_waiting_on_settings_read_starts_when_read_finishes() {
+    var s = createService()
+    bootstrapSettings(s)
+    s.kickSettingsRead()
+    compare(s.settingsReadBusy, true)
+    var readGeneration = s.activeSettingsReadGeneration
+
+    s.pendingMaintenanceIntention = ({ kind: "uninstall", purge: false })
+    s.beginMaintenanceHandoff()
+    compare(s.maintenanceState.blocked, true)
+    compare(s.maintenanceHandoffBusy, false)
+
+    s.applySettingsReadResult(readGeneration, "", 1)
+    compare(s.maintenanceHandoffBusy, true)
+  }
+
+  function test_handoff_waiting_on_settings_bootstrap_starts_when_bootstrap_finishes() {
+    var s = createService()
+    s.kickSettingsBootstrap()
+    compare(s.settingsBootstrapBusy, true)
+    var bootstrapGeneration = s.activeSettingsBootstrapGeneration
+
+    s.pendingMaintenanceIntention = ({ kind: "uninstall", purge: false })
+    s.beginMaintenanceHandoff()
+    compare(s.maintenanceState.blocked, true)
+    compare(s.maintenanceHandoffBusy, false)
+
+    s.applySettingsBootstrapResult(bootstrapGeneration, "", 1)
+    compare(s.maintenanceHandoffBusy, true)
+  }
+
   // SET-028: the About tab lost its whole Updates section (default-on
   // background updates were the exact behavior omacom/omarchy-plugin-marketplace#4979
   // blocked). updates.automatic still reads as a tolerated legacy block, but

@@ -278,8 +278,9 @@ The table is product data, not an example:
   its process is running.
 - `ARCH-024`: Status requests coalesce through the target-aware rules. Settings
   writes serialize. Maintenance handoff blocks new settings writes and polling;
-  an already-running status or settings write drains before detached handoff,
-  while read/check may finish without overwriting a newer generation.
+  every already-running helper lane (status, settingsRead, settingsBootstrap,
+  settingsWrite, maintenanceCheck) drains before detached handoff, each guarded
+  by its own generation so it cannot overwrite a newer request.
   Update/uninstall cannot overlap each other.
 - `ARCH-025`: Authenticated provider HTTP is restricted to the catalog's exact
   HTTPS origin and path, does not follow redirects, caps the streamed body
