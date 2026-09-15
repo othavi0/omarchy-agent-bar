@@ -9,10 +9,6 @@ function maintenanceBeginHandoff(state) {
   return { phase: "handoff", blocked: true }
 }
 
-function maintenanceCanStartWrite(maint) {
-  return !maint || !maint.blocked
-}
-
 function maintenanceCanDetach(maint, anyLaneBusy) {
   if (!maint || maint.phase !== "handoff")
     return false

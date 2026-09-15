@@ -136,12 +136,12 @@ TestCase {
     var s = createService()
     s.openSettings("monitor-a")
     tryVerify(function () { return s.settingsState.phase === "load_failed" }, 500)
-    compare(s.settingsReadBusy, false)
+    compare(s.lanes.settingsRead.busy, false)
   }
 
   function test_settings_bootstrap_timeout_keeps_defaults() {
     var s = createService()
-    tryCompare(s, "settingsBootstrapBusy", false, 500)
+    tryCompare(s.lanes.settingsBootstrap, "busy", false, 500)
     compare(s.appliedSettings, null)
   }
 
@@ -154,7 +154,7 @@ TestCase {
     verify(s.saveSettings())
     compare(s.settingsState.phase, "saving")
     tryVerify(function () { return s.settingsState.phase === "dirty" }, 500)
-    compare(s.settingsWriteBusy, false)
+    compare(s.lanes.settingsWrite.busy, false)
   }
 
   function test_a_write_corpse_cannot_undo_the_next_save() {
@@ -168,7 +168,7 @@ TestCase {
     var canonicalA = JSON.parse(JSON.stringify(s.settingsDraft))
     compare(canonicalA.display.metric, "used")
     tryVerify(function () { return s.settingsState.phase === "dirty" }, 500)
-    compare(s.settingsWriteBusy, false)
+    compare(s.lanes.settingsWrite.busy, false)
     verify(!s.saveSettings(), "the killed run still owns the lane")
 
     finishLane(s, "settingsWrite", 0, JSON.stringify(canonicalA))
@@ -186,7 +186,7 @@ TestCase {
     var s = createService()
     s.checkForUpdates()
     tryVerify(function () { return s.maintenanceUi.phase === "error" }, 500)
-    compare(s.maintenanceCheckBusy, false)
+    compare(s.lanes.maintenanceCheck.busy, false)
   }
 
   function test_maintenance_handoff_timeout_unblocks() {
@@ -195,27 +195,27 @@ TestCase {
     s.beginMaintenanceHandoff()
     compare(s.maintenanceState.blocked, true)
     tryVerify(function () { return !s.maintenanceState.blocked }, 500)
-    compare(s.maintenanceHandoffBusy, false)
+    compare(s.lanes.maintenanceHandoff.busy, false)
   }
 
   function test_status_timeout_runs_in_test_mode() {
     var s = createService()
     s.beginCollection()
-    compare(s.statusBusy, true)
-    tryCompare(s, "statusBusy", false, 500)
+    compare(s.lanes.status.busy, true)
+    tryCompare(s.lanes.status, "busy", false, 500)
   }
 
   function test_a_timed_out_bootstrap_holds_the_lane_until_its_corpse_reports() {
     var s = createService()
-    tryCompare(s, "settingsBootstrapBusy", false, 500)
+    tryCompare(s.lanes.settingsBootstrap, "busy", false, 500)
     s.kickSettingsBootstrap()
-    compare(s.settingsBootstrapBusy, false)
+    compare(s.lanes.settingsBootstrap.busy, false)
 
     finishLane(s, "settingsBootstrap", 0, JSON.stringify(validSettings()))
     compare(s.appliedSettings, null)
 
     s.kickSettingsBootstrap()
-    compare(s.settingsBootstrapBusy, true)
+    compare(s.lanes.settingsBootstrap.busy, true)
     finishLane(s, "settingsBootstrap", 0, JSON.stringify(validSettings()))
     verify(s.appliedSettings !== null)
   }
@@ -224,10 +224,10 @@ TestCase {
     var s = createService()
     finishLane(s, "settingsBootstrap", 1)
     s.beginCollection()
-    compare(s.statusBusy, true)
+    compare(s.lanes.status.busy, true)
     s.refreshAll(true)
     tryCompare(s.lanes.status, "stalled", true, 500)
-    compare(s.statusBusy, false)
+    compare(s.lanes.status.busy, false)
     verify(!Core.pendingIsEmpty(s.pendingForcedTargets),
            "the forced refresh waits for the killed run to report")
 
@@ -235,7 +235,7 @@ TestCase {
 
     compare(s.snapshot, null)
     tryVerify(function () { return Core.pendingIsEmpty(s.pendingForcedTargets) }, 500)
-    compare(s.statusBusy, true)
+    compare(s.lanes.status.busy, true)
     compare(s.refreshing, true)
   }
 
@@ -246,7 +246,6 @@ TestCase {
     s.checkForUpdates()
     tryCompare(s, "runtimeHealth", "stalled", 500)
     compare(s.lanes.status.stalled, true)
-    var completedBefore = s.completedCallbackCount
 
     finishLane(s, "status", 0, validEnvelope())
 
@@ -255,7 +254,6 @@ TestCase {
     compare(s.lanes.maintenanceCheck.stalled, true)
     compare(s.runtimeHealth, "stalled")
     compare(s.snapshot, null)
-    compare(s.completedCallbackCount, completedBefore)
 
     s.kickStatus()
     finishLane(s, "status", 0, validEnvelope())
@@ -314,7 +312,7 @@ TestCase {
     compare(s.maintenanceUi.phase, "update_available")
     compare(s.pendingMaintenanceIntention, null)
     compare(s.maintenanceState.blocked, false)
-    compare(s.maintenanceHandoffBusy, false)
+    compare(s.lanes.maintenanceHandoff.busy, false)
     compare(s.maintenanceUi.updateCommand,
         "omarchy plugin update othavi0.agent-bar && omarchy-restart-shell")
   }
@@ -323,15 +321,15 @@ TestCase {
     var s = createService()
     bootstrapSettings(s)
     s.kickStatus()
-    compare(s.statusBusy, true)
+    compare(s.lanes.status.busy, true)
 
     s.pendingMaintenanceIntention = ({ kind: "uninstall", purge: false })
     s.beginMaintenanceHandoff()
     compare(s.maintenanceState.blocked, true)
-    compare(s.maintenanceHandoffBusy, false)
+    compare(s.lanes.maintenanceHandoff.busy, false)
 
     finishLane(s, "status", 0, validEnvelope())
-    compare(s.maintenanceHandoffBusy, true)
+    compare(s.lanes.maintenanceHandoff.busy, true)
   }
 
   function test_handoff_waiting_on_a_failed_status_still_starts() {
@@ -340,53 +338,53 @@ TestCase {
     s.kickStatus()
     s.pendingMaintenanceIntention = ({ kind: "uninstall", purge: false })
     s.beginMaintenanceHandoff()
-    compare(s.maintenanceHandoffBusy, false)
+    compare(s.lanes.maintenanceHandoff.busy, false)
     finishLane(s, "status", 1, "", "boom")
-    compare(s.maintenanceHandoffBusy, true)
+    compare(s.lanes.maintenanceHandoff.busy, true)
   }
 
   function test_handoff_waiting_on_maintenance_check_starts_when_check_finishes() {
     var s = createService()
     bootstrapSettings(s)
     s.checkForUpdates()
-    compare(s.maintenanceCheckBusy, true)
+    compare(s.lanes.maintenanceCheck.busy, true)
 
     s.pendingMaintenanceIntention = ({ kind: "uninstall", purge: false })
     s.beginMaintenanceHandoff()
     compare(s.maintenanceState.blocked, true)
-    compare(s.maintenanceHandoffBusy, false)
+    compare(s.lanes.maintenanceHandoff.busy, false)
 
     finishLane(s, "maintenanceCheck", 0, availableCheck())
-    compare(s.maintenanceHandoffBusy, true)
+    compare(s.lanes.maintenanceHandoff.busy, true)
   }
 
   function test_handoff_waiting_on_settings_read_starts_when_read_finishes() {
     var s = createService()
     bootstrapSettings(s)
     s.kickSettingsRead()
-    compare(s.settingsReadBusy, true)
+    compare(s.lanes.settingsRead.busy, true)
 
     s.pendingMaintenanceIntention = ({ kind: "uninstall", purge: false })
     s.beginMaintenanceHandoff()
     compare(s.maintenanceState.blocked, true)
-    compare(s.maintenanceHandoffBusy, false)
+    compare(s.lanes.maintenanceHandoff.busy, false)
 
     finishLane(s, "settingsRead", 1)
-    compare(s.maintenanceHandoffBusy, true)
+    compare(s.lanes.maintenanceHandoff.busy, true)
   }
 
   function test_handoff_waiting_on_settings_bootstrap_starts_when_bootstrap_finishes() {
     var s = createService()
     s.kickSettingsBootstrap()
-    compare(s.settingsBootstrapBusy, true)
+    compare(s.lanes.settingsBootstrap.busy, true)
 
     s.pendingMaintenanceIntention = ({ kind: "uninstall", purge: false })
     s.beginMaintenanceHandoff()
     compare(s.maintenanceState.blocked, true)
-    compare(s.maintenanceHandoffBusy, false)
+    compare(s.lanes.maintenanceHandoff.busy, false)
 
     finishLane(s, "settingsBootstrap", 1)
-    compare(s.maintenanceHandoffBusy, true)
+    compare(s.lanes.maintenanceHandoff.busy, true)
   }
 
   // SET-028: the About tab lost its whole Updates section (default-on
@@ -435,5 +433,175 @@ TestCase {
     compare(s.restartShellRequestCount, 1)
     compare(s.lastRestartShellArgv.length, 1)
     compare(s.lastRestartShellArgv[0], "omarchy-restart-shell")
+  }
+
+  function test_forced_targets_coalesce_while_the_status_lane_is_busy() {
+    var s = createService()
+    finishLane(s, "settingsBootstrap", 1)
+    s.beginCollection()
+    compare(s.lanes.status.busy, true)
+    s.refreshProvider("claude", true)
+    s.refreshProvider("amp", true)
+    compare(s.lanes.status.busy, true)
+    verify(!Core.pendingIsEmpty(s.pendingForcedTargets))
+
+    finishLane(s, "status", 0, validEnvelope())
+
+    compare(s.lanes.status.busy, true)
+    verify(Core.pendingIsEmpty(s.pendingForcedTargets))
+    var argv = s.lanes.status.process.command
+    compare(argv.indexOf("bypass") >= 0, true)
+  }
+
+  function test_a_forced_refresh_of_all_dominates_a_single_provider() {
+    var s = createService()
+    finishLane(s, "settingsBootstrap", 1)
+    s.beginCollection()
+    s.refreshProvider("grok", true)
+    s.refreshAll(true)
+    s.refreshProvider("claude", true)
+    compare(s.pendingForcedTargets.all, true)
+
+    finishLane(s, "status", 0, validEnvelope())
+
+    var argv = s.lanes.status.process.command
+    compare(argv.indexOf("bypass") >= 0, true)
+    compare(argv.indexOf("provider") < 0, true, "all is not a single-provider request")
+  }
+
+  function test_lanes_overlap_and_each_refuses_a_second_run() {
+    var s = createService()
+    s.beginCollection()
+    s.openSettings("monitor-a")
+    s.checkForUpdates()
+    compare(s.lanes.status.busy, true)
+    compare(s.lanes.settingsRead.busy, true)
+    compare(s.lanes.settingsBootstrap.busy, true)
+    compare(s.lanes.maintenanceCheck.busy, true)
+
+    compare(s.lanes.status.start(["/nonexistent", "status"]), false)
+    compare(s.lanes.settingsRead.start(["/nonexistent", "config"]), false)
+    compare(s.lanes.settingsBootstrap.start(["/nonexistent", "config"]), false)
+    compare(s.lanes.maintenanceCheck.start(["/nonexistent", "update"]), false)
+    compare(s.lanes.status.runId, 1)
+    compare(s.lanes.settingsRead.runId, 1)
+  }
+
+  function test_maintenance_blocks_new_status_and_saves_but_not_reads() {
+    var s = createService()
+    finishLane(s, "settingsBootstrap", 1)
+    s.openSettings("monitor-a")
+    finishLane(s, "settingsRead", 0, JSON.stringify(validSettings()))
+    s.setDisplayMetric("used")
+    s.pendingMaintenanceIntention = ({ kind: "uninstall", purge: false })
+    s.beginMaintenanceHandoff()
+
+    s.kickStatus()
+    compare(s.lanes.status.busy, false)
+    compare(s.saveSettings(), false)
+    s.kickSettingsRead()
+    compare(s.lanes.settingsRead.busy, true)
+  }
+
+  function test_closing_during_a_load_keeps_the_one_load_alive() {
+    var s = createService()
+    finishLane(s, "settingsBootstrap", 1)
+    s.openSettings("monitor-a")
+    compare(s.settingsState.phase, "loading")
+    var generation = s.settingsState.generation
+
+    s.closePopup("monitor-a")
+    compare(s.settingsState.phase, "loading")
+    s.openSettings("monitor-a")
+    compare(s.settingsState.generation, generation)
+    compare(s.lanes.settingsRead.runId, 1, "reopening never starts a second read")
+
+    finishLane(s, "settingsRead", 0, JSON.stringify(validSettings()))
+    compare(s.settingsState.phase, "clean")
+    compare(s.settingsDraft.display.metric, "remaining")
+  }
+
+  function test_a_loading_dialog_keeps_its_controls_locked() {
+    var s = createService()
+    finishLane(s, "settingsBootstrap", 1)
+    s.openSettings("monitor-a")
+    compare(s.settingsLocked(), true)
+    s.setDisplayMetric("used")
+    compare(s.settingsDraft, null)
+
+    finishLane(s, "settingsRead", 0, JSON.stringify(validSettings()))
+
+    compare(s.settingsState.phase, "clean")
+    compare(s.settingsLocked(), false)
+  }
+
+  function test_closing_during_a_save_keeps_the_save_running() {
+    var s = createService()
+    finishLane(s, "settingsBootstrap", 1)
+    s.openSettings("monitor-a")
+    finishLane(s, "settingsRead", 0, JSON.stringify(validSettings()))
+    s.setNotificationsEnabled(false)
+    verify(s.saveSettings())
+    var canonical = JSON.parse(s.pendingSettingsPayload)
+
+    s.closePopup("monitor-a")
+    compare(s.settingsState.phase, "saving")
+    compare(s.settingsState.busy, true)
+
+    finishLane(s, "settingsWrite", 0, JSON.stringify(canonical))
+    compare(s.settingsState.phase, "clean")
+    compare(s.appliedSettings.notifications.enabled, false)
+  }
+
+  function test_reopening_during_a_save_shows_the_save_not_a_new_load() {
+    var s = createService()
+    finishLane(s, "settingsBootstrap", 1)
+    s.openSettings("monitor-a")
+    finishLane(s, "settingsRead", 0, JSON.stringify(validSettings()))
+    s.setDisplayMetric("used")
+    verify(s.saveSettings())
+    var generation = s.settingsState.generation
+
+    s.openSettings("monitor-a")
+
+    compare(s.settingsState.generation, generation)
+    compare(s.settingsState.phase, "saving")
+    compare(s.popupOwner.view, "settings")
+  }
+
+  function test_a_second_save_is_rejected_while_the_first_is_in_flight() {
+    var s = createService()
+    finishLane(s, "settingsBootstrap", 1)
+    s.openSettings("monitor-a")
+    finishLane(s, "settingsRead", 0, JSON.stringify(validSettings()))
+    s.setRefreshInterval(120)
+    verify(s.saveSettings())
+    compare(s.settingsSaveCount, 1)
+    compare(s.saveSettings(), false)
+    compare(s.settingsSaveCount, 1)
+
+    finishLane(s, "settingsWrite", 0, s.pendingSettingsPayload)
+    compare(s.settingsState.phase, "clean")
+  }
+
+  function test_an_edit_during_a_save_cannot_change_the_in_flight_payload() {
+    var s = createService()
+    finishLane(s, "settingsBootstrap", 1)
+    s.openSettings("monitor-a")
+    finishLane(s, "settingsRead", 0, JSON.stringify(validSettings()))
+    s.setDisplayMetric("used")
+    s.setReminderMinutes(240)
+    verify(s.saveSettings())
+    compare(JSON.parse(s.pendingSettingsPayload).display.metric, "used")
+    compare(JSON.parse(s.pendingSettingsPayload).notifications.reminderMinutes, 240)
+
+    s.setDisplayMetric("remaining")
+    s.setReminderMinutes(60)
+
+    compare(JSON.parse(s.pendingSettingsPayload).display.metric, "used")
+    compare(JSON.parse(s.pendingSettingsPayload).notifications.reminderMinutes, 240)
+    compare(s.settingsState.pendingPayload.display.metric, "used")
+    compare(s.settingsState.pendingPayload.notifications.reminderMinutes, 240)
+    compare(s.lanes.settingsWrite.stdinText.indexOf('"metric":"used"') >= 0, true)
   }
 }

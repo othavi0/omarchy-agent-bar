@@ -236,7 +236,7 @@ TestCase {
   }
 
   function test_restore_defaults_draft_only() {
-    var state = Core.settingsOpen(null, Service.defaultSettings(), 1)
+    var state = Core.settingsFinishLoad(Core.settingsBeginLoad(1), 1, Service.defaultSettings())
     state = Core.settingsMarkDirty(state)
     state.draft = Core.setProviderEnabled(state.draft, "claude", false)
     state = Core.settingsRestoreDefaults(state)
@@ -246,7 +246,7 @@ TestCase {
   }
 
   function test_restore_defaults_does_not_enable_antigravity() {
-    var state = Core.settingsOpen(null, Service.defaultSettings(), 1)
+    var state = Core.settingsFinishLoad(Core.settingsBeginLoad(1), 1, Service.defaultSettings())
     state = Core.settingsMarkDirty(state)
     state.draft = Core.setProviderEnabled(state.draft, "antigravity", true)
     state = Core.settingsRestoreDefaults(state)
@@ -261,7 +261,7 @@ TestCase {
 
   function test_cancel_restores_snapshot() {
     var snap = Service.defaultSettings()
-    var state = Core.settingsOpen(null, snap, 2)
+    var state = Core.settingsFinishLoad(Core.settingsBeginLoad(2), 2, snap)
     state.draft = Core.setDisplayMetric(state.draft, "used")
     state = Core.settingsMarkDirty(state)
     compare(state.phase, "dirty")
@@ -271,7 +271,7 @@ TestCase {
   }
 
   function test_invalid_save_disabled() {
-    var state = Core.settingsOpen(null, Service.defaultSettings(), 3)
+    var state = Core.settingsFinishLoad(Core.settingsBeginLoad(3), 3, Service.defaultSettings())
     compare(Core.settingsCanSave(state, state.draft), false)
     state = Core.settingsMarkDirty(state)
     state.draft = Core.setRefreshInterval(state.draft, 5)
@@ -290,7 +290,7 @@ TestCase {
   }
 
   function test_save_begin_captures_payload() {
-    var state = Core.settingsOpen(null, Service.defaultSettings(), 5)
+    var state = Core.settingsFinishLoad(Core.settingsBeginLoad(5), 5, Service.defaultSettings())
     state = Core.settingsMarkDirty(state)
     var payload = Core.cloneDraft(state.draft)
     payload = Core.setDisplayMetric(payload, "used")
@@ -486,7 +486,7 @@ TestCase {
     verify(applied !== null)
     compare(applied.providers.length, doc.providers.length)
     compare(applied.providers[applied.providers.length - 1].id, "future-provider")
-    var state = Core.settingsOpen(null, applied, 7)
+    var state = Core.settingsFinishLoad(Core.settingsBeginLoad(7), 7, applied)
     state = Core.settingsMarkDirty(state)
     var payload = JSON.parse(JSON.stringify(state.draft))
     compare(Core.validateSettingsDraft(payload).ok, true)

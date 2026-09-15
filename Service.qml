@@ -48,9 +48,6 @@ Item {
   property string lastViewInstallationUrl: ""
   property var pendingMaintenanceIntention: null
   property string pendingMaintenancePayload: ""
-  property var timedOutLanes: ({})
-  property var settledLanes: ({})
-  property int completedCallbackCount: 0
   readonly property var lanes: ({
     versionProbe: versionProbeLane,
     status: statusLane,
@@ -60,8 +57,8 @@ Item {
     maintenanceCheck: maintenanceCheckLane,
     maintenanceHandoff: maintenanceHandoffLane
   })
-  readonly property int stalledLaneCount: Core.stalledLanes(timedOutLanes)
-      + (versionProbeLane.stalled ? 1 : 0)
+  readonly property int stalledLaneCount:
+      (versionProbeLane.stalled ? 1 : 0)
       + (statusLane.stalled ? 1 : 0)
       + (settingsReadLane.stalled ? 1 : 0)
       + (settingsBootstrapLane.stalled ? 1 : 0)
@@ -73,15 +70,7 @@ Item {
   property string helperVersion: ""
   property bool versionReady: false
   property bool versionFailed: false
-  readonly property bool versionProbeRunning: versionProbeLane.busy
   property bool collectionStarted: false
-
-  readonly property bool statusBusy: statusLane.busy
-  readonly property bool settingsReadBusy: settingsReadLane.busy
-  readonly property bool settingsBootstrapBusy: settingsBootstrapLane.busy
-  readonly property bool settingsWriteBusy: settingsWriteLane.busy
-  readonly property bool maintenanceCheckBusy: maintenanceCheckLane.busy
-  readonly property bool maintenanceHandoffBusy: maintenanceHandoffLane.busy
 
   property int settingsGeneration: 0
   property string pendingSettingsPayload: ""
@@ -114,41 +103,12 @@ Item {
     )
   }
 
-  function recordLaneTimeout(lane, generation) {
-    timedOutLanes = Core.recordLaneTimeout(timedOutLanes, lane)
-    if (generation !== undefined)
-      settledLanes = Core.settleLane(settledLanes, lane, generation)
-  }
-
-  function recordCompletedCallback(fromTimeout, lane) {
-    if (fromTimeout)
-      return
-    settledLanes = Core.clearSettledLane(settledLanes, lane)
-    completedCallbackCount++
-    timedOutLanes = ({})
-    clearLaneStalls()
-  }
-
+  // ARCH-021: any accepted callback clears every lane's stall mark.
   function noteLaneSettled(outcome) {
     if (outcome.timedOut)
       return
-    completedCallbackCount++
-    timedOutLanes = ({})
-    clearLaneStalls()
-  }
-
-  function clearLaneStalls() {
     for (var key in lanes)
       lanes[key].clearStall()
-  }
-
-  function shouldApplyProcessExit(lane, generation, activeGeneration) {
-    if (Core.isLaneSettled(settledLanes, lane, generation)) {
-      settledLanes = Core.clearSettledLane(settledLanes, lane, generation)
-      timedOutLanes = Core.clearLaneTimeout(timedOutLanes, lane)
-      return false
-    }
-    return Core.shouldApplyGeneration(activeGeneration, generation)
   }
 
   // IPC refresh(providerId) — queue one cache-bypass provider refresh.
@@ -461,7 +421,7 @@ Item {
   function tryStartProduction() {
     if (testMode)
       return
-    if (versionReady || versionProbeRunning)
+    if (versionReady || versionProbeLane.busy)
       return
     if (!resolvedHelperPath().length) {
       console.warn("Agent Bar: cannot resolve plugin root from " + Qt.resolvedUrl("."))
@@ -645,8 +605,9 @@ Item {
   }
 
   function tryMaintenanceDetach() {
-    var anyLaneBusy = statusBusy || settingsReadBusy || settingsBootstrapBusy
-        || settingsWriteBusy || maintenanceCheckBusy
+    var anyLaneBusy = statusLane.busy || settingsReadLane.busy
+        || settingsBootstrapLane.busy || settingsWriteLane.busy
+        || maintenanceCheckLane.busy
     if (!Maintenance.maintenanceCanDetach(maintenanceState, anyLaneBusy))
       return
     if (!maintenanceHandoffLane.ready)
@@ -733,21 +694,21 @@ Item {
   }
 
   HelperLane {
-    id: maintenanceHandoffLane
-    process: maintenanceHandoffProcess
-    stdoutSource: maintenanceHandoffOut
-    stderrSource: maintenanceHandoffErr
-    timeoutMs: root.maintenanceHandoffTimeoutMs
-    onSettled: function (outcome) { root.applyMaintenanceHandoffDone(outcome) }
-  }
-
-  HelperLane {
     id: maintenanceCheckLane
     process: maintenanceCheckProcess
     stdoutSource: maintenanceCheckOut
     stderrSource: maintenanceCheckErr
     timeoutMs: root.maintenanceCheckTimeoutMs
     onSettled: function (outcome) { root.applyUpdateCheckResult(outcome) }
+  }
+
+  HelperLane {
+    id: maintenanceHandoffLane
+    process: maintenanceHandoffProcess
+    stdoutSource: maintenanceHandoffOut
+    stderrSource: maintenanceHandoffErr
+    timeoutMs: root.maintenanceHandoffTimeoutMs
+    onSettled: function (outcome) { root.applyMaintenanceHandoffDone(outcome) }
   }
 
   Process {
