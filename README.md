@@ -34,6 +34,9 @@ popup opens with the plan tag (`MAX 20X`, for example), a lead window showing bo
 countdown and the wall-clock reset, and every other window as a row with
 its own usage track.
 
+![Claude popup with session, weekly, and model windows](docs/images/popup-claude.png)
+![Antigravity popup with Gemini and Claude/GPT windows](docs/images/popup-antigravity.png)
+
 Windows are normalized across providers, so Claude's `Session (5h)`,
 `Weekly (7d)` and per-model windows look the same as Codex's. A chip
 shows `!` past the critical threshold. If a refresh fails, the last good
