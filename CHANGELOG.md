@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [10.5.5] - 2026-09-17
+
+### Changed
+
+- fix: skip agy offline to avoid browser sign-in
+
 ## [10.5.4] - 2026-09-15
 
 ### Changed
