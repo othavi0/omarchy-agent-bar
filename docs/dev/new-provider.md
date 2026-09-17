@@ -89,7 +89,13 @@ expired; Amp, Codex, and Antigravity always resolve it.
   `agy --version` guard call before `agy --print /usage --output-format json`
   (windows are read by their stable bucket ids); a CLI older than
   1.1.11 is refused without ever running the usage command, because older
-  builds forward `/usage` to the model as an ordinary prompt.
+  builds forward `/usage` to the model as an ordinary prompt. Both calls sit
+  behind a reachability probe (`GET https://oauth2.googleapis.com/` through
+  the shared `HttpClient` seam, no headers, body cap zero): a transport
+  failure returns `NetworkError` without spawning `agy`, because the CLI
+  answers a failed token refresh in its refresh-ahead window with an
+  interactive browser sign-in it offers no flag to disable. Any HTTP answer,
+  including 404 or a refused redirect, counts as reachable.
 - Codex retries the app-server RPC through the same shared retry helper HTTP
   providers use (`providers::retry::retry_once_if_transient`), one extra
   attempt after the catalog's retry delay when the first attempt times out.
