@@ -7,7 +7,7 @@ approved.
 
 ## Purpose
 
-Agent Bar shows normalized quota and reset information for Claude, Codex, Amp,
+Agent Bar shows normalized quota and reset information for Claude, Codex,
 Grok, and Antigravity in Omarchy Quattro. It provides one compact bar chip per enabled
 provider and one consolidated Quickshell popup for details, settings,
 connection actions, update, and uninstall.
@@ -53,16 +53,16 @@ connection actions, update, and uninstall.
 - `PROD-019`: No custom theme editor or v10 internationalization layer.
 - `PROD-019A`: No monetary values are displayed or serialized, including
   provider-reported spend, dollar balance, and credits. A percentage derived
-  from a provider's own limit ratio (Amp `$remaining/$total`, Grok
-  `used/monthlyLimit`) is a usage percentage, not a monetary value: the
-  amounts are discarded at normalization and never leave the adapter.
+  from a provider's own limit ratio (Grok `used/monthlyLimit`) is a usage
+  percentage, not a monetary value: the amounts are discarded at
+  normalization and never leave the adapter.
 
 ## Supported providers and defaults
 
 Fresh installations use:
 
 ```text
-Provider order: Claude, Codex, Amp, Grok, Antigravity
+Provider order: Claude, Codex, Grok, Antigravity
 Enabled providers: Claude and Codex (the rest are opt-in)
 Display metric: remaining
 Refresh interval: 60 seconds

@@ -2,7 +2,7 @@
 
 ## Users
 
-Omarchy Quattro users who work with Claude, Codex, Amp, Grok, or Antigravity and need a
+Omarchy Quattro users who work with Claude, Codex, Grok, or Antigravity and need a
 reliable glanceable answer to:
 
 - How much percentage quota remains?
@@ -55,7 +55,7 @@ over decorative or ambiguous controls.
 
 Included:
 
-- Claude, Codex, Amp, Grok, and Antigravity.
+- Claude, Codex, Grok, and Antigravity.
 - Provider percentage windows and reset times.
 - Plan and connection state.
 - Typed missing/auth/network/rate/provider states.

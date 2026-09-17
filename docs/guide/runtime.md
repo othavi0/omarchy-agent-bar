@@ -47,7 +47,6 @@ exists.
   "providers": [
     { "id": "claude", "enabled": true },
     { "id": "codex", "enabled": true },
-    { "id": "amp", "enabled": false },
     { "id": "grok", "enabled": false },
     { "id": "antigravity", "enabled": false }
   ],
@@ -95,7 +94,7 @@ Corrupt cache is quarantined and rebuilt. Temporary provider failure retains
 last good data as stale.
 
 Per-provider cache TTLs are fixed in the catalog: Claude 300 seconds;
-Codex, Amp, Grok, and Antigravity 90 seconds each. Only `ready` and `stale`
+Codex, Grok, and Antigravity 90 seconds each. Only `ready` and `stale`
 rows are served from cache. A failure row with no last good data is
 re-collected on the next poll, so on a fresh install or after the cache is
 cleared a transient failure is visible for at most one refresh interval. When
@@ -107,7 +106,6 @@ provider's TTL instead.
 - Claude may use local credentials plus provider HTTP.
 - Codex uses the `codex app-server` JSON-RPC only. A Codex CLI older than
   the app-server subcommand reports a typed provider error instead.
-- Amp uses its official usage command.
 - Grok may use local auth for an authenticated billing HTTPS request. The
   CLI's access token lives six hours; when it is expired and the `grok`
   executable is installed, the helper runs `grok models` headless so the CLI

@@ -8,7 +8,6 @@
   "providers": [
     { "id": "claude", "enabled": true },
     { "id": "codex", "enabled": true },
-    { "id": "amp", "enabled": false },
     { "id": "grok", "enabled": false },
     { "id": "antigravity", "enabled": false }
   ],
@@ -94,7 +93,7 @@ closed
   document) moves the dialog to a terminal `load_failed` phase: controls stay
   locked, no snapshot is fabricated, and the view renders fixed copy naming
   the recovery step (restart the shell). It never stays in `loading`.
-- `SET-027`: A first run enables Claude and Codex only. Amp, Grok, and
+- `SET-027`: A first run enables Claude and Codex only. Grok and
   Antigravity are opt-in from Settings, so a provider whose CLI is absent
   never renders as a chip nobody asked for. The default table is an
   exhaustive match over the catalog: adding a provider fails to compile

@@ -35,7 +35,7 @@ and behavior disagree.
 
 v10 includes:
 
-- Claude, Codex, Amp, Grok, and Antigravity percentage quota windows.
+- Claude, Codex, Grok, and Antigravity percentage quota windows.
 - One shared Quickshell service and monitor-local bar widgets.
 - Consolidated popup, Settings, login delegation, update, and uninstall
   delegated to the Omarchy plugin manager.

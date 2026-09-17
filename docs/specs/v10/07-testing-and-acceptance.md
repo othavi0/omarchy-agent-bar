@@ -156,6 +156,8 @@ Waybar is Wayland-only
 ratatui                 crossterm               tui-input
 throbber-widgets-tui    tachyonfx               redb
 postcard
+AmpAdapter              AMP_ADAPTER             ampcode
+icons/amp.svg           ProviderId::Amp
 ```
 
 Path-aware checks also require every locked deletion path to be absent and no
@@ -168,20 +170,24 @@ deletion path: the gate requires it absent rather than scanning its
 content, and the four installer strings above are enforced only as
 ordinary forbidden tokens across the active surface. Final `Cargo.toml`
 must contain exactly
-`description = "LLM quota monitor for Claude, Codex, Amp, Grok, and Antigravity."`, contain
+`description = "LLM quota monitor for Claude, Codex, Grok, and Antigravity."`, contain
 no `package.metadata.binstall`, and declare no standalone/AUR metadata. These
 checks avoid a useless global rejection of the word `Waybar` while closing
 positive production surfaces.
 
-Exact raw-input allowlists are `amp usage`, normalized
-window ID `session`,
-`tests/fixtures/amp/usage-legacy-dollars.txt`,
-`tests/fixtures/amp/usage-free-pct.txt`,
-and `tests/fixtures/status-v2/money-field.json`. These fixtures prove rejection; tests
-must assert their legacy or monetary fields never reach `ProviderResult`,
+Exact raw-input allowlists are normalized window ID `session` and
+`tests/fixtures/status-v2/money-field.json`. This fixture proves rejection; tests
+must assert its monetary fields never reach `ProviderResult`,
 schema v2, QML, cache, or logs. The bare words `usage`, `history`, `cost`,
 `credits`, `TUI`, and `Waybar` are not global regexes because negative
 documentation and normalized provider concepts can contain them.
+
+Amp was retired 2026-09-17 (`docs/specs/v10/amendments/
+2026-09-17-remove-amp-provider-design.md`); the gate now forbids the specific
+compound symbols `AmpAdapter`, `AMP_ADAPTER`, `ampcode`, `icons/amp.svg`, and
+`ProviderId::Amp` instead of the bare word `amp`, and separately allowlists
+`tests/fixtures/settings-v1/legacy-amp-entry-tolerated.json`, the fixture that
+proves the settings reader still tolerates a pre-retirement document.
 
 ## Live Omarchy QA
 

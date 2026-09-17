@@ -2,8 +2,8 @@
 
 Agent Bar puts your AI quota in the Omarchy bar. One chip per enabled
 provider, a popup with every usage window, and a countdown to the next
-reset. A fresh install shows Claude and Codex; Amp, Grok, and Antigravity
-are one toggle away in Settings.
+reset. A fresh install shows Claude and Codex; Grok and Antigravity are one
+toggle away in Settings.
 
 > [!IMPORTANT]
 > **Agent Bar no longer installs its own updates.** Settings tells you when

@@ -86,6 +86,15 @@ and `retryable`. `JSON-006` drops the `error.code` clause, `JSON-018`
 narrows to plan only, and `JSON-019` is retired:
 [docs/specs/v10/amendments/2026-09-15-drop-unread-status-fields-design.md](amendments/2026-09-15-drop-unread-status-fields-design.md).
 
+The Amp provider removal, approved 2026-09-17, drops Amp from the catalog.
+The four remaining providers are Claude, Codex, Grok, and Antigravity.
+`ORIGINAL_V10_PROVIDERS` narrows to Claude, Codex, Grok; a legacy settings
+`amp` entry and a legacy cache/notification `amp` row are tolerated and
+discarded on read, never on write. `ARCH-015`'s catalog order, `JSON-010`'s
+provider id enum, `SET-027`'s default-enablement list, and every provider
+table across this directory drop `amp`:
+[docs/specs/v10/amendments/2026-09-17-remove-amp-provider-design.md](amendments/2026-09-17-remove-amp-provider-design.md).
+
 ## Product statement
 
 Agent Bar v10 is an Omarchy Quattro Quickshell plugin. Its only graphical
