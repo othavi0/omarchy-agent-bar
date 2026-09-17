@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [10.6.0] - 2026-09-17
+
+### Changed
+
+- docs: regenerate preview without Amp
+- chore: release 10.6.0
+- docs: remove Amp from active docs and specs
+- chore: drop Amp from QML, schemas, and bundle
+- feat: remove Amp provider, tolerate legacy id
+- docs: tighten readme and move install up
+- docs: add popup screenshots to readme
+- docs: use settings screenshot as preview
+
 ## [10.5.6] - 2026-09-17
 
 ### Changed
