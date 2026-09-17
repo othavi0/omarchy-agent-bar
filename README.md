@@ -1,110 +1,89 @@
 # Agent Bar
 
-Agent Bar puts your AI quota in the Omarchy bar. One chip per enabled
-provider, a popup with every usage window, and a countdown to the next
-reset. A fresh install shows Claude and Codex; Amp, Grok, and Antigravity
-are one toggle away in Settings.
-
-> [!IMPORTANT]
-> **Agent Bar no longer installs its own updates.** Settings tells you when
-> a new version is out; you install it yourself:
->
-> ```bash
-> GIT_PAGER=cat omarchy plugin update othavi0.agent-bar && omarchy-restart-shell
-> ```
->
-> The Omarchy plugin marketplace requires a separately verified immutable
-> target before any automatic update runs, and Omarchy 4.0.3 offers no way
-> to name a commit or tag, so Agent Bar stopped running that command on its
-> own. If you are on 10.3.22 or older, it never loaded on Omarchy 4.0.3 in
-> the first place: the chips show `···`, the popup stays on its loading
-> placeholder, and Settings says "Update check failed". Run the command
-> above once to move to a current release.
+Agent Bar shows your AI quota in the Omarchy bar. Each enabled provider
+gets a chip with a percentage, and clicking a chip opens a popup with
+every usage window and the time left until the next reset. A fresh install
+shows Claude and Codex. Amp, Grok, and Antigravity can be turned on in
+Settings.
 
 ![Agent Bar Settings, Providers tab](preview.png)
 
-## What you see
-
-![Agent Bar chips and popup](docs/images/bar-popup.png)
-
-Each enabled provider gets a chip with its icon and a percentage, used or
-remaining, whichever you prefer. Turning one on before its CLI is installed
-is fine: the chip dims and links to the install page. Click it and the
-popup opens with the plan tag (`MAX 20X`, for example), a lead window showing both the
-countdown and the wall-clock reset, and every other window as a row with
-its own usage track.
-
-![Claude popup with session, weekly, and model windows](docs/images/popup-claude.png)
-![Antigravity popup with Gemini and Claude/GPT windows](docs/images/popup-antigravity.png)
-
-Windows are normalized across providers, so Claude's `Session (5h)`,
-`Weekly (7d)` and per-model windows look the same as Codex's. A chip
-shows `!` past the critical threshold. If a refresh fails, the last good
-reading stays on the bar and the popup says when it was taken. A provider
-that is connected but reports no percentage window shows `—`.
-
-When a provider needs something from you, the popup offers one safe
-action: open the login in a terminal, show install guidance, or retry.
-The whole thing follows your Omarchy theme and works from the keyboard.
-
-| Action | Result |
-| --- | --- |
-| Left click | Open the popup; click again to close |
-| Middle click | Refresh all providers now |
-| Right click | Open Settings |
-
-Agent Bar reads the local data your provider CLIs already keep. It does
-not install CLIs, touch credentials, or show money. Percentages and reset
-times, nothing else.
-
 ## Install
 
-You need Omarchy with Quickshell (Quattro) on Linux x86_64, plus the
-provider CLIs you want to watch. `git` ships with Omarchy, so there is
-nothing else to install.
+You need Omarchy with Quickshell (Quattro) on Linux x86_64, plus the CLI
+of each provider you want to watch.
 
 ```bash
 omarchy plugin add https://github.com/othavi0/omarchy-agent-bar.git
 ```
 
-Omarchy asks where to put the widget when you enable the plugin. Skip the
-question and it lands in the right section of the bar. Move it later with:
+When you enable the plugin, Omarchy asks which bar section gets the
+widget. If you skip the question, it goes to the right section. To move it
+later:
 
 ```bash
 omarchy bar move othavi0.agent-bar --section center
 ```
 
-The install is one directory:
+## What you see
 
-```text
-~/.config/omarchy/plugins/othavi0.agent-bar/
-```
+![Agent Bar chips and popup](docs/images/bar-popup.png)
+
+Each chip shows used or remaining percentage, whichever you pick in
+Settings. The popup shows the plan tag (`MAX 20X`, for example), the lead
+window with its countdown and reset time, and one row per other window.
+
+![Claude popup with session, weekly, and model windows](docs/images/popup-claude.png)
+![Antigravity popup with Gemini and Claude/GPT windows](docs/images/popup-antigravity.png)
+
+| Chip state | Meaning |
+| --- | --- |
+| Dimmed | The provider CLI is not installed. Click to see the install page. |
+| `!` | Usage is past the critical threshold. |
+| `—` | The provider is connected but reports no percentage window. |
+
+If a refresh fails, the chip keeps the last good reading and the popup
+shows when it was taken. When a provider needs login or setup, the popup
+offers the matching action.
+
+| Action | Result |
+| --- | --- |
+| Left click | Open or close the popup |
+| Middle click | Refresh all providers now |
+| Right click | Open Settings |
+
+Agent Bar reads the local data your provider CLIs already keep. It does
+not install CLIs, touch credentials, or show money.
+
+## Settings
+
+Right click any chip to enable, disable, and reorder providers, switch
+between used and remaining, set the refresh interval (60 seconds by
+default), and toggle notifications. The file is
+`~/.config/agent-bar/settings.json`.
 
 ## Update
 
-Settings tells you when a new version is out, with a link to the release
-notes and the marketplace page. Install it yourself:
+Settings tells you when a new version is out. Install it with:
 
 ```bash
 GIT_PAGER=cat omarchy plugin update othavi0.agent-bar && omarchy-restart-shell
 ```
 
-The command prints the incoming changes, then asks `Update
-othavi0.agent-bar?`; answer `Yes`. `GIT_PAGER=cat` matters: without it and
-without `delta` installed, `omarchy plugin update` opens the changes in
-`less` and waits at a `:` prompt that looks like a hang. If you are already
-stuck there, press `q` and the confirmation appears.
+Answer `Yes` when it asks `Update othavi0.agent-bar?`. Without
+`GIT_PAGER=cat`, the command can open the changes in `less` and wait at a
+`:` prompt. If that happens, press `q`.
 
-Installed before this release, as a plain directory instead of a git
-checkout? Settings shows a one-time migration notice instead. Run:
+If Settings shows a migration notice, your copy predates the git install.
+Reinstall it:
 
 ```bash
 omarchy plugin remove othavi0.agent-bar
 omarchy plugin add https://github.com/othavi0/omarchy-agent-bar.git
 ```
 
-Settings, cache and backups live outside the plugin directory and survive
-the swap.
+Settings, cache, and backups live outside the plugin directory and survive
+the reinstall.
 
 ## Remove
 
@@ -112,36 +91,26 @@ the swap.
 omarchy plugin remove othavi0.agent-bar
 ```
 
-Remove is also a button in Settings. Update is not: Settings only checks
-and shows the command above.
+Settings also has a Remove button.
 
-## Settings
-
-Right click any chip. You can enable, disable and reorder providers,
-switch between used and remaining, set the refresh interval (60 seconds
-by default) and toggle notifications. The file is
-`~/.config/agent-bar/settings.json`.
-
-Every product merge cuts a release, so the update check in Settings
-always offers the latest version.
+> [!IMPORTANT]
+> **Agent Bar no longer installs its own updates.** The Omarchy plugin
+> marketplace requires a verified immutable target before any automatic
+> update, and Omarchy 4.0.3 has no way to name a commit or tag. Run the
+> command in [Update](#update) yourself.
+>
+> Versions 10.3.22 and older never loaded on Omarchy 4.0.3. The chips show
+> `···`, the popup stays on its loading placeholder, and Settings says
+> "Update check failed". Run the update command once to move to a current
+> release.
 
 ## Development
 
-This repository is the plugin tree and its source in one place. See
-[Architecture](docs/dev/architecture.md), [Releasing](docs/dev/releasing.md)
-and [Contributing](CONTRIBUTING.md) for build, test and release.
-
-CI commits `bin/agent-bar` and `bundle.json`. Don't edit them by hand. The
-helper is built reproducibly on CI and carries a SLSA provenance
-attestation; see [Provenance](docs/dev/releasing.md#provenance) to verify
-a release commit.
-
-## More
-
-- [Troubleshooting](docs/guide/troubleshooting.md)
-- [Documentation index](docs/README.md)
-- [Architecture](docs/dev/architecture.md)
-- [Contributing](CONTRIBUTING.md)
+This repository is both the plugin tree and its source. CI builds and
+commits `bin/agent-bar` and `bundle.json`, so don't edit them by hand. See
+[Contributing](CONTRIBUTING.md), [Architecture](docs/dev/architecture.md),
+[Releasing](docs/dev/releasing.md), and
+[Troubleshooting](docs/guide/troubleshooting.md).
 
 ## License
 
