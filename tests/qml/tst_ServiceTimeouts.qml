@@ -52,7 +52,6 @@ TestCase {
       providers: [
         { id: "claude", enabled: true },
         { id: "codex", enabled: true },
-        { id: "amp", enabled: false },
         { id: "grok", enabled: false },
         { id: "antigravity", enabled: false }
       ],
@@ -371,7 +370,7 @@ TestCase {
     s.beginCollection()
     compare(s.lanes.status.busy, true)
     s.refreshProvider("claude", true)
-    s.refreshProvider("amp", true)
+    s.refreshProvider("codex", true)
     compare(s.lanes.status.busy, true)
     verify(!Core.pendingIsEmpty(s.pendingForcedTargets))
 

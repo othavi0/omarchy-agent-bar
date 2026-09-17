@@ -4,7 +4,6 @@
 var PROVIDERS = [
   { id: "claude", name: "Claude", icon: "claude.png", closed: true, defaultEnabled: true },
   { id: "codex", name: "Codex", icon: "codex.png", closed: true, defaultEnabled: true },
-  { id: "amp", name: "Amp", icon: "amp.svg", closed: true, defaultEnabled: false },
   { id: "grok", name: "Grok", icon: "grok.svg", closed: true, defaultEnabled: false },
   { id: "antigravity", name: "Antigravity", icon: "antigravity.png", closed: true, defaultEnabled: false }
 ]

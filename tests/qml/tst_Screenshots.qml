@@ -143,9 +143,9 @@ TestCase {
       stage.badgeText = "CRITICAL"
       stage.bodyText = "Session (5h) · resets in 41m · 3% left · Weekly (7d) 60% · 23h 1m"
     } else if (name.indexOf("cli-missing-dark") === 0) {
-      stage.titleText = "Amp"
+      stage.titleText = "Antigravity"
       stage.badgeText = "CLI missing"
-      stage.bodyText = "Amp CLI is not installed. Agent Bar reads the quota through it. Install guide"
+      stage.bodyText = "Antigravity CLI is not installed. Agent Bar reads the quota through it. Install guide"
     } else if (name.indexOf("unauthenticated-dark") === 0) {
       stage.titleText = "Claude"
       stage.badgeText = "Not connected"
@@ -155,9 +155,9 @@ TestCase {
       stage.badgeText = "Rate limited"
       stage.bodyText = "Codex hit a rate limit. Try again in a few minutes. Retry"
     } else if (name.indexOf("network-error-dark") === 0) {
-      stage.titleText = "Amp"
+      stage.titleText = "Codex"
       stage.badgeText = "Network error"
-      stage.bodyText = "Cannot reach Amp. Check your connection. Retry"
+      stage.bodyText = "Cannot reach Codex. Check your connection. Retry"
     } else if (name.indexOf("provider-error-dark") === 0) {
       stage.titleText = "Grok"
       stage.badgeText = "Provider error"

@@ -177,7 +177,7 @@ TestCase {
         { id: "grok", enabled: true },
         { id: "claude", enabled: true },
         { id: "codex", enabled: false },
-        { id: "amp", enabled: true }
+        { id: "antigravity", enabled: true }
       ],
       display: { metric: "remaining" },
       refreshIntervalSeconds: 60,
@@ -186,29 +186,29 @@ TestCase {
     var snap = makeSnapshot([
       makeProvider("claude", "ready", 10, 90),
       makeProvider("codex", "ready", 20, 80),
-      makeProvider("amp", "ready", 30, 70),
+      makeProvider("antigravity", "ready", 30, 70),
       makeProvider("grok", "ready", 40, 60)
     ])
     var chips = Core.visibleProviders(snap, settings)
     compare(chips.length, 3)
     compare(chips[0].id, "grok")
     compare(chips[1].id, "claude")
-    compare(chips[2].id, "amp")
+    compare(chips[2].id, "antigravity")
   }
 
   function test_visible_providers_without_settings_uses_snapshot() {
     var snap = makeSnapshot([
-      makeProvider("amp", "ready", 5, 95),
+      makeProvider("antigravity", "ready", 5, 95),
       makeProvider("claude", "ready", 10, 90)
     ])
     var chips = Core.visibleProviders(snap, null)
     compare(chips.length, 2)
-    compare(chips[0].id, "amp")
+    compare(chips[0].id, "antigravity")
     compare(chips[1].id, "claude")
   }
 
   function test_empty_windows_render_em_dash() {
-    var p = makeProvider("amp", "ready")
+    var p = makeProvider("antigravity", "ready")
     compare(p.windows.length, 0)
     compare(Core.chipPercentText(p, "remaining"), "\u2014")
     compare(Core.chipPercentText(p, "used"), "\u2014")
@@ -225,8 +225,8 @@ TestCase {
 
   function test_chip_shows_elected_lead_for_subscriber() {
     var p = {
-      id: "amp",
-      name: "Amp",
+      id: "grok",
+      name: "Grok",
       state: "ready",
       windows: [
         { id: "daily", label: "Daily (1d)", usedPercent: 31, remainingPercent: 69,
@@ -243,8 +243,8 @@ TestCase {
   // Array.isArray is false but .length / [0] still work (chips stuck on "—").
   function test_array_like_windows_render_percent() {
     var p = {
-      id: "amp",
-      name: "Amp",
+      id: "antigravity",
+      name: "Antigravity",
       state: "ready",
       windows: {
         length: 1,
@@ -338,8 +338,8 @@ TestCase {
     var noCli = { name: "Grok", state: "cli_missing", windows: [] }
     compare(Core.chipAccessibleLabel(noCli, "remaining"), "Grok · no CLI")
 
-    var failed = { name: "Amp", state: "provider_error", windows: [] }
-    compare(Core.chipAccessibleLabel(failed, "remaining"), "Amp · failed")
+    var failed = { name: "Antigravity", state: "provider_error", windows: [] }
+    compare(Core.chipAccessibleLabel(failed, "remaining"), "Antigravity · failed")
 
     var emptyReady = { name: "Claude", state: "ready", windows: [] }
     compare(Core.chipAccessibleLabel(emptyReady, "remaining"), "Claude · —")
@@ -389,14 +389,14 @@ TestCase {
     compare(Core.iconOpticalScale("grok"), 0.875)
     compare(Core.iconOpticalScale("claude"), 1.0)
     compare(Core.iconOpticalScale("codex"), 1.0)
-    compare(Core.iconOpticalScale("amp"), 1.0)
+    compare(Core.iconOpticalScale("antigravity"), 1.0)
   }
 
   function test_icon_tinted_monochrome_marks_only() {
     verify(Core.iconTinted("codex"))
     verify(Core.iconTinted("grok"))
     verify(!Core.iconTinted("claude"))
-    verify(!Core.iconTinted("amp"))
+    verify(!Core.iconTinted("antigravity"))
     verify(!Core.iconTinted(""))
   }
 
@@ -595,7 +595,7 @@ TestCase {
   }
 
   function test_icon_files_exist_with_approved_names() {
-    var names = ["claude.png", "codex.png", "amp.svg", "grok.svg", "antigravity.png"]
+    var names = ["claude.png", "codex.png", "grok.svg", "antigravity.png"]
     for (var i = 0; i < names.length; i++) {
       var path = "file://" + repoRoot + "/icons/" + names[i]
       var xhr = new XMLHttpRequest()
@@ -607,7 +607,6 @@ TestCase {
     }
     compare(Core.iconFileName("claude"), "claude.png")
     compare(Core.iconFileName("codex"), "codex.png")
-    compare(Core.iconFileName("amp"), "amp.svg")
     compare(Core.iconFileName("grok"), "grok.svg")
     compare(Core.iconFileName("antigravity"), "antigravity.png")
   }
