@@ -21,9 +21,11 @@ are one toggle away in Settings.
 > placeholder, and Settings says "Update check failed". Run the command
 > above once to move to a current release.
 
-![Agent Bar preview](preview.png)
+![Agent Bar Settings, Providers tab](preview.png)
 
 ## What you see
+
+![Agent Bar chips and popup](docs/images/bar-popup.png)
 
 Each enabled provider gets a chip with its icon and a percentage, used or
 remaining, whichever you prefer. Turning one on before its CLI is installed
