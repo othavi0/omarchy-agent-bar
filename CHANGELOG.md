@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [10.5.6] - 2026-09-17
+
+### Changed
+
+- fix: stop update command stalling in pager
+
 ## [10.5.5] - 2026-09-17
 
 ### Changed
