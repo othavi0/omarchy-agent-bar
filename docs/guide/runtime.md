@@ -66,7 +66,7 @@ updates` in the Settings About tab; there is no background schedule. It
 never installs anything or reloads the shell on its own; when a release is
 available, Settings shows the target version, a release-notes link, a
 marketplace-page link, and, on its own read-only line, the command to run
-in a terminal: `omarchy plugin update othavi0.agent-bar && omarchy-restart-shell`.
+in a terminal: `GIT_PAGER=cat omarchy plugin update othavi0.agent-bar && omarchy-restart-shell`.
 
 There is no `updates` block in the product settings any more. A document
 written by 10.3.24 through 10.5.1 that still carries

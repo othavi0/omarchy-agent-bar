@@ -244,7 +244,7 @@ TestCase {
     compare(s.maintenanceState.blocked, false)
     compare(s.lanes.maintenanceHandoff.busy, false)
     compare(s.maintenanceUi.updateCommand,
-        "omarchy plugin update othavi0.agent-bar && omarchy-restart-shell")
+        "GIT_PAGER=cat omarchy plugin update othavi0.agent-bar && omarchy-restart-shell")
   }
 
   function test_handoff_waiting_on_status_starts_when_status_finishes() {

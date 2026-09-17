@@ -50,7 +50,7 @@ TestCase {
   function test_marketplace_url_and_update_command_text_exact() {
     compare(Core.marketplaceUrl(), "https://plugins.omarchy.org/plugin.html?id=othavi0.agent-bar")
     compare(Core.updateCommandText(),
-            "omarchy plugin update othavi0.agent-bar && omarchy-restart-shell")
+            "GIT_PAGER=cat omarchy plugin update othavi0.agent-bar && omarchy-restart-shell")
   }
 
   function test_uninstall_confirmation_json() {
@@ -75,7 +75,7 @@ TestCase {
     compare(ui.targetVersion, "10.4.0")
     compare(ui.releaseNotesUrl, "https://github.com/othavi0/omarchy-agent-bar/releases/tag/v10.4.0")
     compare(ui.message, "Update to 10.4.0 is available. Run this in a terminal:")
-    compare(ui.updateCommand, "omarchy plugin update othavi0.agent-bar && omarchy-restart-shell")
+    compare(ui.updateCommand, "GIT_PAGER=cat omarchy plugin update othavi0.agent-bar && omarchy-restart-shell")
   }
 
   function test_update_check_up_to_date() {

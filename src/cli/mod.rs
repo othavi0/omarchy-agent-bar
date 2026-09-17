@@ -301,7 +301,8 @@ fn dispatch_update_check() -> Result<(), CliFailure> {
 /// The one command a user runs to install a reported release. `omarchy plugin
 /// update` fast-forwards the tree but does not reload a running shell, so the
 /// restart is part of the command. `CoreMaintenance.js` shows the same text.
-pub const UPDATE_COMMAND: &str = "omarchy plugin update othavi0.agent-bar && omarchy-restart-shell";
+pub const UPDATE_COMMAND: &str =
+    "GIT_PAGER=cat omarchy plugin update othavi0.agent-bar && omarchy-restart-shell";
 
 fn dispatch_update_interactive() -> Result<(), CliFailure> {
     eprintln!("agent-bar update has no interactive flow.");
