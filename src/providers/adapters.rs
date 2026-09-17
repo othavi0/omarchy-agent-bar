@@ -671,6 +671,20 @@ impl ProviderAdapter for AntigravityAdapter {
                 );
             };
 
+            // Only a transport failure means "offline". Any HTTP answer,
+            // including a 404 or a refused redirect, proves the host is
+            // reachable; the body is irrelevant, so the cap of zero ends the
+            // read at the first chunk.
+            if let Err(HttpError::Network(_)) =
+                context.http.get(ANTIGRAVITY_REACHABILITY_URL, &[], 0).await
+            {
+                return ProviderResult::NetworkError {
+                    id: ProviderId::Antigravity,
+                    name: ANTIGRAVITY.display_name.to_owned(),
+                    message: "Antigravity is unreachable.".into(),
+                };
+            }
+
             // Version guard before the usage call: on releases older than
             // ANTIGRAVITY_MIN_VERSION the slash command is not intercepted and
             // "/usage" reaches the model as an ordinary prompt, spending the
@@ -751,6 +765,14 @@ const ANTIGRAVITY_MIN_VERSION: (u32, u32, u32) = (1, 1, 11);
 /// send: an older CLI would neither intercept the slash command nor know the
 /// flag.
 const ANTIGRAVITY_USAGE_ARGV: &[&str] = &["--print", "/usage", "--output-format", "json"];
+
+/// Host `agy` must reach to refresh its token. When that refresh fails for
+/// lack of network inside the CLI's refresh-ahead window (observed 5 minutes
+/// before expiry), `agy --print` falls back to an interactive browser
+/// sign-in it offers no flag to disable; on 2026-09-16 a one-hour outage
+/// turned 35 consecutive polls into 35 Google login tabs. Probing this host
+/// first keeps the CLI unspawned while the network is down.
+const ANTIGRAVITY_REACHABILITY_URL: &str = "https://oauth2.googleapis.com/";
 
 /// Build one `agy` invocation. Every call shares the catalog's timeout and
 /// output cap, and both env vars: `agy` renders a coloured TUI when it
@@ -2391,7 +2413,7 @@ exit 2
             Ok(antigravity_output(0, "1.1.18\n")),
             Ok(antigravity_output(0, fixture)),
         ]);
-        let http = ScriptedHttpClient::default();
+        let http = antigravity_reachable_http();
         let fs = MapFileSystem::default();
         let env = ExecutionEnvironment {
             home: std::path::PathBuf::from("/tmp/home"),
@@ -2447,8 +2469,24 @@ exit 2
         }
     }
 
+    /// The reachability probe answers 404 online: the OAuth host serves no
+    /// document at `/`, and any HTTP answer at all proves the network is up.
+    fn antigravity_reachable_http() -> ScriptedHttpClient {
+        ScriptedHttpClient::single(Ok(HttpResponse {
+            status: 404,
+            final_url: ANTIGRAVITY_REACHABILITY_URL.to_owned(),
+            body: Vec::new(),
+        }))
+    }
+
     async fn antigravity_collect_scripted(process: ScriptedProcess) -> (ProviderResult, usize) {
-        let http = ScriptedHttpClient::default();
+        antigravity_collect_with_http(process, antigravity_reachable_http()).await
+    }
+
+    async fn antigravity_collect_with_http(
+        process: ScriptedProcess,
+        http: ScriptedHttpClient,
+    ) -> (ProviderResult, usize) {
         let fs = MapFileSystem::default();
         let env = ExecutionEnvironment {
             home: std::path::PathBuf::from("/tmp/home"),
@@ -2497,6 +2535,92 @@ exit 2
             stdout_truncated: false,
             stderr_truncated: false,
         }
+    }
+
+    #[tokio::test]
+    async fn antigravity_offline_never_spawns_the_cli() {
+        let http = ScriptedHttpClient::single(Err(HttpError::Network(
+            "dns error: failed to lookup address information".into(),
+        )));
+        let (result, calls) = antigravity_collect_with_http(
+            ScriptedProcess::sequence(vec![
+                Ok(antigravity_output(0, "1.1.18\n")),
+                Ok(antigravity_output(0, "{}")),
+            ]),
+            http,
+        )
+        .await;
+        assert_eq!(
+            calls, 0,
+            "agy must not run while its OAuth host is unreachable"
+        );
+        match result {
+            ProviderResult::NetworkError { id, message, .. } => {
+                assert_eq!(id, ProviderId::Antigravity);
+                assert_eq!(message, "Antigravity is unreachable.");
+            }
+            other => panic!("expected NetworkError, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn antigravity_probe_hits_the_oauth_host_and_any_answer_is_reachable() {
+        let fixture = include_str!("../../tests/fixtures/antigravity/usage.json");
+        let http = ScriptedHttpClient::single(Err(HttpError::RedirectRefused(
+            "https://oauth2.googleapis.com/elsewhere".into(),
+        )));
+        let (result, calls) = antigravity_collect_with_http(
+            ScriptedProcess::sequence(vec![
+                Ok(antigravity_output(0, "1.1.18\n")),
+                Ok(antigravity_output(0, fixture)),
+            ]),
+            http,
+        )
+        .await;
+        assert_eq!(calls, 2);
+        assert!(matches!(result, ProviderResult::Ready { .. }), "{result:?}");
+    }
+
+    #[tokio::test]
+    async fn antigravity_probe_url_is_the_token_endpoint_host() {
+        let http = antigravity_reachable_http();
+        let fixture = include_str!("../../tests/fixtures/antigravity/usage.json");
+        let fs = MapFileSystem::default();
+        let env = ExecutionEnvironment {
+            home: std::path::PathBuf::from("/tmp/home"),
+            path_dirs: vec![],
+            grok_home: None,
+        };
+        let clock = FixedClock(datetime!(2026-08-21 12:00:00 UTC));
+        let process = ScriptedProcess::sequence(vec![
+            Ok(antigravity_output(0, "1.1.18\n")),
+            Ok(antigravity_output(0, fixture)),
+        ]);
+        let ctx = CollectionContext {
+            env: &env,
+            clock: &clock,
+            fs: &fs,
+            process: &process,
+            http: &http,
+            plugin_root: None,
+        };
+        let discovery = discovery_with_exe(Path::new("/usr/bin/agy"));
+        let _ = ANTIGRAVITY_ADAPTER.collect(&ctx, &discovery).await;
+        let url = http
+            .last_url
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        assert_eq!(url.as_deref(), Some("https://oauth2.googleapis.com/"));
+        let headers = http
+            .last_headers
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        assert!(
+            headers.is_empty(),
+            "probe must send no credentials: {headers:?}"
+        );
     }
 
     #[tokio::test]

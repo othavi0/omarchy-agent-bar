@@ -120,7 +120,12 @@ provider's TTL instead.
   two families have separate quotas; the lower of the two session windows
   leads the chip. A full bucket shows no reset, because its window
   only starts on first use. It requires `agy` 1.1.11 or newer; older builds send
-  `/usage` to the model as a prompt instead of printing usage data.
+  `/usage` to the model as a prompt instead of printing usage data. Before
+  every `agy` run the helper sends one unauthenticated `GET` to
+  `https://oauth2.googleapis.com/`; if that request fails at the transport
+  level the provider reports `network_error` ("Antigravity is unreachable.")
+  and `agy` is not started, because an offline `agy --print` with a token
+  close to expiry opens a Google sign-in tab in the browser on its own.
 
 Collection discovery is separate from interactive login-CLI discovery.
 
