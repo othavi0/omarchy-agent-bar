@@ -40,7 +40,7 @@ function marketplaceUrl() {
 }
 
 function updateCommandText() {
-  return "omarchy plugin update othavi0.agent-bar && omarchy-restart-shell"
+  return "GIT_PAGER=cat omarchy plugin update othavi0.agent-bar && omarchy-restart-shell"
 }
 
 function uninstallArgv(helperPath, purge) {

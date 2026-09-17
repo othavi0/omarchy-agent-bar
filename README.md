@@ -10,7 +10,7 @@ are one toggle away in Settings.
 > a new version is out; you install it yourself:
 >
 > ```bash
-> omarchy plugin update othavi0.agent-bar && omarchy-restart-shell
+> GIT_PAGER=cat omarchy plugin update othavi0.agent-bar && omarchy-restart-shell
 > ```
 >
 > The Omarchy plugin marketplace requires a separately verified immutable
@@ -81,8 +81,14 @@ Settings tells you when a new version is out, with a link to the release
 notes and the marketplace page. Install it yourself:
 
 ```bash
-omarchy plugin update othavi0.agent-bar && omarchy-restart-shell
+GIT_PAGER=cat omarchy plugin update othavi0.agent-bar && omarchy-restart-shell
 ```
+
+The command prints the incoming changes, then asks `Update
+othavi0.agent-bar?`; answer `Yes`. `GIT_PAGER=cat` matters: without it and
+without `delta` installed, `omarchy plugin update` opens the changes in
+`less` and waits at a `:` prompt that looks like a hang. If you are already
+stuck there, press `q` and the confirmation appears.
 
 Installed before this release, as a plain directory instead of a git
 checkout? Settings shows a one-time migration notice instead. Run:

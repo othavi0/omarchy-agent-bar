@@ -141,10 +141,22 @@ Agent Bar only checks for updates; it never installs one. When Settings
 shows a new version, run the command it names yourself:
 
 ```bash
-omarchy plugin update othavi0.agent-bar && omarchy-restart-shell
+GIT_PAGER=cat omarchy plugin update othavi0.agent-bar && omarchy-restart-shell
 ```
 
 `omarchy plugin update` owns the actual result. Its failure modes:
+
+- **Stuck at a `:` prompt after a screen of diff**: nothing failed. Before
+  it asks for confirmation, `omarchy plugin update` prints
+  `git diff HEAD FETCH_HEAD`. With `delta` installed it prints without
+  paging; without it, git opens the diff in `less`, which shows one screen
+  and waits at `:` with no hint. The update has not run yet, and because
+  of the `&&` neither has `omarchy-restart-shell`. Press `q`, then answer
+  `Yes` to `Update othavi0.agent-bar?`. Agent Bar 10.5.5 and older show
+  the command without `GIT_PAGER=cat`, so their Settings tab still leads
+  here; the prefix makes git print the diff straight to the terminal and
+  go directly to the confirmation. `--yes` also avoids the pager, but it
+  skips the confirmation too.
 
 - **Non-fast-forward**: `omarchy plugin update` refuses to update a plugin
   directory with local modifications or diverged history. It never force-

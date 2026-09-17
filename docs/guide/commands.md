@@ -105,7 +105,7 @@ version, a `Release notes` link, a `Marketplace page` link, and the command
 to run in a terminal:
 
 ```bash
-omarchy plugin update othavi0.agent-bar && omarchy-restart-shell
+GIT_PAGER=cat omarchy plugin update othavi0.agent-bar && omarchy-restart-shell
 ```
 
 ## Uninstall

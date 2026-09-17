@@ -28,7 +28,7 @@ Update is a command you run yourself; the plugin only checks and tells you
 what to run:
 
 ```bash
-omarchy plugin update othavi0.agent-bar && omarchy-restart-shell
+GIT_PAGER=cat omarchy plugin update othavi0.agent-bar && omarchy-restart-shell
 ```
 
 `omarchy plugin update` fetches, fast-forwards, and re-validates the

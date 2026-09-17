@@ -170,7 +170,7 @@ After merging:
    ~/.config/omarchy/plugins/othavi0.agent-bar/bin/agent-bar update check
 
    # The command Settings names, run by hand — there is no apply button.
-   omarchy plugin update othavi0.agent-bar && omarchy-restart-shell
+   GIT_PAGER=cat omarchy plugin update othavi0.agent-bar && omarchy-restart-shell
 
    # Must now report available: false with current == the new version.
    ~/.config/omarchy/plugins/othavi0.agent-bar/bin/agent-bar update check
