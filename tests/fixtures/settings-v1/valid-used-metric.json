@@ -3,7 +3,6 @@
   "providers": [
     { "id": "claude", "enabled": false },
     { "id": "codex", "enabled": true },
-    { "id": "amp", "enabled": false },
     { "id": "grok", "enabled": true },
     { "id": "antigravity", "enabled": false }
   ],

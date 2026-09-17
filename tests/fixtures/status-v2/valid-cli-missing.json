@@ -3,26 +3,26 @@
   "helperVersion": "10.0.0",
   "generatedAt": "2026-07-26T18:42:00Z",
   "request": {
-    "provider": "amp",
+    "provider": "grok",
     "cache": "use"
   },
   "providers": [
     {
-      "id": "amp",
-      "name": "Amp",
+      "id": "grok",
+      "name": "Grok",
       "state": "cli_missing",
       "source": null,
       "plan": null,
       "windows": [],
       "lastSuccessAt": null,
       "error": {
-        "message": "Amp CLI was not found.",
+        "message": "Grok CLI was not found.",
         "retryable": false
       },
       "action": {
         "kind": "view_installation",
         "label": "Install guide",
-        "target": "https://ampcode.com/manual"
+        "target": "https://x.ai/cli"
       }
     }
   ]

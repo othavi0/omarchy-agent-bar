@@ -10,7 +10,7 @@ use crate::providers::adapter::{CollectionContext, HttpClient};
 use crate::providers::catalog::ExecutionEnvironment;
 use crate::providers::http::ReqwestHttpClient;
 use crate::providers::process::{ProcessRunner, TokioProcessRunner};
-use crate::providers::{adapter_for, AMP, ANTIGRAVITY, CLAUDE, CODEX, GROK};
+use crate::providers::{adapter_for, ANTIGRAVITY, CLAUDE, CODEX, GROK};
 use crate::settings::schema::Settings as SettingsDocument;
 use crate::settings::SettingsStore;
 use crate::status::collect::provider_status_from_result;
@@ -286,7 +286,6 @@ fn descriptor_ttl(id: ProviderId) -> std::time::Duration {
     match id {
         ProviderId::Claude => CLAUDE.cache_ttl,
         ProviderId::Codex => CODEX.cache_ttl,
-        ProviderId::Amp => AMP.cache_ttl,
         ProviderId::Grok => GROK.cache_ttl,
         ProviderId::Antigravity => ANTIGRAVITY.cache_ttl,
     }
@@ -297,7 +296,6 @@ fn fallback_provider_error(id: ProviderId, message: &str) -> ProviderStatus {
     let name = match id {
         ProviderId::Claude => "Claude",
         ProviderId::Codex => "Codex",
-        ProviderId::Amp => "Amp",
         ProviderId::Grok => "Grok",
         ProviderId::Antigravity => "Antigravity",
     };
@@ -494,19 +492,19 @@ mod tests {
         let envelope = coord
             .collect(CollectRequest {
                 format: StatusFormat::Json,
-                provider: Some(ProviderId::Amp),
+                provider: Some(ProviderId::Grok),
                 cache: CacheMode::Bypass,
                 notifications: NotificationMode::Skip,
             })
             .await
             .unwrap();
         assert_eq!(envelope.providers().len(), 1);
-        assert_eq!(envelope.providers()[0].id(), ProviderId::Amp);
-        assert_eq!(envelope.request().provider, Some(ProviderId::Amp));
+        assert_eq!(envelope.providers()[0].id(), ProviderId::Grok);
+        assert_eq!(envelope.request().provider, Some(ProviderId::Grok));
     }
 
     #[tokio::test]
-    async fn collect_survives_a_settings_file_predating_a_catalog_addition() {
+    async fn collect_discards_a_legacy_amp_entry_and_still_survives_the_catalog_addition() {
         let dir = tempfile::tempdir().unwrap();
         let coord = coord_at(dir.path(), datetime!(2026-07-26 18:42:00 UTC));
         let four = br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":true},{"id":"grok","enabled":true}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true}}"#;
@@ -523,15 +521,13 @@ mod tests {
             .await
             .unwrap();
 
+        // The legacy `amp` entry is discarded on read; `antigravity` is filled
+        // in from the catalog but starts disabled, so only the three enabled
+        // providers from the original document collect.
         let ids: Vec<_> = envelope.providers().iter().map(|p| p.id()).collect();
         assert_eq!(
             ids,
-            vec![
-                ProviderId::Claude,
-                ProviderId::Codex,
-                ProviderId::Amp,
-                ProviderId::Grok,
-            ]
+            vec![ProviderId::Claude, ProviderId::Codex, ProviderId::Grok]
         );
         assert!(!ids.contains(&ProviderId::Antigravity));
         assert_eq!(std::fs::read(coord.settings_store.path()).unwrap(), before);
@@ -751,34 +747,34 @@ mod tests {
         let t2 = datetime!(2026-07-26 18:00:02 UTC);
         let coord = coord_at(dir.path(), t2);
 
-        let rev = coord.cache_coord.start_generation(ProviderId::Amp, t0);
+        let rev = coord.cache_coord.start_generation(ProviderId::Grok, t0);
         let status =
-            ProviderStatus::ready(ProviderId::Amp, "Amp", DataSource::Live, None, vec![], t0)
+            ProviderStatus::ready(ProviderId::Grok, "Grok", DataSource::Live, None, vec![], t0)
                 .unwrap();
         let entry = entry_from_status(status, t0, t0, std::time::Duration::from_secs(90));
         coord
             .cache_store
-            .merge_provider(ProviderId::Amp, entry, t0)
+            .merge_provider(ProviderId::Grok, entry, t0)
             .unwrap();
         coord.cache_coord.complete_generation(rev, t0);
-        assert!(!coord.cache_coord.bypass_accepts(ProviderId::Amp, t1));
+        assert!(!coord.cache_coord.bypass_accepts(ProviderId::Grok, t1));
 
-        let rev2 = coord.cache_coord.start_generation(ProviderId::Amp, t1);
+        let rev2 = coord.cache_coord.start_generation(ProviderId::Grok, t1);
         let status2 =
-            ProviderStatus::ready(ProviderId::Amp, "Amp", DataSource::Live, None, vec![], t1)
+            ProviderStatus::ready(ProviderId::Grok, "Grok", DataSource::Live, None, vec![], t1)
                 .unwrap();
         let entry2 = entry_from_status(status2, t1, t2, std::time::Duration::from_secs(90));
         coord
             .cache_store
-            .merge_provider(ProviderId::Amp, entry2, t2)
+            .merge_provider(ProviderId::Grok, entry2, t2)
             .unwrap();
         coord.cache_coord.complete_generation(rev2, t2);
-        assert!(coord.cache_coord.bypass_accepts(ProviderId::Amp, t1));
+        assert!(coord.cache_coord.bypass_accepts(ProviderId::Grok, t1));
 
         let envelope = coord
             .collect(CollectRequest {
                 format: StatusFormat::Json,
-                provider: Some(ProviderId::Amp),
+                provider: Some(ProviderId::Grok),
                 cache: CacheMode::Bypass,
                 notifications: NotificationMode::Skip,
             })
@@ -811,21 +807,21 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let t1 = datetime!(2026-07-26 18:00:01 UTC);
         let coord = coord_at(dir.path(), t1);
-        let rev = coord.cache_coord.start_generation(ProviderId::Amp, t1);
+        let rev = coord.cache_coord.start_generation(ProviderId::Grok, t1);
         let status =
-            ProviderStatus::ready(ProviderId::Amp, "Amp", DataSource::Live, None, vec![], t1)
+            ProviderStatus::ready(ProviderId::Grok, "Grok", DataSource::Live, None, vec![], t1)
                 .unwrap();
         let entry = entry_from_status(status, t1, t1, std::time::Duration::from_secs(90));
         coord
             .cache_store
-            .merge_provider(ProviderId::Amp, entry, t1)
+            .merge_provider(ProviderId::Grok, entry, t1)
             .unwrap();
         coord.cache_coord.complete_generation(rev, t1);
 
         let envelope = coord
             .collect(CollectRequest {
                 format: StatusFormat::Json,
-                provider: Some(ProviderId::Amp),
+                provider: Some(ProviderId::Grok),
                 cache: CacheMode::Bypass,
                 notifications: NotificationMode::Skip,
             })
@@ -876,11 +872,19 @@ mod tests {
     impl HttpClient for SleepHttp {
         fn get(
             &self,
-            _url: &str,
+            url: &str,
             _headers: &[(&str, &str)],
             _max_body_bytes: usize,
         ) -> BoxFuture<'_, Result<HttpResponse, HttpError>> {
-            let dur = self.0;
+            // Antigravity's own reachability probe hits this same fake client
+            // before its process calls. Keeping that leg instant isolates the
+            // test to the one thing it proves: Grok's HTTP latency and the
+            // slow-provider's own latency overlap instead of summing.
+            let dur = if url == "https://oauth2.googleapis.com/" {
+                std::time::Duration::ZERO
+            } else {
+                self.0
+            };
             Box::pin(async move {
                 tokio::time::sleep(dur).await;
                 Ok(HttpResponse {
@@ -899,12 +903,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let bin_dir = dir.path().join("bin");
         std::fs::create_dir_all(&bin_dir).unwrap();
-        let amp_exe = bin_dir.join("amp");
-        std::fs::write(&amp_exe, b"#!/bin/sh\n").unwrap();
+        let antigravity_exe = bin_dir.join("agy");
+        std::fs::write(&antigravity_exe, b"#!/bin/sh\n").unwrap();
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&amp_exe, std::fs::Permissions::from_mode(0o755)).unwrap();
+            std::fs::set_permissions(&antigravity_exe, std::fs::Permissions::from_mode(0o755))
+                .unwrap();
         }
 
         let now = datetime!(2026-09-15 12:00:00 UTC);
@@ -912,7 +917,7 @@ mod tests {
         let settings_store = SettingsStore::new(dir.path().join("settings.json"), gate.clone());
         let mut settings = SettingsDocument::defaults();
         for p in settings.providers.iter_mut() {
-            p.enabled = matches!(p.id.0, ProviderId::Amp | ProviderId::Grok);
+            p.enabled = matches!(p.id.0, ProviderId::Antigravity | ProviderId::Grok);
         }
         settings_store.apply(&settings).unwrap();
 
@@ -999,7 +1004,7 @@ mod tests {
             })
             .await
             .unwrap();
-        assert_eq!(envelope.providers().len(), 5);
+        assert_eq!(envelope.providers().len(), 4);
 
         let doc = coord.cache_store.load().unwrap();
         assert_eq!(

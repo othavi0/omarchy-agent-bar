@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "othavi0.agent-bar",
   "name": "Agent Bar",
-  "version": "10.5.6",
+  "version": "10.6.0",
   "author": "othavi0",
   "license": "MIT",
-  "description": "LLM quota monitor for Claude, Codex, Amp, Grok, and Antigravity.",
+  "description": "LLM quota monitor for Claude, Codex, Grok, and Antigravity.",
   "kinds": ["service", "bar-widget"],
   "entryPoints": {
     "service": "Service.qml",

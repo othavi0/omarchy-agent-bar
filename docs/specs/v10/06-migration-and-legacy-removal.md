@@ -166,7 +166,7 @@ by the 2026-09-15 amendment; see `CLI-024` and `CLI-025`.
 The Bash helper is retained only for interactive provider login and rewritten:
 
 - accept exactly two arguments: `login <provider>`;
-- allow only `claude`, `codex`, `amp`, and `grok`;
+- allow only `claude`, `codex`, and `grok`;
 - resolve a physical absolute plugin root from the directory containing
   `BASH_SOURCE[0]`;
 - verify `<absolute-plugin-root>/bin/agent-bar` is a regular executable;

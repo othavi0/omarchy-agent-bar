@@ -114,6 +114,15 @@ const FORBIDDEN_TOKENS: &[&str] = &[
     "releases/download/",
     "agent-bar-maintenance-worker",
     "RELEASES_API_URL",
+    // Amp was retired 2026-09-17 (docs/specs/v10/amendments/
+    // 2026-09-17-remove-amp-provider-design.md). These are specific compound
+    // symbols, not the bare word "amp", so they never collide with ordinary
+    // prose ("example", "clamp") or the tolerated legacy id string.
+    "AmpAdapter",
+    "AMP_ADAPTER",
+    "ampcode",
+    "icons/amp.svg",
+    "ProviderId::Amp",
 ];
 
 /// TEST-031
@@ -136,12 +145,13 @@ fn is_allowlisted_path(rel: &str) -> bool {
     }
     matches!(
         rel,
-        "tests/fixtures/amp/usage-legacy-dollars.txt"
-            | "tests/fixtures/amp/usage-free-pct.txt"
-            | "tests/fixtures/status-v2/money-field.json"
+        "tests/fixtures/status-v2/money-field.json"
             | "manifest.json"
             | "schemas/settings-v1.schema.json"
             | "schemas/status-v2.schema.json"
+            // Legacy-tolerance fixture/code for the retired "amp" provider id
+            // (docs/specs/v10/amendments/2026-09-17-remove-amp-provider-design.md).
+            | "tests/fixtures/settings-v1/legacy-amp-entry-tolerated.json"
     )
 }
 
@@ -339,7 +349,6 @@ fn required_dependency_owners() -> BTreeMap<&'static str, &'static str> {
         ("tokio", "async process/HTTP collection runtime"),
         ("reqwest", "Claude HTTP collector and update check"),
         ("futures", "HTTP body streaming in providers/http"),
-        ("regex", "provider stdout/session parsers"),
         ("semver", "update version comparison"),
         ("fs2", "exclusive maintenance gate lock"),
         ("sha2", "bundle and ownership hashes"),
@@ -449,7 +458,7 @@ fn active_legacy_scan_cargo_and_install_contract() {
     let cargo = fs::read_to_string(root.join("Cargo.toml")).expect("Cargo.toml");
     assert!(
         cargo.contains(
-            r#"description = "LLM quota monitor for Claude, Codex, Amp, Grok, and Antigravity.""#
+            r#"description = "LLM quota monitor for Claude, Codex, Grok, and Antigravity.""#
         ),
         "Cargo.toml must use the exact package description"
     );

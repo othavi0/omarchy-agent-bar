@@ -65,7 +65,7 @@ pub fn help_text(topic: Option<HelpTopic>) -> String {
         // Antigravity signs in inside its own CLI, so it has no login verb.
         Some(HelpTopic::Login) => {
             "login <provider> — delegate to the official provider login command\n\
-             Providers: claude, codex, amp, grok\n"
+             Providers: claude, codex, grok\n"
                 .to_owned()
         }
         Some(HelpTopic::Config) => "config show — print canonical settings JSON (read-only)\n\

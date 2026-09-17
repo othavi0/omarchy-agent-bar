@@ -4,7 +4,7 @@ set -euo pipefail
 
 usage() {
   echo "Usage: agent-bar-open-terminal login <provider>" >&2
-  echo "Providers: claude, codex, amp, grok" >&2
+  echo "Providers: claude, codex, grok" >&2
 }
 
 if [[ "$#" -ne 2 ]]; then
@@ -19,7 +19,7 @@ fi
 
 provider="$2"
 case "$provider" in
-  claude | codex | amp | grok) ;;
+  claude | codex | grok) ;;
   *)
     echo "invalid provider: ${provider}" >&2
     exit 2

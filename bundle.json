@@ -165,12 +165,6 @@
       "mode": "0644"
     },
     {
-      "path": "icons/amp.svg",
-      "sha256": "1545a7440894cdf3ab684a8f5058d2b9dfd517e04056e3d14e98404d6cd119f6",
-      "size": 572,
-      "mode": "0644"
-    },
-    {
       "path": "icons/antigravity.png",
       "sha256": "5d7bd3d86c72d5086e36beb40c259e45c58c952983abbe3059c42414593ae2e1",
       "size": 2833,

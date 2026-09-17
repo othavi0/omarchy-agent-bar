@@ -78,7 +78,7 @@ The final Quattro-validated manifest is:
   "version": "10.0.0",
   "author": "othavi0",
   "license": "MIT",
-  "description": "LLM quota monitor for Claude, Codex, Amp, Grok, and Antigravity.",
+  "description": "LLM quota monitor for Claude, Codex, Grok, and Antigravity.",
   "kinds": ["service", "bar-widget"],
   "entryPoints": {
     "service": "Service.qml",
@@ -198,7 +198,7 @@ breaks the update check for all of them with no remote-side recovery.
 - `BUNDLE-012`: Reproducible assembly produces the same inventory and content
   hashes from the same source commit.
 - `BUNDLE-012A`: Icons retain their approved source formats:
-  `claude.png`, `codex.png`, `amp.svg`, `grok.svg`, and `antigravity.png`.
+  `claude.png`, `codex.png`, `grok.svg`, and `antigravity.png`.
 - `BUNDLE-012B`: **Retired.** There is no separate release-metadata document;
   `bundle.json` (above) is the only discovery document, fetched directly
   from the distribution repository over HTTPS.

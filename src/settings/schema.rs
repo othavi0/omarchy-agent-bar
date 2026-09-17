@@ -111,7 +111,7 @@ impl std::error::Error for SettingsError {}
 pub fn default_enabled(id: ProviderId) -> bool {
     match id {
         ProviderId::Claude | ProviderId::Codex => true,
-        ProviderId::Amp | ProviderId::Grok | ProviderId::Antigravity => false,
+        ProviderId::Grok | ProviderId::Antigravity => false,
     }
 }
 
@@ -132,12 +132,13 @@ pub enum MissingProviders {
 /// The provider IDs every v10 document has carried since v10 shipped (SET-024,
 /// MIG-009A). A file listing all of them may be completed from the catalog;
 /// anything less is not a v10 document we may repair.
-pub const ORIGINAL_V10_PROVIDERS: &[ProviderId] = &[
-    ProviderId::Claude,
-    ProviderId::Codex,
-    ProviderId::Amp,
-    ProviderId::Grok,
-];
+///
+/// `Amp` was retired 2026-09-17 and dropped from this list; a document that
+/// still carries a legacy `amp` provider entry has that entry discarded by
+/// [`strip_legacy_amp_provider_entries`] before this check ever sees it, so
+/// dropping it here does not regress completion for such a file.
+pub const ORIGINAL_V10_PROVIDERS: &[ProviderId] =
+    &[ProviderId::Claude, ProviderId::Codex, ProviderId::Grok];
 
 fn carries_original_v10_providers(providers: &[ProviderSetting]) -> bool {
     ORIGINAL_V10_PROVIDERS
@@ -188,6 +189,7 @@ impl Settings {
         if let Some(obj) = value.as_object_mut() {
             obj.remove("updates");
         }
+        strip_legacy_amp_provider_entries(&mut value);
         let mut settings: Self = serde_json::from_value(value)
             .map_err(|err| SettingsError::new(format!("invalid settings document: {err}")))?;
 
@@ -262,6 +264,30 @@ impl Settings {
         body.push('\n');
         Ok(body)
     }
+}
+
+/// Discard a legacy `{"id":"amp","enabled":<bool>}` provider entry (Amp was
+/// retired 2026-09-17). Only that exact two-key shape is tolerated; anything
+/// else naming id `"amp"` (an extra field, a non-boolean `enabled`) is left in
+/// place so the normal unknown-provider or unknown-field error fires below,
+/// the same way any other malformed entry does.
+fn strip_legacy_amp_provider_entries(value: &mut Value) {
+    let Some(array) = value
+        .as_object_mut()
+        .and_then(|obj| obj.get_mut("providers"))
+        .and_then(Value::as_array_mut)
+    else {
+        return;
+    };
+    array.retain(|entry| {
+        let Some(obj) = entry.as_object() else {
+            return true;
+        };
+        let is_amp = obj.get("id").and_then(Value::as_str) == Some("amp");
+        let exact_legacy_shape =
+            obj.len() == 2 && obj.get("enabled").is_some_and(Value::is_boolean);
+        !(is_amp && exact_legacy_shape)
+    });
 }
 
 fn validate_legacy_updates_block(value: &Value) -> Result<(), SettingsError> {
@@ -344,12 +370,7 @@ mod tests {
         let (filled, injected) =
             Settings::parse_with_policy(four, MissingProviders::FillFromCatalog).unwrap();
         assert!(injected);
-        for id in [
-            ProviderId::Claude,
-            ProviderId::Codex,
-            ProviderId::Amp,
-            ProviderId::Grok,
-        ] {
+        for id in [ProviderId::Claude, ProviderId::Codex, ProviderId::Grok] {
             let row = filled.providers.iter().find(|p| p.id.0 == id).unwrap();
             assert!(row.enabled, "{id} was written enabled and must stay so");
         }
@@ -396,7 +417,6 @@ mod tests {
     fn only_claude_and_codex_start_enabled() {
         assert!(default_enabled(ProviderId::Claude));
         assert!(default_enabled(ProviderId::Codex));
-        assert!(!default_enabled(ProviderId::Amp));
         assert!(!default_enabled(ProviderId::Grok));
         assert!(!default_enabled(ProviderId::Antigravity));
     }
@@ -445,6 +465,47 @@ mod tests {
 
         let doc_true = br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":false},{"id":"grok","enabled":false},{"id":"antigravity","enabled":false}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true},"updates":{"automatic":true}}"#;
         Settings::parse_strict(doc_true).unwrap();
+    }
+
+    #[test]
+    fn legacy_amp_provider_entry_is_discarded_and_antigravity_still_gets_filled() {
+        let doc =
+            include_bytes!("../../tests/fixtures/settings-v1/legacy-amp-entry-tolerated.json");
+        let (filled, injected) =
+            Settings::parse_with_policy(doc, MissingProviders::FillFromCatalog).unwrap();
+        assert!(injected);
+        assert_eq!(filled.providers.len(), ProviderId::ALL.len());
+        let antigravity = filled
+            .providers
+            .iter()
+            .find(|p| p.id.0 == ProviderId::Antigravity)
+            .expect("antigravity injected");
+        assert!(!antigravity.enabled);
+        let line = filled.to_canonical_json_line().unwrap();
+        assert!(!line.contains("amp"), "{line}");
+    }
+
+    #[test]
+    fn legacy_amp_provider_entry_rejected_under_strict_policy_missing_antigravity() {
+        let doc =
+            include_bytes!("../../tests/fixtures/settings-v1/legacy-amp-entry-tolerated.json");
+        let err = Settings::parse_strict(doc).unwrap_err();
+        assert!(err.message().contains("antigravity"), "{}", err.message());
+        assert!(
+            !err.message().contains("amp"),
+            "amp must already be gone before validation runs: {}",
+            err.message()
+        );
+    }
+
+    #[test]
+    fn amp_entry_with_extra_field_or_non_bool_enabled_is_not_silently_tolerated() {
+        let extra_field = br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":true,"extra":1},{"id":"grok","enabled":true},{"id":"antigravity","enabled":false}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true}}"#;
+        let err = Settings::parse_strict(extra_field).unwrap_err();
+        assert!(err.message().contains("invalid settings document"));
+
+        let non_bool_enabled = br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":"yes"},{"id":"grok","enabled":true},{"id":"antigravity","enabled":false}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true}}"#;
+        assert!(Settings::parse_strict(non_bool_enabled).is_err());
     }
 
     #[test]

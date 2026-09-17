@@ -69,7 +69,6 @@ TestCase {
       providers: [
         { id: "claude", enabled: true },
         { id: "codex", enabled: true },
-        { id: "amp", enabled: false },
         { id: "grok", enabled: false },
         { id: "antigravity", enabled: false }
       ],
@@ -179,7 +178,7 @@ TestCase {
   function test_pending_forced_union_all_dominates() {
     var p = Core.emptyPending()
     p = Core.unionForced(p, "claude")
-    p = Core.unionForced(p, "amp")
+    p = Core.unionForced(p, "codex")
     p = Core.unionForced(p, "all")
     compare(p.all, true)
     p = Core.unionForced(p, "grok")

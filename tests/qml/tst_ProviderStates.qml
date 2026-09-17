@@ -68,9 +68,9 @@ TestCase {
   }
 
   function test_stale_without_windows_uses_empty_windows_mode() {
-    var p = { id: "amp", name: "Amp", state: "stale", windows: [],
+    var p = { id: "grok", name: "Grok", state: "stale", windows: [],
               lastSuccessAt: "2026-07-26T18:42:00Z",
-              error: { code: "network_error", message: "Cannot reach Amp.",
+              error: { code: "network_error", message: "Cannot reach Grok.",
                        retryable: true } }
     compare(Core.contentMode(p), "empty_windows")
     compare(Core.stateBody(p), Core.emptyWindowsMessage())
@@ -524,14 +524,14 @@ TestCase {
   }
 
   function test_state_copy_network_error() {
-    var p = { id: "amp", name: "Amp", state: "network_error", windows: [], error: null }
-    compare(Core.stateTitle(p), "Cannot reach Amp")
+    var p = { id: "grok", name: "Grok", state: "network_error", windows: [], error: null }
+    compare(Core.stateTitle(p), "Cannot reach Grok")
     compare(Core.stateBody(p), "Check your connection.")
   }
 
   function test_state_copy_provider_error_and_unknown() {
-    var pe = { id: "amp", name: "Amp", state: "provider_error", windows: [], error: null }
-    compare(Core.stateTitle(pe), "Amp returned no limits")
+    var pe = { id: "grok", name: "Grok", state: "provider_error", windows: [], error: null }
+    compare(Core.stateTitle(pe), "Grok returned no limits")
     compare(Core.stateBody(pe), "")
     var unk = { id: "claude", name: "Claude", state: "weird", windows: [], error: null }
     compare(Core.stateTitle(unk), "Claude state is unknown")

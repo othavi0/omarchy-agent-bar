@@ -36,7 +36,6 @@ TestCase {
     var expected = {
       claude: true,
       codex: true,
-      amp: false,
       grok: false,
       antigravity: false
     }
@@ -48,7 +47,7 @@ TestCase {
       compare(row.enabled, expected[row.id], row.id)
       seen += 1
     }
-    compare(seen, 5)
+    compare(seen, 4)
   }
 
   function test_provider_toggle_and_order() {
@@ -58,8 +57,8 @@ TestCase {
     compare(d.providers[1].enabled, false)
 
     d = Core.moveProvider(d, "grok", -1)
-    compare(d.providers[2].id, "grok")
-    compare(d.providers[3].id, "amp")
+    compare(d.providers[1].id, "grok")
+    compare(d.providers[2].id, "codex")
 
     d = Core.moveProvider(d, "claude", -1)
     compare(d.providers[0].id, "claude")
@@ -74,23 +73,22 @@ TestCase {
 
   function test_move_provider_stays_within_its_section() {
     var d = Service.defaultSettings()
-    d = Core.setProviderEnabled(d, "grok", true)
-    compare(ids(d), "claude,codex,grok,amp,antigravity")
-    d = Core.moveProvider(d, "grok", -1)
-    compare(ids(d), "claude,grok,codex,amp,antigravity")
-    compare(ids(Core.moveProvider(d, "claude", -1)), "claude,grok,codex,amp,antigravity")
-    compare(ids(Core.moveProvider(d, "codex", 1)), "claude,grok,codex,amp,antigravity")
-    compare(ids(Core.moveProvider(d, "amp", 1)), "claude,grok,codex,antigravity,amp")
+    compare(ids(d), "claude,codex,grok,antigravity")
+    d = Core.moveProvider(d, "antigravity", -1)
+    compare(ids(d), "claude,codex,antigravity,grok")
+    compare(ids(Core.moveProvider(d, "claude", -1)), "claude,codex,antigravity,grok")
+    compare(ids(Core.moveProvider(d, "codex", 1)), "claude,codex,antigravity,grok")
+    compare(ids(Core.moveProvider(d, "grok", -1)), "claude,codex,grok,antigravity")
   }
 
   function test_enabling_a_provider_joins_the_end_of_the_bar() {
     var d = Service.defaultSettings()
     d = Core.setProviderEnabled(d, "antigravity", true)
-    compare(ids(d), "claude,codex,antigravity,amp,grok")
+    compare(ids(d), "claude,codex,antigravity,grok")
     d = Core.setProviderEnabled(d, "claude", true)
-    compare(ids(d), "claude,codex,antigravity,amp,grok")
+    compare(ids(d), "claude,codex,antigravity,grok")
     d = Core.setProviderEnabled(d, "codex", false)
-    compare(ids(d), "claude,codex,antigravity,amp,grok")
+    compare(ids(d), "claude,codex,antigravity,grok")
     compare(d.providers[1].enabled, false)
   }
 
@@ -102,9 +100,9 @@ TestCase {
     compare(s.shown[0].canMoveDown, true)
     compare(s.shown[1].id, "codex")
     compare(s.shown[1].canMoveDown, false)
-    compare(s.hidden.length, 3)
-    compare(s.hidden[0].id, "amp")
-    compare(s.hidden[2].id, "antigravity")
+    compare(s.hidden.length, 2)
+    compare(s.hidden[0].id, "grok")
+    compare(s.hidden[1].id, "antigravity")
     compare(Core.providerSections(null).shown.length, 0)
   }
 

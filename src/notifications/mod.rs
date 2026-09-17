@@ -731,7 +731,7 @@ mod tests {
         let store = store_in(&dir);
         let mut seeded = NotificationState::empty();
         seeded.upsert(NotificationEntry {
-            provider_id: "amp".into(),
+            provider_id: "antigravity".into(),
             window_id: "daily".into(),
             reset_at: Some(datetime!(2026-08-12 00:00:00 UTC)),
             level: NotificationLevel::Critical,

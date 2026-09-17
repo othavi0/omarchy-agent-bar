@@ -1,6 +1,3 @@
-use std::sync::LazyLock;
-
-use regex::Regex;
 use serde::Deserialize;
 use serde_json::Value;
 use time::format_description::well_known::Rfc3339;
@@ -10,10 +7,9 @@ use crate::cli::ProviderId;
 use crate::status::schema::{DataSource, Plan, ProviderResult, UsageWindow};
 use crate::support::redact::strip_ansi_and_controls;
 
-use super::catalog::{AMP, ANTIGRAVITY, CLAUDE, CODEX, GROK};
+use super::catalog::{ANTIGRAVITY, CLAUDE, CODEX, GROK};
 
 const LABEL_SESSION: &str = "Session (5h)";
-const LABEL_DAILY: &str = "Daily (1d)";
 const LABEL_WEEKLY: &str = "Weekly (7d)";
 
 // Antigravity meters two model families on separate quotas, so each window
@@ -22,105 +18,6 @@ const LABEL_GEMINI_WEEKLY: &str = "Gemini · 7d";
 const LABEL_GEMINI_SESSION: &str = "Gemini · 5h";
 const LABEL_THIRD_PARTY_WEEKLY: &str = "Claude/GPT · 7d";
 const LABEL_THIRD_PARTY_SESSION: &str = "Claude/GPT · 5h";
-
-static FREE_PCT_RE: LazyLock<Option<Regex>> =
-    LazyLock::new(|| Regex::new(r"Amp Free:\s*([0-9.]+)%\s*remaining").ok());
-static DOLLAR_PCT_RE: LazyLock<Option<Regex>> =
-    LazyLock::new(|| Regex::new(r"Amp Free:\s*\$([0-9.]+)/\$([0-9.]+)\s*remaining").ok());
-static SUBSCRIPTION_RE: LazyLock<Option<Regex>> = LazyLock::new(|| {
-    Regex::new(
-        r"Subscription\s+(\S+):\s*([0-9.]+)%\s*other usage and\s*([0-9.]+)%\s*orb usage remaining",
-    )
-    .ok()
-});
-
-pub fn amp_from_usage_text(stdout: &str, now: OffsetDateTime) -> ProviderResult {
-    let text = strip_ansi_and_controls(stdout);
-    let free_pct = FREE_PCT_RE
-        .as_ref()
-        .and_then(|re| re.captures(&text))
-        .and_then(|c| c.get(1)?.as_str().parse::<f64>().ok());
-
-    let dollar_pct = if free_pct.is_none() {
-        DOLLAR_PCT_RE
-            .as_ref()
-            .and_then(|re| re.captures(&text))
-            .and_then(|c| {
-                let remaining: f64 = c.get(1)?.as_str().parse().ok()?;
-                let total: f64 = c.get(2)?.as_str().parse().ok()?;
-                if total > 0.0 {
-                    Some(((remaining / total) * 100.0).clamp(0.0, 100.0))
-                } else {
-                    None
-                }
-            })
-    } else {
-        None
-    };
-
-    let remaining = free_pct.or(dollar_pct);
-    let mut windows = Vec::new();
-    if let Some(rem) = remaining {
-        let used = (100.0 - rem).clamp(0.0, 100.0);
-        let resets = if text.contains("resets daily") {
-            Some(next_utc_midnight(now))
-        } else {
-            None
-        };
-        if let Ok(window) = UsageWindow::try_new("daily", LABEL_DAILY, used, rem, resets) {
-            windows.push(window);
-        }
-    }
-
-    // Subscription line (2026-07-18 Amp subscriptions): two percentage buckets.
-    // "orb usage" = included orb-hours allowance; "other usage" = included agent
-    // usage. The plan name doubles as the Plan badge. The "Individual credits: $"
-    // line is monetary and intentionally never parsed into a window (JSON-022B).
-    // Labels render the meaning, not the CLI word: "other" is included agent
-    // usage, "orb" is included orb-hours (design 2026-08-07).
-    let mut plan = None;
-    if let Some(caps) = SUBSCRIPTION_RE.as_ref().and_then(|re| re.captures(&text)) {
-        if let Some(name) = caps.get(1).map(|m| m.as_str()) {
-            plan = Some(Plan {
-                id: name.to_ascii_lowercase(),
-                label: name.to_owned(),
-            });
-        }
-        for (idx, id, label) in [
-            (2usize, "plan-other", "Plan · agent"),
-            (3usize, "plan-orb", "Plan · orbs"),
-        ] {
-            if let Some(rem) = caps.get(idx).and_then(|m| m.as_str().parse::<f64>().ok()) {
-                let rem = rem.clamp(0.0, 100.0);
-                let used = (100.0 - rem).clamp(0.0, 100.0);
-                // No resets_at: Amp documents only "replenishes at the end of
-                // each monthly period", with no timestamp exposed.
-                if let Ok(w) = UsageWindow::try_new(id, label, used, rem, None) {
-                    windows.push(w);
-                }
-            }
-        }
-    }
-
-    ProviderResult::Ready {
-        id: ProviderId::Amp,
-        name: AMP.display_name.to_owned(),
-        source: DataSource::Live,
-        plan,
-        windows,
-        last_success_at: now,
-        rate_limit_resets_available: None,
-    }
-}
-
-fn next_utc_midnight(now: OffsetDateTime) -> OffsetDateTime {
-    let date = now.date();
-    let tomorrow = date.next_day().unwrap_or(date);
-    tomorrow
-        .with_hms(0, 0, 0)
-        .map(|t| t.assume_utc())
-        .unwrap_or(now)
-}
 
 #[derive(Debug, Deserialize, Default)]
 struct GrokBillingDoc {
@@ -793,7 +690,7 @@ fn antigravity_error(message: &str) -> ProviderResult {
 /// (`3p-*`), each on its own weekly and five-hour quota. All four buckets map
 /// to windows in a fixed order; any other bucket id is ignored. A run without
 /// any window is `Ready` with an empty list — a connected provider without a
-/// percentage window is valid, exactly as for Amp.
+/// percentage window is valid.
 ///
 /// A window starts on first use. A full bucket has none running, and `agy`
 /// reports its `reset_time` as now plus the whole window, a moving target, so
@@ -874,87 +771,6 @@ pub fn antigravity_from_usage_json(stdout: &str, now: OffsetDateTime) -> Provide
 mod tests {
     use super::*;
     use time::macros::datetime;
-
-    #[test]
-    fn amp_free_pct_fixture_ready_without_credits() {
-        let fixture = include_str!("../../tests/fixtures/amp/usage-free-pct.txt");
-        let result = amp_from_usage_text(fixture, datetime!(2026-07-26 18:00:00 UTC));
-        assert_no_money(&result);
-        match result {
-            ProviderResult::Ready { windows, .. } => {
-                assert_eq!(windows.len(), 1);
-                assert_eq!(windows[0].id(), "daily");
-                assert_eq!(windows[0].label(), "Daily (1d)");
-                assert!((windows[0].remaining_percent() - 97.0).abs() < 0.01);
-            }
-            other => panic!("expected ready, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn amp_legacy_dollars_converts_percent_and_drops_money() {
-        let fixture = include_str!("../../tests/fixtures/amp/usage-legacy-dollars.txt");
-        let result = amp_from_usage_text(fixture, datetime!(2026-07-26 18:00:00 UTC));
-        assert_no_money(&result);
-        match result {
-            ProviderResult::Ready { windows, .. } => {
-                assert_eq!(windows.len(), 1);
-                assert!((windows[0].remaining_percent() - 70.0).abs() < 0.01);
-            }
-            other => panic!("{other:?}"),
-        }
-    }
-
-    #[test]
-    fn amp_subscription_fixture_emits_plan_windows_and_plan() {
-        let fixture = include_str!("../../tests/fixtures/amp/usage-subscription-pct.txt");
-        let result = amp_from_usage_text(fixture, datetime!(2026-08-07 12:00:00 UTC));
-        assert_no_money(&result);
-        match result {
-            ProviderResult::Ready { windows, plan, .. } => {
-                let ids: Vec<&str> = windows.iter().map(|w| w.id()).collect();
-                assert_eq!(ids, vec!["daily", "plan-other", "plan-orb"]);
-                assert_eq!(windows[1].label(), "Plan · agent");
-                assert!((windows[1].remaining_percent() - 92.0).abs() < 0.01);
-                assert!((windows[1].used_percent() - 8.0).abs() < 0.01);
-                assert_eq!(windows[2].label(), "Plan · orbs");
-                assert!((windows[2].remaining_percent() - 100.0).abs() < 0.01);
-                assert!(windows[1].resets_at().is_none());
-                assert!(windows[2].resets_at().is_none());
-                let plan = plan.expect("plan from Subscription line");
-                assert_eq!(plan.id, "megawatt");
-                assert_eq!(plan.label, "Megawatt");
-            }
-            other => panic!("expected ready, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn amp_free_only_fixture_still_has_no_plan() {
-        let fixture = include_str!("../../tests/fixtures/amp/usage-free-pct.txt");
-        let result = amp_from_usage_text(fixture, datetime!(2026-08-07 12:00:00 UTC));
-        match result {
-            ProviderResult::Ready { windows, plan, .. } => {
-                assert_eq!(windows.len(), 1);
-                assert!(plan.is_none());
-            }
-            other => panic!("expected ready, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn amp_individual_credits_line_never_emits_window() {
-        let text = "Signed in as user@email.com (nick)\nIndividual credits: $4.19 remaining (replenishes automatically)\n";
-        let result = amp_from_usage_text(text, datetime!(2026-08-07 12:00:00 UTC));
-        assert_no_money(&result);
-        match result {
-            ProviderResult::Ready { windows, plan, .. } => {
-                assert!(windows.is_empty());
-                assert!(plan.is_none());
-            }
-            other => panic!("expected ready, got {other:?}"),
-        }
-    }
 
     #[test]
     fn claude_token_expired_is_unauthenticated() {

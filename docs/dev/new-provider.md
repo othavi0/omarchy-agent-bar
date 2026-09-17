@@ -79,13 +79,12 @@ Consulting the collection executable is itself optional: Claude collects
 purely from credential files plus HTTP and never reads the
 collection-discovery result. Grok does the same while its token is valid and
 only resolves the discovered executable to run `grok models` when the token
-expired; Amp, Codex, and Antigravity always resolve it.
+expired; Codex and Antigravity always resolve it.
 
 ## Process invocation notes
 
-- Amp runs its CLI with `NO_COLOR=1` and `TERM=dumb` forced into the
-  environment to guarantee plain non-interactive output.
-- Antigravity forces the same `NO_COLOR=1`/`TERM=dumb` pair, plus an
+- Antigravity forces `NO_COLOR=1`/`TERM=dumb` into the environment to
+  guarantee plain non-interactive output, plus an
   `agy --version` guard call before `agy --print /usage --output-format json`
   (windows are read by their stable bucket ids); a CLI older than
   1.1.11 is refused without ever running the usage command, because older
@@ -146,8 +145,7 @@ substring inside the Rust adapter, when the provider exposes no typed signal:
 each marker is a literal (a named constant for new markers) and has a unit test
 for a look-alike that must NOT match. New markers must also carry a comment
 naming the upstream source file they were read from; Codex is the reference,
-Amp and Antigravity predate this rule. Examples: Amp's `not signed` / `sign
-in` / `unauthorized` / `please log in`, Antigravity's `not signed in`,
+Antigravity predates this rule. Examples: Antigravity's `not signed in`,
 Codex's `CODEX_AUTH_REQUIRED_MARKER` (`authentication required`, from
 `codex-rs/app-server/src/request_processors/account_processor.rs`). Re-verify
 the upstream text when bumping a provider CLI. Any `account/rateLimits/read`

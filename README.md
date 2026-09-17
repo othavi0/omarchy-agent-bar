@@ -3,7 +3,7 @@
 Agent Bar shows your AI quota in the Omarchy bar. Each enabled provider
 gets a chip with a percentage, and clicking a chip opens a popup with
 every usage window and the time left until the next reset. A fresh install
-shows Claude and Codex. Amp, Grok, and Antigravity can be turned on in
+shows Claude and Codex. Grok and Antigravity can be turned on in
 Settings.
 
 ![Agent Bar Settings, Providers tab](preview.png)

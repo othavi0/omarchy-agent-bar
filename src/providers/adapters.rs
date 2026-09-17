@@ -6,71 +6,14 @@ use super::adapter::{
     collection_exe, login_available, missing_collection, unauthenticated, BoxFuture,
     CollectionContext, HttpError, HttpResponse, ProviderAdapter,
 };
-use super::catalog::{AMP, ANTIGRAVITY, CLAUDE, CODEX, GROK};
+use super::catalog::{ANTIGRAVITY, CLAUDE, CODEX, GROK};
 use super::codex_app_server::{fetch_rate_limits_via_appserver, AppServerOutcome};
 use super::process::{ProcessOutput, ProcessSpec};
 use super::v2_map::{
-    amp_from_usage_text, antigravity_from_usage_json, claude_from_usage_json,
-    codex_from_rate_limits_json, grok_from_billing_json,
+    antigravity_from_usage_json, claude_from_usage_json, codex_from_rate_limits_json,
+    grok_from_billing_json,
 };
 use super::{Discovery, ProviderDescriptor};
-
-pub struct AmpAdapter;
-
-pub static AMP_ADAPTER: AmpAdapter = AmpAdapter;
-
-impl ProviderAdapter for AmpAdapter {
-    fn descriptor(&self) -> &'static ProviderDescriptor {
-        &AMP
-    }
-
-    fn collect<'a>(
-        &'a self,
-        context: &'a CollectionContext<'a>,
-        discovery: &'a Discovery,
-    ) -> BoxFuture<'a, ProviderResult> {
-        Box::pin(async move {
-            let Some(exe) = collection_exe(discovery) else {
-                return missing_collection(ProviderId::Amp, AMP.display_name, AMP.installation_url);
-            };
-            let spec = ProcessSpec::new(exe, ["usage"])
-                .with_timeout(AMP.timeout)
-                .with_max_output(AMP.max_output_bytes)
-                .with_quiet_terminal();
-            match context.process.run(&spec).await {
-                Ok(out) if out.timed_out => ProviderResult::NetworkError {
-                    id: ProviderId::Amp,
-                    name: AMP.display_name.to_owned(),
-                    message: "Amp usage timed out.".into(),
-                },
-                Ok(out) if out.exit_code != Some(0) => {
-                    classify_amp_failure(&out, login_available(discovery))
-                }
-                Ok(out) => amp_from_usage_text(&out.stdout, context.clock.now_utc()),
-                Err(_) => ProviderResult::NetworkError {
-                    id: ProviderId::Amp,
-                    name: AMP.display_name.to_owned(),
-                    message: "Failed to run Amp usage.".into(),
-                },
-            }
-        })
-    }
-}
-
-/// Classify a non-zero `amp usage` exit. Unauthenticated requires an explicit
-/// marker; a bare "auth" substring (e.g. "authorization server unavailable")
-/// is an operational failure, not a login problem.
-fn classify_amp_failure(out: &ProcessOutput, login_available: bool) -> ProviderResult {
-    classify_cli_failure(
-        out,
-        &AMP,
-        login_available,
-        false,
-        &["not signed", "sign in", "unauthorized", "please log in"],
-        "Amp is not authenticated.",
-        "Amp usage command failed.",
-    )
-}
 
 fn classify_cli_failure(
     out: &ProcessOutput,
@@ -814,9 +757,9 @@ fn parse_version_prefix(text: &str) -> Option<(u32, u32, u32)> {
     Some((major, minor, digits.parse().ok()?))
 }
 
-/// Explicit logged-out marker, matched on ANSI-stripped stdout and stderr —
-/// same shape as [`classify_amp_failure`], deliberately narrow so an
-/// unrelated "auth" mention never reads as a login problem.
+/// Explicit logged-out marker, matched on ANSI-stripped stdout and stderr,
+/// deliberately narrow so an unrelated "auth" mention never reads as a login
+/// problem.
 ///
 /// The banner is the only logged-out signal: it is printed on an exit-0 run
 /// (captured fixture), and the CLI documents no exit code to lean on.
@@ -938,42 +881,6 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn amp_collect_ready_from_fixture() {
-        let fixture = include_str!("../../tests/fixtures/amp/usage-free-pct.txt");
-        let process = ScriptedProcess::one(ProcessOutput {
-            exit_code: Some(0),
-            stdout: fixture.to_owned(),
-            stderr: String::new(),
-            timed_out: false,
-            stdout_truncated: false,
-            stderr_truncated: false,
-        });
-        let http = ScriptedHttpClient::default();
-        let fs = MapFileSystem::default();
-        let env = ExecutionEnvironment {
-            home: std::path::PathBuf::from("/tmp/home"),
-            path_dirs: vec![],
-            grok_home: None,
-        };
-        let clock = FixedClock(datetime!(2026-07-26 18:00:00 UTC));
-        let ctx = CollectionContext {
-            env: &env,
-            clock: &clock,
-            fs: &fs,
-            process: &process,
-            http: &http,
-            plugin_root: None,
-        };
-        let discovery = discovery_with_exe(Path::new("/usr/bin/amp"));
-        let result = AMP_ADAPTER.collect(&ctx, &discovery).await;
-        assert_no_money(&result);
-        assert!(matches!(result, ProviderResult::Ready { .. }));
-        let spec = process.last_spec.lock().unwrap().clone().unwrap();
-        assert_eq!(spec.args, vec!["usage".to_owned()]);
-        assert!(spec.env.iter().any(|(k, v)| k == "NO_COLOR" && v == "1"));
-    }
-
     fn fake_process_output(exit_code: i32, stdout: &str, stderr: &str) -> ProcessOutput {
         ProcessOutput {
             exit_code: Some(exit_code),
@@ -983,20 +890,6 @@ mod tests {
             stdout_truncated: false,
             stderr_truncated: false,
         }
-    }
-
-    #[test]
-    fn amp_network_flavored_auth_substring_is_not_unauthenticated() {
-        let out = fake_process_output(1, "", "authorization server unavailable");
-        let result = classify_amp_failure(&out, true);
-        assert!(matches!(result, ProviderResult::ProviderError { .. }));
-    }
-
-    #[test]
-    fn amp_not_signed_in_is_unauthenticated() {
-        let out = fake_process_output(1, "You are not signed in. Run amp login.", "");
-        let result = classify_amp_failure(&out, true);
-        assert!(matches!(result, ProviderResult::Unauthenticated { .. }));
     }
 
     #[tokio::test]
@@ -1295,40 +1188,6 @@ mod tests {
             matches!(result, ProviderResult::ProviderError { .. }),
             "got {result:?}"
         );
-    }
-
-    #[tokio::test]
-    async fn amp_missing_collection_source() {
-        let process = ScriptedProcess::one(ProcessOutput {
-            exit_code: Some(0),
-            stdout: String::new(),
-            stderr: String::new(),
-            timed_out: false,
-            stdout_truncated: false,
-            stderr_truncated: false,
-        });
-        let http = ScriptedHttpClient::default();
-        let fs = MapFileSystem::default();
-        let env = ExecutionEnvironment {
-            home: std::path::PathBuf::from("/tmp/home"),
-            path_dirs: vec![],
-            grok_home: None,
-        };
-        let clock = FixedClock(datetime!(2026-07-26 18:00:00 UTC));
-        let ctx = CollectionContext {
-            env: &env,
-            clock: &clock,
-            fs: &fs,
-            process: &process,
-            http: &http,
-            plugin_root: None,
-        };
-        let discovery = Discovery {
-            collection: CollectionAvailability::Missing,
-            login: LoginAvailability::Missing,
-        };
-        let result = AMP_ADAPTER.collect(&ctx, &discovery).await;
-        assert!(matches!(result, ProviderResult::CliMissing { .. }));
     }
 
     #[tokio::test]
@@ -2839,7 +2698,7 @@ exit 2
             path_dirs: vec![],
             grok_home: None,
         };
-        let d = AMP_ADAPTER.discover(&env).unwrap();
+        let d = GROK_ADAPTER.discover(&env).unwrap();
         assert!(matches!(d.collection, CollectionAvailability::Missing));
     }
 }

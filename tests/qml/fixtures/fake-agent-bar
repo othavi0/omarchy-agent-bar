@@ -16,7 +16,7 @@ case "$cmd" in
     ;;
   config)
     if [[ "${2:-}" == "show" ]]; then
-      printf '%s\n' '{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":true},{"id":"grok","enabled":true}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true}}'
+      printf '%s\n' '{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"grok","enabled":true},{"id":"antigravity","enabled":false}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true}}'
       exit 0
     fi
     printf 'unknown config\n' >&2

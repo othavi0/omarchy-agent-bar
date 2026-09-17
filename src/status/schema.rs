@@ -990,10 +990,10 @@ mod tests {
             )
             .unwrap(),
             ProviderStatus::cli_missing(
-                ProviderId::Amp,
-                "Amp",
-                ProviderError::new("Amp CLI was not found.", false),
-                ProviderAction::view_installation("Install guide", "https://ampcode.com/manual")
+                ProviderId::Antigravity,
+                "Antigravity",
+                ProviderError::new("Antigravity CLI was not found.", false),
+                ProviderAction::view_installation("Install guide", "https://antigravity.google")
                     .unwrap(),
             )
             .unwrap(),
@@ -1019,8 +1019,8 @@ mod tests {
             )
             .unwrap(),
             ProviderStatus::provider_error(
-                ProviderId::Amp,
-                "Amp",
+                ProviderId::Antigravity,
+                "Antigravity",
                 ProviderError::new("bad payload", false),
                 ProviderAction::retry("Retry"),
             )
@@ -1135,7 +1135,7 @@ mod tests {
         let err = StatusEnvelope::try_new_for_package(
             ts(),
             StatusRequest {
-                provider: Some(ProviderId::Amp),
+                provider: Some(ProviderId::Grok),
                 cache: CacheMode::Use,
             },
             vec![ready_claude()],

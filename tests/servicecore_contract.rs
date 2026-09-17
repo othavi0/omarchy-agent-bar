@@ -53,7 +53,7 @@ fn servicecore_enums_match_schema() {
         .filter(|p| p.closed)
         .map(|p| p.id)
         .collect();
-    let expected_providers: BTreeSet<String> = ["claude", "codex", "amp", "grok", "antigravity"]
+    let expected_providers: BTreeSet<String> = ["claude", "codex", "grok", "antigravity"]
         .into_iter()
         .map(str::to_owned)
         .collect();

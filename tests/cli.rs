@@ -106,6 +106,17 @@ fn status_rejects_duplicates_missing_values_and_unknowns() {
 }
 
 #[test]
+fn retired_amp_provider_id_is_an_ordinary_unknown_provider_error() {
+    // Amp was retired 2026-09-17: `amp` is now unrecognized exactly like any
+    // id that was never in the catalog, both for `status provider` and for
+    // `login`.
+    let err = parse(words(&["status", "provider", "amp"])).unwrap_err();
+    assert_eq!(err.exit_code, GRAMMAR);
+    let err = parse(words(&["login", "amp"])).unwrap_err();
+    assert_eq!(err.exit_code, GRAMMAR);
+}
+
+#[test]
 fn status_accepts_each_provider_and_format() {
     for provider in ProviderId::ALL {
         let cmd = parse(words(&[

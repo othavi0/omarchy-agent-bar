@@ -85,11 +85,11 @@ mod tests {
         let coord = CacheCoordinator::new();
         let started = datetime!(2026-07-26 18:00:00 UTC);
         let requested = datetime!(2026-07-26 18:00:01 UTC);
-        let rev = coord.start_generation(ProviderId::Amp, started);
+        let rev = coord.start_generation(ProviderId::Grok, started);
         coord.complete_generation(rev, datetime!(2026-07-26 18:00:02 UTC));
-        assert!(!coord.bypass_accepts(ProviderId::Amp, requested));
-        let rev2 = coord.start_generation(ProviderId::Amp, requested);
+        assert!(!coord.bypass_accepts(ProviderId::Grok, requested));
+        let rev2 = coord.start_generation(ProviderId::Grok, requested);
         coord.complete_generation(rev2, datetime!(2026-07-26 18:00:03 UTC));
-        assert!(coord.bypass_accepts(ProviderId::Amp, requested));
+        assert!(coord.bypass_accepts(ProviderId::Grok, requested));
     }
 }

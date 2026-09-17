@@ -194,7 +194,6 @@ pub async fn run_login<R: ProcessRunner + ?Sized, I: ProcessRunner + ?Sized>(
 /// Resolve the adapter for a closed provider id.
 pub fn adapter_for(id: ProviderId) -> &'static dyn ProviderAdapter {
     match id {
-        ProviderId::Amp => &super::adapters::AMP_ADAPTER,
         ProviderId::Grok => &super::adapters::GROK_ADAPTER,
         ProviderId::Codex => &super::adapters::CODEX_ADAPTER,
         ProviderId::Claude => &super::adapters::CLAUDE_ADAPTER,

@@ -950,7 +950,7 @@ mod tests {
   "version": "{version}",
   "author": "othavi0",
   "license": "MIT",
-  "description": "LLM quota monitor for Claude, Codex, Amp, Grok, and Antigravity.",
+  "description": "LLM quota monitor for Claude, Codex, Grok, and Antigravity.",
   "kinds": ["service", "bar-widget"],
   "entryPoints": {{
     "service": "Service.qml",

@@ -257,8 +257,12 @@ impl NotificationStateStore {
 }
 
 fn parse_state(bytes: &[u8]) -> Result<NotificationState, NotificationStateError> {
-    let state: NotificationState = serde_json::from_slice(bytes)
+    let mut state: NotificationState = serde_json::from_slice(bytes)
         .map_err(|err| NotificationStateError::InvalidJson(err.to_string()))?;
+    // Amp was retired 2026-09-17. A row it left behind is discarded instead
+    // of quarantining every other provider's notification history, the same
+    // treatment as the legacy "amp" cache row (src/cache/store.rs).
+    state.entries.retain(|e| e.provider_id != "amp");
     state.validate()?;
     Ok(state)
 }
@@ -398,7 +402,7 @@ mod tests {
         let now = datetime!(2026-08-21 12:00:00 UTC);
         let mut state = NotificationState::empty();
         state.upsert(NotificationEntry {
-            provider_id: "amp".into(),
+            provider_id: "antigravity".into(),
             window_id: "daily".into(),
             reset_at: Some(datetime!(2026-08-12 00:00:00 UTC)),
             level: NotificationLevel::Critical,
@@ -445,5 +449,52 @@ mod tests {
         let loaded = store.load().unwrap();
         assert_eq!(loaded.entries.len(), 1);
         assert_eq!(loaded.entries[0].level, NotificationLevel::Critical);
+    }
+
+    #[test]
+    fn legacy_amp_row_is_discarded_not_quarantined() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = NotificationStateStore::new(
+            NotificationPaths {
+                state: dir.path().join("notification-state-v2.json"),
+                lock: dir.path().join("notification.lock"),
+            },
+            Arc::new(MaintenanceGate::open(dir.path().join("m.lock")).unwrap()),
+        );
+        let legacy = br#"{
+            "schemaVersion": 2,
+            "entries": [
+                {
+                    "providerId": "claude",
+                    "windowId": "session",
+                    "resetAt": null,
+                    "level": "critical",
+                    "notifiedAt": "2026-07-26T18:42:00Z"
+                },
+                {
+                    "providerId": "amp",
+                    "windowId": "daily",
+                    "resetAt": null,
+                    "level": "critical",
+                    "notifiedAt": "2026-07-26T18:42:00Z"
+                }
+            ]
+        }"#;
+        fs::create_dir_all(store.paths.state.parent().unwrap()).unwrap();
+        fs::write(&store.paths.state, legacy).unwrap();
+        let loaded = store.load().unwrap();
+        assert_eq!(
+            loaded.entries.len(),
+            1,
+            "amp row must be dropped, not fatal"
+        );
+        assert_eq!(loaded.entries[0].provider_id, "claude");
+        let corrupt_dir = fs::read_dir(store.paths.state.parent().unwrap()).unwrap();
+        assert!(
+            corrupt_dir
+                .filter_map(|e| e.ok())
+                .all(|e| !e.file_name().to_string_lossy().contains("corrupt")),
+            "a legacy amp row must never quarantine notification state"
+        );
     }
 }

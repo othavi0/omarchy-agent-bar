@@ -3,20 +3,20 @@
   "helperVersion": "10.0.0",
   "generatedAt": "2026-07-26T18:42:00Z",
   "request": {
-    "provider": "amp",
+    "provider": "codex",
     "cache": "use"
   },
   "providers": [
     {
-      "id": "amp",
-      "name": "Amp",
+      "id": "codex",
+      "name": "Codex",
       "state": "provider_error",
       "source": null,
       "plan": null,
       "windows": [],
       "lastSuccessAt": null,
       "error": {
-        "message": "Amp returned an invalid usage payload.",
+        "message": "Codex returned an invalid usage payload.",
         "retryable": false
       },
       "action": {

@@ -163,10 +163,26 @@ impl CacheStore {
 }
 
 fn parse_document(bytes: &[u8]) -> Result<CacheDocument, CacheSchemaError> {
-    let doc: CacheDocument = serde_json::from_slice(bytes)
+    let mut value: serde_json::Value = serde_json::from_slice(bytes)
+        .map_err(|err| CacheSchemaError::InvalidJson(err.to_string()))?;
+    strip_legacy_amp_cache_entry(&mut value);
+    let doc: CacheDocument = serde_json::from_value(value)
         .map_err(|err| CacheSchemaError::InvalidJson(err.to_string()))?;
     doc.validate()?;
     Ok(doc)
+}
+
+/// Discard a legacy `"amp"` cache row (Amp was retired 2026-09-17) before the
+/// document is deserialized, so an old cache file quarantines the whole
+/// document only for a genuinely unknown key, not for this expected one.
+fn strip_legacy_amp_cache_entry(value: &mut serde_json::Value) {
+    if let Some(providers) = value
+        .as_object_mut()
+        .and_then(|obj| obj.get_mut("providers"))
+        .and_then(serde_json::Value::as_object_mut)
+    {
+        providers.remove("amp");
+    }
 }
 
 fn open_lock(path: &Path) -> io::Result<fs::File> {
@@ -329,6 +345,108 @@ mod tests {
                 .filter_map(|e| e.ok())
                 .all(|e| !e.file_name().to_string_lossy().contains("corrupt")),
             "legacy keys must never quarantine the cache"
+        );
+    }
+
+    #[test]
+    fn legacy_amp_cache_row_is_discarded_not_quarantined() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = store_in(dir.path());
+        fs::create_dir_all(store.paths.document.parent().unwrap()).unwrap();
+        let legacy = br#"{
+            "schemaVersion": 2,
+            "revision": 3,
+            "providers": {
+                "claude": {
+                    "startedAt": "2026-07-26T18:42:00Z",
+                    "completedAt": "2026-07-26T18:42:01Z",
+                    "expiresAt": "2026-07-26T18:47:01Z",
+                    "status": {
+                        "id": "claude",
+                        "name": "Claude",
+                        "state": "ready",
+                        "source": "live",
+                        "plan": null,
+                        "windows": [],
+                        "lastSuccessAt": "2026-07-26T18:40:00Z",
+                        "error": null,
+                        "action": null
+                    }
+                },
+                "amp": {
+                    "startedAt": "2026-07-26T18:42:00Z",
+                    "completedAt": "2026-07-26T18:42:01Z",
+                    "expiresAt": "2026-07-26T18:47:01Z",
+                    "status": {
+                        "id": "amp",
+                        "name": "Amp",
+                        "state": "ready",
+                        "source": "live",
+                        "plan": null,
+                        "windows": [],
+                        "lastSuccessAt": "2026-07-26T18:40:00Z",
+                        "error": null,
+                        "action": null
+                    }
+                }
+            }
+        }"#;
+        fs::write(&store.paths.document, legacy).unwrap();
+        let doc = store.load().unwrap();
+        assert_eq!(doc.revision, 3, "legacy document must not be quarantined");
+        assert!(doc.get(ProviderId::Claude).is_some(), "sibling survives");
+        assert!(
+            !doc.providers.contains_key("amp"),
+            "retired amp row must be dropped"
+        );
+        let corrupt_dir = fs::read_dir(store.paths.document.parent().unwrap()).unwrap();
+        assert!(
+            corrupt_dir
+                .filter_map(|e| e.ok())
+                .all(|e| !e.file_name().to_string_lossy().contains("corrupt")),
+            "a legacy amp row must never quarantine the cache"
+        );
+    }
+
+    #[test]
+    fn an_actually_unknown_cache_key_still_quarantines() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = store_in(dir.path());
+        fs::create_dir_all(store.paths.document.parent().unwrap()).unwrap();
+        let bogus = br#"{
+            "schemaVersion": 2,
+            "revision": 1,
+            "providers": {
+                "nope": {
+                    "startedAt": "2026-07-26T18:42:00Z",
+                    "completedAt": "2026-07-26T18:42:01Z",
+                    "expiresAt": "2026-07-26T18:47:01Z",
+                    "status": {
+                        "id": "nope",
+                        "name": "Nope",
+                        "state": "ready",
+                        "source": "live",
+                        "plan": null,
+                        "windows": [],
+                        "lastSuccessAt": "2026-07-26T18:40:00Z",
+                        "error": null,
+                        "action": null
+                    }
+                }
+            }
+        }"#;
+        fs::write(&store.paths.document, bogus).unwrap();
+        let doc = store.load().unwrap();
+        assert!(doc.providers.is_empty(), "quarantine resets to empty");
+        let corrupt: Vec<_> = fs::read_dir(store.paths.document.parent().unwrap())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().contains("corrupt-"))
+            .collect();
+        assert_eq!(
+            corrupt.len(),
+            1,
+            "a genuinely unknown key still quarantines"
         );
     }
 
