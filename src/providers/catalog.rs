@@ -161,8 +161,8 @@ impl std::fmt::Display for CatalogError {
 
 impl std::error::Error for CatalogError {}
 
-/// Locked catalog order: Claude, Codex, Amp, Grok, Antigravity.
-pub static PROVIDERS: &[&ProviderDescriptor] = &[&CLAUDE, &CODEX, &AMP, &GROK, &ANTIGRAVITY];
+/// Locked catalog order: Claude, Codex, Grok, Antigravity.
+pub static PROVIDERS: &[&ProviderDescriptor] = &[&CLAUDE, &CODEX, &GROK, &ANTIGRAVITY];
 
 pub static CLAUDE: ProviderDescriptor = ProviderDescriptor {
     id: ProviderId::Claude,
@@ -192,37 +192,6 @@ pub static CODEX: ProviderDescriptor = ProviderDescriptor {
     }],
     installation_url: "https://github.com/openai/codex",
     login_argv: &["codex", "login"],
-    cache_ttl: Duration::from_secs(90),
-    timeout: Duration::from_secs(10),
-    max_output_bytes: ONE_MIB,
-    retry_policy: RetryPolicy::OneTransient,
-};
-
-pub static AMP: ProviderDescriptor = ProviderDescriptor {
-    id: ProviderId::Amp,
-    display_name: "Amp",
-    icon_key: "amp",
-    executable_name: "amp",
-    fallback_executable_paths: &[
-        ExecutablePath {
-            root: PathRoot::Home,
-            segments: &[".local", "bin", "amp"],
-        },
-        ExecutablePath {
-            root: PathRoot::Home,
-            segments: &[".amp", "bin", "amp"],
-        },
-        ExecutablePath {
-            root: PathRoot::Home,
-            segments: &[".cache", ".bun", "bin", "amp"],
-        },
-        ExecutablePath {
-            root: PathRoot::Home,
-            segments: &[".bun", "bin", "amp"],
-        },
-    ],
-    installation_url: "https://ampcode.com/manual",
-    login_argv: &["amp", "login"],
     cache_ttl: Duration::from_secs(90),
     timeout: Duration::from_secs(10),
     max_output_bytes: ONE_MIB,
@@ -285,7 +254,6 @@ pub fn descriptor(id: ProviderId) -> &'static ProviderDescriptor {
     match id {
         ProviderId::Claude => &CLAUDE,
         ProviderId::Codex => &CODEX,
-        ProviderId::Amp => &AMP,
         ProviderId::Grok => &GROK,
         ProviderId::Antigravity => &ANTIGRAVITY,
     }
@@ -415,7 +383,6 @@ mod tests {
             vec![
                 ProviderId::Claude,
                 ProviderId::Codex,
-                ProviderId::Amp,
                 ProviderId::Grok,
                 ProviderId::Antigravity,
             ]
@@ -447,12 +414,6 @@ mod tests {
         assert_eq!(CODEX.login_argv, &["codex", "login"]);
         assert_eq!(CODEX.installation_url, "https://github.com/openai/codex");
         assert_eq!(CODEX.cache_ttl, Duration::from_secs(90));
-
-        assert_eq!(AMP.display_name, "Amp");
-        assert_eq!(AMP.icon_key, "amp");
-        assert_eq!(AMP.login_argv, &["amp", "login"]);
-        assert_eq!(AMP.installation_url, "https://ampcode.com/manual");
-        assert_eq!(AMP.fallback_executable_paths.len(), 4);
 
         assert_eq!(GROK.display_name, "Grok");
         assert_eq!(GROK.icon_key, "grok");
@@ -594,14 +555,14 @@ mod tests {
         let target = dir.path().join("tools").join("mise");
         write_exec(&target, true);
         fs::create_dir_all(&path_dir).unwrap();
-        let shim = path_dir.join("amp");
+        let shim = path_dir.join("codex");
         std::os::unix::fs::symlink(&target, &shim).unwrap();
         let env = ExecutionEnvironment {
             home,
             path_dirs: vec![path_dir],
             grok_home: None,
         };
-        let discovery = discover(&AMP, &env).unwrap();
+        let discovery = discover(&CODEX, &env).unwrap();
         assert_eq!(discovery.collection_executable().unwrap(), shim.as_path());
         assert_eq!(discovery.login_executable().unwrap(), shim.as_path());
     }
@@ -615,7 +576,7 @@ mod tests {
         let home = dir.path().join("home");
         let target = dir.path().join("tools").join("mise");
         write_exec(&target, true);
-        let shim = home.join(".local/bin/amp");
+        let shim = home.join(".local/bin/codex");
         fs::create_dir_all(shim.parent().unwrap()).unwrap();
         std::os::unix::fs::symlink(&target, &shim).unwrap();
         let env = ExecutionEnvironment {
@@ -623,7 +584,7 @@ mod tests {
             path_dirs: vec![dir.path().join("empty-path")],
             grok_home: None,
         };
-        let discovery = discover(&AMP, &env).unwrap();
+        let discovery = discover(&CODEX, &env).unwrap();
         assert_eq!(discovery.collection_executable().unwrap(), shim.as_path());
         assert_eq!(discovery.login_executable().unwrap(), shim.as_path());
     }
@@ -636,7 +597,7 @@ mod tests {
             path_dirs: vec![],
             grok_home: None,
         };
-        let discovery = discover(&AMP, &env).unwrap();
+        let discovery = discover(&CODEX, &env).unwrap();
         assert!(matches!(
             discovery.collection,
             CollectionAvailability::Missing

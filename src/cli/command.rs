@@ -4,16 +4,14 @@ use std::path::PathBuf;
 pub enum ProviderId {
     Claude,
     Codex,
-    Amp,
     Grok,
     Antigravity,
 }
 
 impl ProviderId {
-    pub const ALL: [ProviderId; 5] = [
+    pub const ALL: [ProviderId; 4] = [
         ProviderId::Claude,
         ProviderId::Codex,
-        ProviderId::Amp,
         ProviderId::Grok,
         ProviderId::Antigravity,
     ];
@@ -22,7 +20,6 @@ impl ProviderId {
         match self {
             ProviderId::Claude => "claude",
             ProviderId::Codex => "codex",
-            ProviderId::Amp => "amp",
             ProviderId::Grok => "grok",
             ProviderId::Antigravity => "antigravity",
         }
@@ -32,7 +29,6 @@ impl ProviderId {
         match word {
             "claude" => Some(ProviderId::Claude),
             "codex" => Some(ProviderId::Codex),
-            "amp" => Some(ProviderId::Amp),
             "grok" => Some(ProviderId::Grok),
             "antigravity" => Some(ProviderId::Antigravity),
             _ => None,

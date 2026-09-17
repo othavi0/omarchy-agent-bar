@@ -10,10 +10,6 @@
       "enabled": true
     },
     {
-      "id": "amp",
-      "enabled": false
-    },
-    {
       "id": "grok",
       "enabled": false
     },

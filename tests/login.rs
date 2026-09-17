@@ -5,9 +5,9 @@ use std::sync::Mutex;
 
 use agent_bar::cli::ProviderId;
 use agent_bar::providers::adapter::{run_login, ProviderAdapter};
-use agent_bar::providers::adapters::{AMP_ADAPTER, CLAUDE_ADAPTER, CODEX_ADAPTER, GROK_ADAPTER};
+use agent_bar::providers::adapters::{CLAUDE_ADAPTER, CODEX_ADAPTER, GROK_ADAPTER};
 use agent_bar::providers::catalog::{
-    CollectionAvailability, Discovery, LoginAvailability, AMP, CLAUDE, CODEX, GROK,
+    CollectionAvailability, Discovery, LoginAvailability, CLAUDE, CODEX, GROK,
 };
 use agent_bar::providers::process::{ProcessError, ProcessOutput, ProcessRunner, ProcessSpec};
 
@@ -69,11 +69,10 @@ fn ok_output() -> ProcessOutput {
 async fn login_argv_matches_catalog_with_resolved_executable() {
     for (adapter, exe, expected_tail) in [
         (
-            &AMP_ADAPTER as &dyn ProviderAdapter,
-            "/opt/bin/amp",
+            &GROK_ADAPTER as &dyn ProviderAdapter,
+            "/opt/bin/grok",
             vec!["login"],
         ),
-        (&GROK_ADAPTER, "/opt/bin/grok", vec!["login"]),
         (&CODEX_ADAPTER, "/opt/bin/codex", vec!["login"]),
         (&CLAUDE_ADAPTER, "/opt/bin/claude", vec!["auth", "login"]),
     ] {
@@ -89,7 +88,6 @@ async fn login_argv_matches_catalog_with_resolved_executable() {
         );
         assert!(spec.program.is_absolute() || spec.program.starts_with("/"));
     }
-    assert_eq!(AMP.login_argv, &["amp", "login"]);
     assert_eq!(CLAUDE.login_argv, &["claude", "auth", "login"]);
     assert_eq!(CODEX.login_argv, &["codex", "login"]);
     assert_eq!(GROK.login_argv, &["grok", "login"]);
@@ -150,8 +148,8 @@ async fn nonzero_login_does_not_refresh() {
         stderr_truncated: false,
     })]);
     let ipc = ScriptedRunner::from_outputs(vec![Ok(ok_output())]);
-    let discovery = discovery_ok("/usr/bin/amp");
-    let outcome = run_login(&AMP_ADAPTER, &discovery, &provider, &ipc)
+    let discovery = discovery_ok("/usr/bin/codex");
+    let outcome = run_login(&CODEX_ADAPTER, &discovery, &provider, &ipc)
         .await
         .unwrap();
     assert_eq!(outcome.exit_code, 3);

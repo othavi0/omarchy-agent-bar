@@ -91,10 +91,10 @@ mod tests {
         assert_eq!(ready.state(), ProviderState::Ready);
 
         let missing = provider_status_from_result(ProviderResult::CliMissing {
-            id: ProviderId::Amp,
-            name: "Amp".into(),
+            id: ProviderId::Grok,
+            name: "Grok".into(),
             message: "missing".into(),
-            installation_url: "https://ampcode.com/manual".into(),
+            installation_url: "https://x.ai/cli".into(),
         })
         .unwrap();
         assert_eq!(missing.state(), ProviderState::CliMissing);

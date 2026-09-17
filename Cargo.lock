@@ -13,7 +13,6 @@ dependencies = [
  "jsonschema",
  "log",
  "predicates",
- "regex",
  "reqwest",
  "semver",
  "serde",
