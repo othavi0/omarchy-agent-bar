@@ -245,6 +245,23 @@ fn apply_stale_retention(
     live: ProviderStatus,
     prior: Option<&ProviderStatus>,
 ) -> Result<ProviderStatus, StatusCoordError> {
+    // A plan that publishes no quota stays an empty ready row. An empty row
+    // after a real window is an omission, so the last percentage stays stale.
+    if let Some(prior) = prior {
+        if live.state() == ProviderState::Ready
+            && live.windows().is_empty()
+            && !prior.windows().is_empty()
+            && matches!(prior.state(), ProviderState::Ready | ProviderState::Stale)
+        {
+            let error = ProviderError::new(
+                format!("{} omitted the usage percentage.", prior.name()),
+                true,
+            );
+            return prior
+                .retain_as_stale(error)
+                .map_err(StatusCoordError::Schema);
+        }
+    }
     if !live.is_temporary_failure() {
         return Ok(live);
     }
@@ -655,6 +672,92 @@ mod tests {
         assert_eq!(retained.source(), Some(DataSource::Cache));
         assert_eq!(retained.windows().len(), 1);
         assert!(retained.error().is_some());
+    }
+
+    #[tokio::test]
+    async fn empty_ready_keeps_prior_windows_as_stale() {
+        let now = datetime!(2026-09-21 19:38:56 UTC);
+        let earlier = now - time::Duration::minutes(2);
+        let prior = ProviderStatus::ready(
+            ProviderId::Grok,
+            "Grok",
+            DataSource::Live,
+            None,
+            vec![UsageWindow::try_new("weekly", "Weekly (7d)", 11.0, 89.0, None).unwrap()],
+            earlier,
+        )
+        .unwrap();
+        let live = ProviderStatus::ready(
+            ProviderId::Grok,
+            "Grok",
+            DataSource::Live,
+            None,
+            vec![],
+            now,
+        )
+        .unwrap();
+        let out = apply_stale_retention(live, Some(&prior)).unwrap();
+        assert_eq!(out.state(), ProviderState::Stale);
+        assert_eq!(out.windows().len(), 1, "prior weekly window must survive");
+        assert_eq!(out.windows()[0].id(), "weekly");
+        assert!((out.windows()[0].used_percent() - 11.0).abs() < 0.01);
+        assert_eq!(out.last_success_at(), Some(earlier));
+        assert!(out.error().is_some_and(|e| e.retryable));
+    }
+
+    #[tokio::test]
+    async fn ready_with_windows_replaces_prior_percentage() {
+        let now = datetime!(2026-09-21 19:43:56 UTC);
+        let earlier = now - time::Duration::minutes(2);
+        let prior = ProviderStatus::ready(
+            ProviderId::Grok,
+            "Grok",
+            DataSource::Live,
+            None,
+            vec![UsageWindow::try_new("weekly", "Weekly (7d)", 11.0, 89.0, None).unwrap()],
+            earlier,
+        )
+        .unwrap();
+        let live = ProviderStatus::ready(
+            ProviderId::Grok,
+            "Grok",
+            DataSource::Live,
+            None,
+            vec![UsageWindow::try_new("weekly", "Weekly (7d)", 7.0, 93.0, None).unwrap()],
+            now,
+        )
+        .unwrap();
+        let out = apply_stale_retention(live, Some(&prior)).unwrap();
+        assert_eq!(out.state(), ProviderState::Ready);
+        assert_eq!(out.windows().len(), 1);
+        assert!((out.windows()[0].used_percent() - 7.0).abs() < 0.01);
+        assert_eq!(out.last_success_at(), Some(now));
+    }
+
+    #[tokio::test]
+    async fn empty_ready_without_prior_windows_stays_ready() {
+        let now = datetime!(2026-09-21 19:38:56 UTC);
+        let prior = ProviderStatus::ready(
+            ProviderId::Grok,
+            "Grok",
+            DataSource::Live,
+            None,
+            vec![],
+            now,
+        )
+        .unwrap();
+        let live = ProviderStatus::ready(
+            ProviderId::Grok,
+            "Grok",
+            DataSource::Live,
+            None,
+            vec![],
+            now,
+        )
+        .unwrap();
+        let out = apply_stale_retention(live, Some(&prior)).unwrap();
+        assert_eq!(out.state(), ProviderState::Ready);
+        assert!(out.windows().is_empty());
     }
 
     #[tokio::test]

@@ -133,7 +133,10 @@ Notifications: enabled
 ## Public state principles
 
 - `PROD-025`: The complete last good result remains visible as stale after a
-  temporary failure, including a valid ready result with zero windows.
+  temporary failure, including a valid ready result with zero windows. A later
+  ready result with zero windows does not replace a prior ready or stale
+  result that still has windows. That omission keeps the last percentage
+  visible as stale.
 - `PROD-026`: Missing CLI, unauthenticated, rate-limited, network, and provider
   failures are distinct states.
 - `PROD-027`: State is never communicated by color alone.

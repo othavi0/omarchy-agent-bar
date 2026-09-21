@@ -965,6 +965,30 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn grok_product_usage_percent_is_the_weekly_window() {
+        let body = br#"{"config":{"currentPeriod":{"type":"USAGE_PERIOD_TYPE_WEEKLY","end":"2026-09-25T21:10:59.543182Z"},"productUsage":[{"product":"GrokBuild","usagePercent":7.0}]}}"#;
+        let http = ScriptedHttpClient::single(Ok(HttpResponse {
+            status: 200,
+            final_url: GROK_BILLING_URL.into(),
+            body: body.to_vec(),
+        }));
+        let result = grok_ctx_collect(&http).await;
+        assert_eq!(
+            http.last_url.lock().unwrap().as_deref(),
+            Some(GROK_BILLING_URL)
+        );
+        match result {
+            ProviderResult::Ready { windows, .. } => {
+                assert_eq!(windows.len(), 1, "{windows:?}");
+                assert_eq!(windows[0].id(), "weekly");
+                assert!((windows[0].used_percent() - 7.0).abs() < 0.01);
+                assert!((windows[0].remaining_percent() - 93.0).abs() < 0.01);
+            }
+            other => panic!("expected ready, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
     async fn grok_credits_without_quota_falls_back_to_monthly_limit() {
         let credits =
             include_bytes!("../../tests/fixtures/providers/grok/billing-credits-no-quota.json");
