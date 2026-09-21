@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [10.6.1] - 2026-09-21
+
+### Changed
+
+- fix(grok): keep the last percentage
+
 ## [10.6.0] - 2026-09-17
 
 ### Changed
