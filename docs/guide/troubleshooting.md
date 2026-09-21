@@ -69,8 +69,10 @@ retry:
 
 ## Grok shows `—` or missing Weekly
 
-When billing returns no usable percentage, Grok is connected with empty windows
-and the chip shows `—`. Weekly reset comes from the billing period end.
+When billing returns no usable percentage and no earlier percentage exists,
+Grok is connected with empty windows and the chip shows `—`. A later empty
+response keeps the last percentage on the chip. Weekly reset comes from the
+billing period end.
 Context is no longer a product window.
 
 ## Grok shows Sign in after hours idle

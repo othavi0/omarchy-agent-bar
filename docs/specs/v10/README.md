@@ -95,6 +95,13 @@ provider id enum, `SET-027`'s default-enablement list, and every provider
 table across this directory drop `amp`:
 [docs/specs/v10/amendments/2026-09-17-remove-amp-provider-design.md](amendments/2026-09-17-remove-amp-provider-design.md).
 
+An empty Grok reading, approved 2026-09-21, no longer replaces a percentage
+the bar already showed. `productUsage[].usagePercent` fills the credits
+window when `creditUsagePercent` is absent. A later ready row with no
+windows keeps the prior row as stale. A plan that has never published a
+percentage still shows the dash (`PROD-031`):
+[docs/specs/v10/amendments/2026-09-21-grok-empty-reading-design.md](amendments/2026-09-21-grok-empty-reading-design.md).
+
 ## Product statement
 
 Agent Bar v10 is an Omarchy Quattro Quickshell plugin. Its only graphical

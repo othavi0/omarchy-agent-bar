@@ -121,7 +121,8 @@ Do not return:
 - spend, balance, credits, currency, cost, or arbitrary extras.
 
 A connected provider with no percentage quota returns an empty windows array.
-The UI renders `—`.
+The UI renders `—`. A later empty array does not replace a cached row that
+still has windows. That row stays stale and keeps the last percentage.
 
 ## Error mapping
 

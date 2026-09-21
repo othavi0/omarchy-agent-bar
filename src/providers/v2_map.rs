@@ -41,6 +41,14 @@ struct GrokBillingDoc {
     on_demand_cap: Option<Value>,
     #[serde(default, rename = "onDemandUsed")]
     on_demand_used: Option<Value>,
+    #[serde(default, rename = "productUsage")]
+    product_usage: Vec<GrokProductUsageRaw>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GrokProductUsageRaw {
+    #[serde(default, rename = "usagePercent")]
+    usage_percent: Option<f64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -70,10 +78,11 @@ fn grok_window_identity(period_type: Option<&str>) -> (String, String) {
 /// Parse Grok billing JSON into at most one percentage window.
 ///
 /// - `creditUsagePercent` (subscription credits) → used; remaining = 100 − used
+/// - otherwise the highest finite `productUsage` `usagePercent`, same period
 /// - otherwise `used / monthlyLimit` (monthly-limit accounts) → `monthly`
 /// - `currentPeriod.end` or `billingPeriodEnd` → resetsAt
 /// - money-like fields discarded; never emits a `context` window
-/// - neither shape (plans without a published quota) → Ready, empty windows
+/// - none of those shapes (plans without a published quota) → Ready, empty windows
 pub fn grok_from_billing_json(
     bytes: &[u8],
     now: OffsetDateTime,
@@ -107,13 +116,23 @@ pub fn grok_from_billing_json(
         );
         (id, label, used)
     });
+    let product = || {
+        grok_product_used_percent(&doc).map(|used| {
+            let (id, label) = grok_window_identity(
+                doc.current_period
+                    .as_ref()
+                    .and_then(|p| p.period_type.as_deref()),
+            );
+            (id, label, used)
+        })
+    };
     let monthly = || {
         grok_monthly_used_percent(&doc).map(|used| {
             let id = "monthly";
             (id.to_owned(), format_plan_label(id), used)
         })
     };
-    if let Some((id, label, used_raw)) = credit.or_else(monthly) {
+    if let Some((id, label, used_raw)) = credit.or_else(product).or_else(monthly) {
         let used = used_raw.clamp(0.0, 100.0);
         let remaining = (100.0 - used).clamp(0.0, 100.0);
         let resets = grok_billing_resets_at(&doc);
@@ -154,6 +173,20 @@ fn parse_grok_billing_doc(bytes: &[u8]) -> Result<GrokBillingDoc, serde_json::Er
 }
 
 /// The live shape is `{"val": N}`; a bare number is tolerated.
+fn grok_product_used_percent(doc: &GrokBillingDoc) -> Option<f64> {
+    let mut best: Option<f64> = None;
+    for entry in &doc.product_usage {
+        let Some(used) = entry.usage_percent else {
+            continue;
+        };
+        if !used.is_finite() {
+            continue;
+        }
+        best = Some(best.map_or(used, |current| current.max(used)));
+    }
+    best
+}
+
 fn grok_monthly_used_percent(doc: &GrokBillingDoc) -> Option<f64> {
     let limit = grok_amount(doc.monthly_limit.as_ref()?)?;
     let used = grok_amount(doc.used.as_ref()?)?;
@@ -1086,6 +1119,55 @@ mod tests {
             ProviderResult::Ready { windows, .. } => {
                 assert_eq!(windows[0].id(), "weekly");
                 assert_eq!(windows[0].label(), "Weekly (7d)");
+            }
+            other => panic!("expected ready, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn grok_credit_percent_wins_over_product_usage() {
+        let json = br#"{"creditUsagePercent":40.0,"currentPeriod":{"type":"USAGE_PERIOD_TYPE_WEEKLY"},"productUsage":[{"usagePercent":7.0}]}"#;
+        let result = grok_from_billing_json(json, datetime!(2026-09-21 19:43:00 UTC), true);
+        match result {
+            ProviderResult::Ready { windows, .. } => {
+                assert_eq!(windows.len(), 1);
+                assert_eq!(windows[0].id(), "weekly");
+                assert!((windows[0].used_percent() - 40.0).abs() < 0.01);
+            }
+            other => panic!("expected ready, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn grok_product_usage_keeps_the_higher_percent() {
+        let json = br#"{"productUsage":[{"usagePercent":4.0},{"usagePercent":11.0}]}"#;
+        let result = grok_from_billing_json(json, datetime!(2026-09-21 19:43:00 UTC), true);
+        match result {
+            ProviderResult::Ready { windows, .. } => {
+                assert_eq!(windows.len(), 1, "{windows:?}");
+                assert_eq!(windows[0].id(), "weekly");
+                assert!((windows[0].used_percent() - 11.0).abs() < 0.01);
+                assert!((windows[0].remaining_percent() - 89.0).abs() < 0.01);
+            }
+            other => panic!("expected ready, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn grok_product_usage_percent_becomes_weekly_window() {
+        let json = br#"{"config":{"currentPeriod":{"type":"USAGE_PERIOD_TYPE_WEEKLY","end":"2026-09-25T21:10:59.543182Z"},"productUsage":[{"product":"GrokBuild","usagePercent":7.0}]}}"#;
+        let result = grok_from_billing_json(json, datetime!(2026-09-21 19:43:00 UTC), true);
+        match result {
+            ProviderResult::Ready { windows, .. } => {
+                assert_eq!(windows.len(), 1, "got {windows:?}");
+                assert_eq!(windows[0].id(), "weekly");
+                assert_eq!(windows[0].label(), "Weekly (7d)");
+                assert!((windows[0].used_percent() - 7.0).abs() < 0.01);
+                assert!((windows[0].remaining_percent() - 93.0).abs() < 0.01);
+                assert_eq!(
+                    windows[0].resets_at(),
+                    Some(datetime!(2026-09-25 21:10:59.543182 UTC))
+                );
             }
             other => panic!("expected ready, got {other:?}"),
         }
