@@ -366,6 +366,86 @@ TestCase {
     verify(body.indexOf("root.agentService.openMarketplacePage()") >= 0)
   }
 
+  function clickBody(src, id) {
+    var start = src.indexOf("id: " + id)
+    verify(start >= 0, id)
+    var onClicked = src.indexOf("onClicked:", start)
+    verify(onClicked >= 0, id + " onClicked")
+    var closeAt = src.indexOf("}", onClicked)
+    return src.substring(onClicked, closeAt)
+  }
+
+  function blockOf(src, id) {
+    var start = src.indexOf("id: " + id)
+    verify(start >= 0, id)
+    var next = src.indexOf("id: ", start + 4)
+    return src.substring(start, next < 0 ? src.length : next)
+  }
+
+  function test_maintenance_view_update_buttons_source_contract() {
+    var src = read("MaintenanceView.qml")
+    verify(clickBody(src, "updateButton").indexOf("root.agentService.openUpdateConfirm()") >= 0)
+    verify(clickBody(src, "restartButton").indexOf("root.agentService.restartShell()") >= 0)
+    verify(clickBody(src, "laterButton").indexOf("root.agentService.dismissPopup()") >= 0)
+    var update = blockOf(src, "updateButton")
+    verify(update.indexOf('"Update to " + ui.targetVersion') >= 0)
+    verify(update.indexOf("selected: true") >= 0)
+    verify(update.indexOf("Accessible.name:") >= 0)
+    verify(update.indexOf("enabled: root.canUpdate && !root.blocked") >= 0)
+    var restart = blockOf(src, "restartButton")
+    verify(restart.indexOf('text: "Restart shell"') >= 0)
+    verify(restart.indexOf("selected: true") >= 0)
+    verify(restart.indexOf('Accessible.name: "Restart shell"') >= 0)
+    var later = blockOf(src, "laterButton")
+    verify(later.indexOf('text: "Later"') >= 0)
+    verify(later.indexOf('Accessible.name: "Later"') >= 0)
+  }
+
+  function test_maintenance_view_update_phases_source_contract() {
+    var src = read("MaintenanceView.qml")
+    verify(src.indexOf("readonly property bool canUpdate: Core.maintenanceUiCanUpdate(ui)") >= 0)
+    verify(src.indexOf('readonly property bool updating: ui.phase === "updating"') >= 0)
+    verify(src.indexOf('readonly property bool restartRequired: ui.phase === "restart_required"') >= 0)
+    verify(src.indexOf('readonly property bool maintenanceBusy: ui.phase === "uninstalling" || root.updating') >= 0)
+    verify(src.indexOf('ui.phase === "error" || ui.phase === "update_failed"') >= 0)
+    var banner = blockOf(src, "restartBanner")
+    verify(banner.indexOf("visible: root.restartRequired") >= 0)
+    verify(banner.indexOf("Style.selectedFillFor(") >= 0)
+    verify(src.indexOf('"Or run this in a terminal:"') >= 0)
+    verify(src.indexOf("id: commandField") > src.indexOf("id: marketplaceButton"),
+           "the fallback command sits under the buttons")
+  }
+
+  function test_maintenance_view_update_dialog_source_contract() {
+    var src = read("MaintenanceView.qml")
+    var dialog = blockOf(src, "updateConfirmDialog")
+    verify(dialog.indexOf("opened: !!ui.updateConfirmOpen") >= 0)
+    verify(dialog.indexOf("title: root.updateConfirm.title") >= 0)
+    verify(dialog.indexOf("message: root.updateConfirm.message") >= 0)
+    verify(dialog.indexOf("confirmText: root.updateConfirm.confirmText") >= 0)
+    verify(dialog.indexOf("destructive: false") >= 0)
+    verify(dialog.indexOf("root.agentService.confirmUpdate()") >= 0)
+    verify(dialog.indexOf("root.agentService.closeUpdateConfirm()") >= 0)
+    verify(dialog.indexOf("Toggle") < 0, "one confirmation, no arming")
+    verify(src.indexOf("readonly property var updateConfirm: Core.updateConfirmModel(ui.targetVersion)") >= 0)
+  }
+
+  function test_maintenance_view_text_is_plain_and_buttons_are_named() {
+    var src = read("MaintenanceView.qml")
+    var texts = src.match(/\bText \{/g).length
+    var plain = src.match(/textFormat: Text\.PlainText/g).length
+    compare(plain, texts, "every Text renders plain")
+    var buttons = src.match(/\bButton \{/g).length
+    var named = src.match(/Accessible\.name:/g).length
+    verify(named >= buttons, "every button carries an accessible name")
+  }
+
+  function test_popup_opens_settings_on_about_while_an_update_holds() {
+    var src = read("Popup.qml")
+    verify(src.indexOf("Maintenance.maintenanceUiHoldsUpdate(agentService.maintenanceUi)") >= 0)
+    verify(src.indexOf('? "about" : "providers"') >= 0)
+  }
+
   function test_service_open_marketplace_page_source_contract() {
     var src = read("Service.qml")
     var start = src.indexOf("function openMarketplacePage()")
