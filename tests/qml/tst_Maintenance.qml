@@ -1,11 +1,13 @@
 import QtQuick
 import QtTest
 import "../../CoreMaintenance.js" as Core
+import "ViewHarness.js" as ViewHarness
 
 TestCase {
   id: testCase
   name: "AgentBarMaintenance"
   when: windowShown
+  visible: true
 
   property string repoRoot: {
     var u = Qt.resolvedUrl(".")
@@ -380,84 +382,97 @@ TestCase {
     verify(src.indexOf("Removes Agent Bar. Your settings stay.") >= 0)
   }
 
-  // The maintainer-blocked update path (marketplace maintainer issue #4979):
-  // the plugin only points the user at the marketplace page and the manual
-  // command now, mirroring how the release-notes and restart-shell buttons
-  // wire their source contract to a plain, testable Service call.
-  function test_maintenance_view_marketplace_button_source_contract() {
-    var src = read("MaintenanceView.qml")
-    var start = src.indexOf("id: marketplaceButton")
-    verify(start >= 0)
-    var onClicked = src.indexOf("onClicked:", start)
-    verify(onClicked >= 0)
-    var closeAt = src.indexOf("}", onClicked)
-    verify(closeAt > onClicked)
-    var body = src.substring(onClicked, closeAt)
-    verify(body.indexOf("root.agentService.openMarketplacePage()") >= 0)
+  function fakeService(ui) {
+    var svc = Qt.createQmlObject(
+      'import QtQuick; QtObject { property var maintenanceUi: null; '
+      + 'property var maintenanceState: ({ phase: "idle", blocked: false }) }', testCase)
+    svc.maintenanceUi = ui
+    return svc
   }
 
-  function clickBody(src, id) {
-    var start = src.indexOf("id: " + id)
-    verify(start >= 0, id)
-    var onClicked = src.indexOf("onClicked:", start)
-    verify(onClicked >= 0, id + " onClicked")
-    var closeAt = src.indexOf("}", onClicked)
-    return src.substring(onClicked, closeAt)
+  function viewState(view) {
+    function shown(texts) {
+      var found = ViewHarness.buttonsWithText(view, texts)
+      compare(found.length <= 1, true, texts.join("|"))
+      return found.length ? (found[0].visible ? (found[0].enabled ? "on" : "off") : "-") : "-"
+    }
+    var dialogs = ViewHarness.findAll(view, function (item) {
+      return item.confirmText !== undefined && String(item.title).indexOf("Update to ") === 0
+    })
+    return [
+      shown(["Update to 10.4.0", "Update to ", "Updating…"]),
+      shown(["Restart shell"]),
+      shown(["Later"]),
+      shown(["Check for updates", "Checking…"]),
+      dialogs.length === 1 && dialogs[0].visible ? "open" : "-"
+    ].join(" ")
   }
 
-  function blockOf(src, id) {
-    var start = src.indexOf("id: " + id)
-    verify(start >= 0, id)
-    var next = src.indexOf("id: ", start + 4)
-    return src.substring(start, next < 0 ? src.length : next)
+  function failedUi(result) {
+    return Core.maintenanceUiFromUpdateResult(Core.maintenanceUiUpdating(availableUi()), outcome(result, "10.3.1"))
   }
 
-  function test_maintenance_view_update_buttons_source_contract() {
-    var src = read("MaintenanceView.qml")
-    verify(clickBody(src, "updateButton").indexOf("root.agentService.openUpdateConfirm()") >= 0)
-    verify(clickBody(src, "restartButton").indexOf("root.agentService.restartShell()") >= 0)
-    verify(clickBody(src, "laterButton").indexOf("root.agentService.dismissPopup()") >= 0)
-    var update = blockOf(src, "updateButton")
-    verify(update.indexOf('"Update to " + ui.targetVersion') >= 0)
-    verify(update.indexOf("selected: true") >= 0)
-    verify(update.indexOf("Accessible.name:") >= 0)
-    verify(update.indexOf("enabled: root.canUpdate && !root.blocked") >= 0)
-    var restart = blockOf(src, "restartButton")
-    verify(restart.indexOf('text: "Restart shell"') >= 0)
-    verify(restart.indexOf("selected: true") >= 0)
-    verify(restart.indexOf('Accessible.name: "Restart shell"') >= 0)
-    var later = blockOf(src, "laterButton")
-    verify(later.indexOf('text: "Later"') >= 0)
-    verify(later.indexOf('Accessible.name: "Later"') >= 0)
+  // Columns: update, restart, later, check, update dialog.
+  function test_maintenance_view_buttons_per_phase() {
+    var idle = Core.maintenanceUiIdle("10.3.1")
+    var table = [
+      ["idle", idle, "- - - on -"],
+      ["checking", Core.maintenanceUiChecking(idle), "- - - off -"],
+      ["up_to_date", Core.maintenanceUiFromCheck(idle, checkFixture("up-to-date.json"), 0, "10.3.1"), "- - - on -"],
+      ["error", Core.maintenanceUiFromCheck(idle, "", 1, "10.3.1"), "- - - on -"],
+      ["update_available", availableUi(), "on - - - -"],
+      ["confirm", Core.maintenanceUiOpenUpdateConfirm(availableUi()), "on - - - open"],
+      ["updating", Core.maintenanceUiUpdating(availableUi()), "off - - - -"],
+      ["restart_required", failedUi("updated"), "- on on - -"],
+      ["fetch_failed", failedUi("fetch_failed"), "on - - on -"],
+      ["timed_out", failedUi("timed_out"), "on - - on -"],
+      ["locked", failedUi("locked"), "on - - on -"],
+      ["failed", failedUi("failed"), "on - - on -"],
+      ["local_changes", failedUi("local_changes"), "- - - on -"],
+      ["validation_failed", failedUi("validation_failed"), "- - - on -"],
+      ["failed at startup", Core.maintenanceUiFromUpdateResult(idle, outcome("failed", "10.3.1")), "- - - on -"]
+    ]
+    for (var i = 0; i < table.length; i++) {
+      var view = ViewHarness.createView(repoRoot, "MaintenanceView.qml", testCase, testCase,
+                                        { width: 480, agentService: fakeService(table[i][1]) })
+      compare(viewState(view), table[i][2], table[i][0])
+      view.destroy()
+    }
   }
 
-  function test_maintenance_view_update_phases_source_contract() {
-    var src = read("MaintenanceView.qml")
-    verify(src.indexOf("readonly property bool canUpdate: Core.maintenanceUiCanUpdate(ui)") >= 0)
-    verify(src.indexOf('readonly property bool updating: ui.phase === "updating"') >= 0)
-    verify(src.indexOf('readonly property bool restartRequired: ui.phase === "restart_required"') >= 0)
-    verify(src.indexOf('readonly property bool maintenanceBusy: ui.phase === "uninstalling" || root.updating') >= 0)
-    verify(src.indexOf('ui.phase === "error" || ui.phase === "update_failed"') >= 0)
-    var banner = blockOf(src, "restartBanner")
-    verify(banner.indexOf("visible: root.restartRequired") >= 0)
-    verify(banner.indexOf("Style.selectedFillFor(") >= 0)
-    verify(src.indexOf('"Or run this in a terminal:"') >= 0)
-    verify(src.indexOf("id: commandField") > src.indexOf("id: marketplaceButton"),
-           "the fallback command sits under the buttons")
-  }
-
-  function test_maintenance_view_update_dialog_source_contract() {
-    var src = read("MaintenanceView.qml")
-    var dialog = blockOf(src, "updateConfirmDialog")
-    verify(dialog.indexOf("opened: !!ui.updateConfirmOpen") >= 0)
-    verify(dialog.indexOf("title: root.updateConfirm.title") >= 0)
-    verify(dialog.indexOf("message: root.updateConfirm.message") >= 0)
-    verify(dialog.indexOf("confirmText: root.updateConfirm.confirmText") >= 0)
-    verify(dialog.indexOf("destructive: false") >= 0)
-    verify(dialog.indexOf("root.agentService.confirmUpdate()") >= 0)
-    verify(dialog.indexOf("root.agentService.closeUpdateConfirm()") >= 0)
-    verify(dialog.indexOf("Toggle") < 0, "one confirmation, no arming")
-    verify(src.indexOf("readonly property var updateConfirm: Core.updateConfirmModel(ui.targetVersion)") >= 0)
+  function test_maintenance_view_buttons_call_the_service() {
+    var svc = Qt.createQmlObject(
+      'import QtQuick; QtObject { property var maintenanceUi: null; '
+      + 'property var maintenanceState: ({ phase: "idle", blocked: false }); property var calls: []; '
+      + 'function note(n) { var c = calls.slice(); c.push(n); calls = c } '
+      + 'function openUpdateConfirm() { note("openUpdateConfirm") } '
+      + 'function restartShell() { note("restartShell") } '
+      + 'function dismissPopup() { note("dismissPopup") } '
+      + 'function checkForUpdates() { note("checkForUpdates") } '
+      + 'function openMarketplacePage() { note("openMarketplacePage") } '
+      + 'function confirmUpdate() { note("confirmUpdate") } '
+      + 'function closeUpdateConfirm() { note("closeUpdateConfirm") } }', testCase)
+    svc.maintenanceUi = Core.maintenanceUiOpenUpdateConfirm(failedUi("fetch_failed"))
+    var view = ViewHarness.createView(repoRoot, "MaintenanceView.qml", testCase, testCase,
+                                      { width: 480, agentService: svc })
+    ViewHarness.buttonsWithText(view, ["Update to 10.4.0"])[0].clicked()
+    ViewHarness.buttonsWithText(view, ["Check for updates"])[0].clicked()
+    ViewHarness.buttonsWithText(view, ["Marketplace page"])[0].clicked()
+    var dialog = ViewHarness.findAll(view, function (item) {
+      return item.confirmText !== undefined && String(item.title) === "Update to 10.4.0?"
+    })[0]
+    compare(dialog.message, "Omarchy fetches the release, validates it, and installs it. The bar keeps working until you restart the shell.")
+    compare(dialog.confirmText, "Update")
+    compare(dialog.destructive, false)
+    dialog.confirmed()
+    dialog.canceled()
+    svc.maintenanceUi = failedUi("updated")
+    ViewHarness.buttonsWithText(view, ["Restart shell"])[0].clicked()
+    ViewHarness.buttonsWithText(view, ["Later"])[0].clicked()
+    compare(JSON.stringify(svc.calls), JSON.stringify([
+      "openUpdateConfirm", "checkForUpdates", "openMarketplacePage",
+      "confirmUpdate", "closeUpdateConfirm", "restartShell", "dismissPopup"]))
+    view.destroy()
   }
 
   function test_maintenance_view_text_is_plain_and_buttons_are_named() {

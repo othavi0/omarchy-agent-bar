@@ -1,0 +1,7 @@
+singleton Color 1.0 Color.qml
+singleton Style 1.0 Style.qml
+singleton Util 1.0 Util.qml
+Button 1.0 Button.qml
+ConfirmDialog 1.0 ConfirmDialog.qml
+SectionHeader 1.0 SectionHeader.qml
+Toggle 1.0 Toggle.qml

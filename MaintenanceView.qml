@@ -26,6 +26,8 @@ Item {
   readonly property bool updating: ui.phase === "updating"
   readonly property bool restartRequired: ui.phase === "restart_required"
   readonly property bool updateFlow: root.canUpdate || root.updating || root.restartRequired
+  readonly property bool showsCheck: !root.updating && !root.restartRequired
+      && ui.phase !== "update_available"
   readonly property bool failed: ui.phase === "error" || ui.phase === "update_failed"
   readonly property bool notesAvailable: !!ui.releaseNotesUrl
       && String(ui.releaseNotesUrl).indexOf("https://") === 0
@@ -91,7 +93,7 @@ Item {
         }
 
         Button {
-          visible: !root.updateFlow
+          visible: root.showsCheck
           text: root.checking ? "Checking\u2026" : "Check for updates"
           bordered: true
           focusable: true
