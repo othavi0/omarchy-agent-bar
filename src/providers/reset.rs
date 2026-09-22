@@ -11,12 +11,14 @@ use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
 use super::adapter::{HttpClient, HttpError};
-use super::adapters::{parse_claude_credentials, probe_claude_version, CLAUDE_USAGE_URL};
+use super::adapters::{
+    probe_claude_version, read_claude_credentials, ClaudeRequestHeaders, CLAUDE_USAGE_URL,
+};
 use super::catalog::{
     discover, CollectionAvailability, Discovery, ExecutionEnvironment, LoginAvailability, CLAUDE,
 };
 use super::process::ProcessRunner;
-use super::v2_map::claude_from_usage_json;
+use super::v2_map::{claude_from_usage_json, claude_reset_clears};
 use crate::status::schema::{ProviderResult, UsageReset};
 use crate::support::{Clock, FileSystem};
 
@@ -107,18 +109,6 @@ struct ClaimResponse {
     cooldown_until: Option<String>,
 }
 
-/// Maps a claim response's `cleared` window ids the same way collection maps
-/// a grant's `clears`: `five_hour`/`seven_day` only, unknown keys dropped.
-fn map_cleared(raw: &[String]) -> Vec<String> {
-    raw.iter()
-        .filter_map(|key| match key.as_str() {
-            "five_hour" => Some("session".to_owned()),
-            "seven_day" => Some("weekly".to_owned()),
-            _ => None,
-        })
-        .collect()
-}
-
 /// `sha2` over clock nanoseconds, pid, and the reset id, stamped with the
 /// RFC 9562 version-4 and variant bits: a UUID v4 without a new crate.
 fn request_id_for(reset_id: &str, now_ns: i128, pid: u32) -> String {
@@ -175,17 +165,9 @@ pub async fn claim_claude_reset(ctx: &ResetContext<'_>, reset_id: &str) -> Reset
         login: LoginAvailability::Missing,
     });
 
-    let cred_path = ctx.env.home.join(".claude/.credentials.json");
-    let Ok(cred_bytes) = ctx.fs.read(&cred_path) else {
+    let Ok(creds) = read_claude_credentials(ctx.fs, &ctx.env.home, ctx.clock.now_utc()) else {
         return ResetReport::simple(ResetResult::Unauthenticated);
     };
-    let Some(creds) = parse_claude_credentials(&cred_bytes) else {
-        return ResetReport::simple(ResetResult::Unauthenticated);
-    };
-    let now_ms = ctx.clock.now_utc().unix_timestamp().saturating_mul(1000);
-    if creds.expires_at_ms.is_some_and(|exp| exp <= now_ms) {
-        return ResetReport::simple(ResetResult::Unauthenticated);
-    }
 
     // Without the organization uuid the claim URL cannot be built at all;
     // that only happens for a Claude Code install this command cannot use.
@@ -193,17 +175,9 @@ pub async fn claim_claude_reset(ctx: &ResetContext<'_>, reset_id: &str) -> Reset
         return ResetReport::simple(ResetResult::Unauthenticated);
     };
 
-    let bearer = format!("Bearer {}", creds.token);
     let version = probe_claude_version(ctx.process, &discovery).await;
-    let user_agent = version.map(|v| format!("claude-cli/{v} (external, cli)"));
-    let mut headers = vec![
-        ("Authorization", bearer.as_str()),
-        ("anthropic-beta", "oauth-2025-04-20"),
-    ];
-    if let Some(ua) = user_agent.as_deref() {
-        headers.push(("User-Agent", ua));
-        headers.push(("x-app", "cli"));
-    }
+    let request = ClaudeRequestHeaders::new(&creds, version.as_deref());
+    let headers = request.pairs();
 
     let usage = match ctx
         .http
@@ -297,7 +271,7 @@ pub async fn claim_claude_reset(ctx: &ResetContext<'_>, reset_id: &str) -> Reset
             .cooldown_until
             .as_deref()
             .and_then(|raw| OffsetDateTime::parse(raw, &Rfc3339).ok()),
-        clears: map_cleared(&claim.cleared),
+        clears: claude_reset_clears(&claim.cleared),
     }
 }
 

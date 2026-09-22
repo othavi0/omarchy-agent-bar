@@ -454,67 +454,40 @@ impl ProviderAdapter for ClaudeAdapter {
         discovery: &'a Discovery,
     ) -> BoxFuture<'a, ProviderResult> {
         Box::pin(async move {
-            let cred_path = context.env.home.join(".claude/.credentials.json");
-            let cred_bytes = match context.fs.read(&cred_path) {
-                Ok(b) => b,
-                Err(_) => {
-                    return unauthenticated(
-                        ProviderId::Claude,
-                        CLAUDE.display_name,
-                        "Claude is not authenticated.",
-                        login_available(discovery),
-                        CLAUDE.installation_url,
-                        false,
-                    );
-                }
-            };
-            let creds = match parse_claude_credentials(&cred_bytes) {
-                Some(v) => v,
-                None => {
-                    return unauthenticated(
-                        ProviderId::Claude,
-                        CLAUDE.display_name,
-                        "Claude is not authenticated.",
-                        login_available(discovery),
-                        CLAUDE.installation_url,
-                        false,
-                    );
-                }
-            };
-
-            // An expired session self-heals when Claude Code refreshes the
-            // token; report it as retryable so prior data is retained as stale.
-            let now_ms = context
-                .clock
-                .now_utc()
-                .unix_timestamp()
-                .saturating_mul(1000);
-            if creds.expires_at_ms.is_some_and(|exp| exp <= now_ms) {
-                return unauthenticated(
-                    ProviderId::Claude,
-                    CLAUDE.display_name,
-                    "Claude session expired. Open Claude Code to refresh it.",
-                    login_available(discovery),
-                    CLAUDE.installation_url,
-                    true,
-                );
-            }
-
-            let bearer = format!("Bearer {}", creds.token);
             let login = login_available(discovery);
-            // The reset blocks (cedar_ember/juniper_tide) appear only when the
-            // request identifies a Claude Code client; the usage windows do
-            // not depend on it, so a missing/unparsable version still collects.
+            let creds = match read_claude_credentials(
+                context.fs,
+                &context.env.home,
+                context.clock.now_utc(),
+            ) {
+                Ok(creds) => creds,
+                Err(ClaudeCredentialError::Missing) => {
+                    return unauthenticated(
+                        ProviderId::Claude,
+                        CLAUDE.display_name,
+                        "Claude is not authenticated.",
+                        login,
+                        CLAUDE.installation_url,
+                        false,
+                    );
+                }
+                // An expired session self-heals when Claude Code refreshes the
+                // token; report it as retryable so prior data is retained as stale.
+                Err(ClaudeCredentialError::Expired) => {
+                    return unauthenticated(
+                        ProviderId::Claude,
+                        CLAUDE.display_name,
+                        "Claude session expired. Open Claude Code to refresh it.",
+                        login,
+                        CLAUDE.installation_url,
+                        true,
+                    );
+                }
+            };
+
             let version = probe_claude_version(context.process, discovery).await;
-            let user_agent = version.map(|v| format!("claude-cli/{v} (external, cli)"));
-            let mut headers = vec![
-                ("Authorization", bearer.as_str()),
-                ("anthropic-beta", "oauth-2025-04-20"),
-            ];
-            if let Some(ua) = user_agent.as_deref() {
-                headers.push(("User-Agent", ua));
-                headers.push(("x-app", "cli"));
-            }
+            let request = ClaudeRequestHeaders::new(&creds, version.as_deref());
+            let headers = request.pairs();
             match super::retry::http_get_with_retry(
                 context.http,
                 &CLAUDE,
@@ -555,13 +528,66 @@ pub(crate) async fn probe_claude_version(
     Some(format!("{major}.{minor}.{patch}"))
 }
 
+pub(crate) enum ClaudeCredentialError {
+    Missing,
+    Expired,
+}
+
+/// Reads `$HOME/.claude/.credentials.json` and applies the expiry precheck
+/// shared by collection and the reset claim.
+pub(crate) fn read_claude_credentials(
+    fs: &dyn crate::support::FileSystem,
+    home: &std::path::Path,
+    now: time::OffsetDateTime,
+) -> Result<ClaudeCredentials, ClaudeCredentialError> {
+    let bytes = fs
+        .read(&home.join(".claude/.credentials.json"))
+        .map_err(|_| ClaudeCredentialError::Missing)?;
+    let creds = parse_claude_credentials(&bytes).ok_or(ClaudeCredentialError::Missing)?;
+    let now_ms = now.unix_timestamp().saturating_mul(1000);
+    if creds.expires_at_ms.is_some_and(|exp| exp <= now_ms) {
+        return Err(ClaudeCredentialError::Expired);
+    }
+    Ok(creds)
+}
+
+/// The headers every Claude API request carries. The reset blocks
+/// (cedar_ember/juniper_tide) appear only when the request identifies a
+/// Claude Code client, so `User-Agent`/`x-app` ride along only with a probed
+/// version; the usage windows do not depend on them.
+pub(crate) struct ClaudeRequestHeaders {
+    bearer: String,
+    user_agent: Option<String>,
+}
+
+impl ClaudeRequestHeaders {
+    pub(crate) fn new(creds: &ClaudeCredentials, version: Option<&str>) -> Self {
+        Self {
+            bearer: format!("Bearer {}", creds.token),
+            user_agent: version.map(|v| format!("claude-cli/{v} (external, cli)")),
+        }
+    }
+
+    pub(crate) fn pairs(&self) -> Vec<(&str, &str)> {
+        let mut headers = vec![
+            ("Authorization", self.bearer.as_str()),
+            ("anthropic-beta", "oauth-2025-04-20"),
+        ];
+        if let Some(ua) = self.user_agent.as_deref() {
+            headers.push(("User-Agent", ua));
+            headers.push(("x-app", "cli"));
+        }
+        headers
+    }
+}
+
 pub(crate) struct ClaudeCredentials {
     pub(crate) token: String,
     pub(crate) plan: Option<Plan>,
     pub(crate) expires_at_ms: Option<i64>,
 }
 
-pub(crate) fn parse_claude_credentials(bytes: &[u8]) -> Option<ClaudeCredentials> {
+fn parse_claude_credentials(bytes: &[u8]) -> Option<ClaudeCredentials> {
     let value: serde_json::Value = serde_json::from_slice(bytes).ok()?;
     let oauth = value.get("claudeAiOauth")?;
     let token = oauth.get("accessToken")?.as_str()?.to_owned();

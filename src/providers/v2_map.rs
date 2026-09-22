@@ -533,7 +533,7 @@ struct ClaudeJuniperTideRaw {
 /// Maps `five_hour`/`seven_day` to this provider's window vocabulary; any
 /// other key (a grant clearing an unmodeled window) is dropped, per the
 /// amendment's `clears` mapping.
-fn claude_reset_clears(raw: &[String]) -> Vec<String> {
+pub(crate) fn claude_reset_clears(raw: &[String]) -> Vec<String> {
     raw.iter()
         .filter_map(|key| match key.as_str() {
             "five_hour" => Some("session".to_owned()),
