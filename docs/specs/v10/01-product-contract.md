@@ -25,8 +25,9 @@ connection actions, update, and uninstall.
   in the plugin UI, and an update check that tells them when a release
   exists. Uninstall delegates its live mutation to the Omarchy CLI
   (`omarchy plugin remove othavi0.agent-bar`) since git-plugin-distribution
-  (2026-08-05). Since the 2026-09-14 amendment the plugin never installs an
-  update itself: the user runs `omarchy plugin update othavi0.agent-bar`.
+  (2026-08-05). Since the 2026-09-22 amendment the plugin installs an update
+  only after the user confirms `Update to <version>`, by running
+  `omarchy plugin update othavi0.agent-bar --yes` once in the foreground.
 - `PROD-008`: Expose typed, safe, partial provider failures without parsing
   human error strings in QML.
 - `PROD-009`: Treat keyboard navigation, scrolling, focus, themes, and absence

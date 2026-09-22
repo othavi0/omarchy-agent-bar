@@ -24,23 +24,20 @@ which delegates to it:
 omarchy plugin remove othavi0.agent-bar
 ```
 
-Update is a command you run yourself; the plugin only checks and tells you
-what to run:
+Update from the Settings About tab with `Update to <version>`, which runs
+`agent-bar update apply` after one confirmation, or from a terminal:
 
 ```bash
-GIT_PAGER=cat omarchy plugin update othavi0.agent-bar && omarchy-restart-shell
+omarchy plugin update othavi0.agent-bar --yes && omarchy-restart-shell
 ```
 
 `omarchy plugin update` fetches, fast-forwards, and re-validates the
 checkout; a failing validation rolls back automatically with
 `git reset --hard ORIG_HEAD`. It refuses a non-git plugin directory outright
 when targeted by ID, and silently skips one in a bulk `omarchy plugin
-update` run. The Settings About tab shows the command instead of a button
-that runs it: the Omarchy plugin marketplace requires a separately verified
-immutable target before any automatic update runs, and Omarchy 4.0.3 offers
-no way to name a commit or tag, so the plugin never invokes
-`omarchy plugin update` itself. See
-[docs/specs/v10/amendments/2026-09-14-remove-update-execution-design.md](../specs/v10/amendments/2026-09-14-remove-update-execution-design.md).
+update` run. The button installs whatever `master` holds at that moment
+and never runs on a schedule. See
+[docs/specs/v10/amendments/2026-09-22-update-apply-in-popup-design.md](../specs/v10/amendments/2026-09-22-update-apply-in-popup-design.md).
 
 Do not follow any of these commands with `omarchy bar plugin add`. That
 command can remove and recreate the bar entry, losing its section, index,

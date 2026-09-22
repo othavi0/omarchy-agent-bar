@@ -149,20 +149,26 @@ Detaching the unit lets the operation outlive the shell process that
 started it; there is no permanent daemon and no verified worker copy of the
 helper.
 
-Update has no equivalent delegation. `update check` fetches this
-repository's `bundle.json` receipt directly from `master` over HTTPS (the
-repository root is the plugin tree; see
+Update is not detached. `update check` fetches this repository's
+`bundle.json` receipt directly from `master` over HTTPS (the repository
+root is the plugin tree; see
 [ADR 0006](../adr/0006-single-repository-distribution.md)) and reports
 `reinstallRequired: true` when the live plugin root has no `.git`
 directory, so the UI can offer the one-time remove-then-add migration
-instead of a false "up to date". The plugin never runs `omarchy plugin
-update` itself: the Omarchy plugin marketplace requires a separately
-verified immutable target before any automatic update runs, and Omarchy
-4.0.3 offers no way to name a commit or tag
-(`docs/specs/v10/amendments/2026-09-14-remove-update-execution-design.md`).
-When a check finds a newer release, Settings shows the target version and
-the command the user runs themself. The only check that runs is the one
+instead of a false "up to date". The only check that runs is the one
 `Check for updates` starts; there is no background schedule.
+
+`update apply` runs only after the user confirms `Update to <version>` in
+the popup
+(`docs/specs/v10/amendments/2026-09-22-update-apply-in-popup-design.md`).
+It holds the maintenance gate exclusively, runs
+`omarchy plugin update othavi0.agent-bar --yes` as a foreground child with
+a 120 second timeout, compares the `bundle.json` version before and after,
+and prints one typed result. The plugin manager owns the fetch, the
+fast-forward, `omarchy-plugin-validate`, the rollback, and the plugin
+rescan. The helper never restarts the shell; the popup offers
+`Restart shell` when the result is `updated`. The plugin installs whatever
+`master` holds at that moment.
 
 All status/config mutations, plus the purge/preflight/handoff step above,
 hold the shared stable maintenance gate under XDG state. Maintenance holds

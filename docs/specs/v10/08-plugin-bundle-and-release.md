@@ -252,17 +252,21 @@ installer; installation is the native Omarchy plugin flow end to end.
 
 Amended by the 2026-09-14 update-execution removal:
 `docs/specs/v10/amendments/2026-09-14-remove-update-execution-design.md`.
-`update apply` is gone; the private command surface for update is now:
+Amended again by the 2026-09-22 in-popup update apply:
+`docs/specs/v10/amendments/2026-09-22-update-apply-in-popup-design.md`.
+`update apply` returns as a confirmed foreground command (`CLI-029`,
+`CLI-029A`, `CLI-029B`). The private command surface for update is now:
 
 ```text
 agent-bar update
 agent-bar update check
+agent-bar update apply
 ```
 
-- `BUNDLE-020` (amended 2026-09-14): Bare `update` has no interactive flow
-  and nothing to confirm, because there is no `update apply` left to run.
-  Bare `update` prints usage pointing at `update check` and at the
-  user-run `omarchy plugin update othavi0.agent-bar`, and exits `3`.
+- `BUNDLE-020` (amended 2026-09-22): Bare `update` has no interactive flow.
+  It prints usage naming `update check`, `update apply`, and the terminal
+  fallback `omarchy plugin update othavi0.agent-bar --yes &&
+  omarchy-restart-shell`, and exits `3`.
 - `BUNDLE-021`: `update check` returns a machine-readable document
   containing current version, latest compatible version, availability,
   release-notes URL, target, and `reinstallRequired`. It carries no
@@ -271,9 +275,9 @@ agent-bar update check
   (`docs/specs/v10/amendments/2026-09-15-live-quickshell-probe-design.md`):
   `current.quickshellVersion` is probed from the installed `qs --version`
   rather than assumed to equal the build's own minimum.
-- `BUNDLE-022`: **Retired**, removed by the 2026-09-14 amendment.
-  `update apply` no longer exists; the plugin never delegates to
-  `omarchy plugin update ... --yes` itself.
+- `BUNDLE-022`: **Retired**, removed by the 2026-09-14 amendment. The
+  2026-09-22 `update apply` is specified by `CLI-029`..`CLI-029B`, not by
+  this requirement.
 - `BUNDLE-023`: **Retired**, removed by the 2026-09-14 amendment. There is
   no apply state left for the Settings UI to trigger; check is the only
   state, and its result shows the version, the release notes link, the

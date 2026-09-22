@@ -80,31 +80,80 @@ recovery path.
 ```bash
 "$PLUGIN" update
 "$PLUGIN" update check
+"$PLUGIN" update apply
 ```
 
-- Bare `update` has no interactive flow and nothing to apply; it prints
-  usage pointing at `update check` and at the user-run
-  `omarchy plugin update othavi0.agent-bar`.
+- Bare `update` has no interactive flow. It prints usage that names
+  `update check`, `update apply`, and the terminal fallback command, then
+  exits `3`.
 - `update check` returns machine-readable compatibility metadata read from
   this repository's own `bundle.json` git receipt (the repository root is
   the plugin tree; see [ADR 0006](../adr/0006-single-repository-distribution.md)).
-  It never fetches, installs, or restarts the shell; it only reports what
+  It never fetches, installs, or restarts the shell. It only reports what
   is available.
-- There is no `update apply` or `update run`. The Omarchy plugin
-  marketplace requires a separately verified immutable target before any
-  automatic update runs, and Omarchy 4.0.3 offers no way to name a commit
-  or tag, so the plugin no longer runs `omarchy plugin update` on its own
-  (see [ADR 0006](../adr/0006-single-repository-distribution.md) and
-  [docs/specs/v10/amendments/2026-09-14-remove-update-execution-design.md](../specs/v10/amendments/2026-09-14-remove-update-execution-design.md)).
-  `update apply` and `update run` are grammar errors like any other unknown
-  argument.
+- `update apply` installs the release that `master` holds, through the
+  Omarchy plugin manager, after one confirmation (see
+  [docs/specs/v10/amendments/2026-09-22-update-apply-in-popup-design.md](../specs/v10/amendments/2026-09-22-update-apply-in-popup-design.md)).
+  It runs in the foreground and never on a schedule. `update run` is a
+  grammar error like any other unknown argument.
 
-When an update is available, the Settings About tab shows the target
-version, a `Release notes` link, a `Marketplace page` link, and the command
-to run in a terminal:
+`update apply` requires confirmation before it takes any lock or starts
+any process:
+
+- On a TTY, type the exact phrase `update agent-bar` at the prompt.
+- On non-TTY stdin, provide exactly one JSON confirmation document:
+
+  ```json
+  {
+    "schemaVersion": 1,
+    "operation": "update",
+    "confirmed": true,
+    "targetVersion": "10.7.0"
+  }
+  ```
+
+  `targetVersion` must be a `major.minor.patch` string and `confirmed`
+  must be `true`. Unknown fields and trailing bytes after the object are
+  rejected with exit `3`.
+
+After confirmation, the command takes the maintenance lock, reads the
+installed version from the plugin root's `bundle.json`, and runs
+`omarchy plugin update othavi0.agent-bar --yes` with a 120 second timeout.
+It prints one stdout JSON line:
+
+```json
+{
+  "schemaVersion": 1,
+  "operation": "update",
+  "result": "updated",
+  "installedVersion": "10.7.0",
+  "restartRequired": true
+}
+```
+
+| `result` | Meaning |
+| --- | --- |
+| `updated` | The plugin manager succeeded and the installed version changed. Restart the shell to load it. |
+| `up_to_date` | The plugin manager succeeded and the installed version did not change. |
+| `local_changes` | The plugin folder has local changes, so the fast-forward was refused. |
+| `fetch_failed` | The plugin manager could not fetch from GitHub. |
+| `validation_failed` | The new tree failed `omarchy-plugin-validate` and was rolled back. |
+| `timed_out` | The plugin manager did not finish within 120 seconds. |
+| `failed` | Any other outcome. |
+
+Every result exits `0`. `installedVersion` is the version on disk after
+the run, and `restartRequired` is `true` only for `updated`. The plugin
+manager's own output never reaches stdout, and stderr gets one line with
+the result name. Exit `3` means the confirmation was rejected, and exit
+`5` means `HOME`, `omarchy`, the maintenance lock, or the installed
+`bundle.json` was unavailable. The command never restarts the shell.
+
+When an update is available, the Settings About tab offers
+`Update to <version>`, which runs `update apply`, and also shows the
+command for a terminal:
 
 ```bash
-GIT_PAGER=cat omarchy plugin update othavi0.agent-bar && omarchy-restart-shell
+omarchy plugin update othavi0.agent-bar --yes && omarchy-restart-shell
 ```
 
 ## Uninstall

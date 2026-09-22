@@ -33,6 +33,7 @@ agent-bar config apply json <value>
 
 agent-bar update
 agent-bar update check
+agent-bar update apply
 agent-bar uninstall
 agent-bar uninstall purge
 
@@ -337,6 +338,15 @@ and the command the user runs themself:
 `omarchy plugin update othavi0.agent-bar && omarchy-restart-shell`. The
 plugin never fetches, installs, or restarts the shell on its own.
 
+Amended by the 2026-09-22 in-popup update apply:
+`docs/specs/v10/amendments/2026-09-22-update-apply-in-popup-design.md`.
+`update apply` returns as a foreground command that runs only after the
+user confirms in the popup or at a TTY. It runs the Omarchy plugin
+manager once and reports a typed result. `update run`, the transient
+unit, and the automatic shell restart stay removed. The terminal fallback
+command is now
+`omarchy plugin update othavi0.agent-bar --yes && omarchy-restart-shell`.
+
 - `CLI-024`: **Retired**, removed by the 2026-09-15 amendment. `doctor scan`
   no longer exists.
 - `CLI-025`: **Retired**, removed by the 2026-09-15 amendment. `doctor clean`
@@ -347,11 +357,32 @@ plugin never fetches, installs, or restarts the shell on its own.
   detached `omarchy plugin remove` handoff.
 - `CLI-028`: QML passes structured intentions; it never concatenates command
   strings.
-- `CLI-029`: **Retired**, removed by the 2026-09-14 amendment. `update apply`
-  no longer exists; `update apply` and `update run` are grammar errors like
-  any other unknown argument.
-- `CLI-029A`: **Retired**, removed by the 2026-09-14 amendment. `update run`
-  and its unit no longer exist.
+- `CLI-029`: `update apply` takes no argument. In a non-TTY it reads
+  exactly one JSON document from stdin, with optional surrounding
+  whitespace and nothing after it:
+  `{"schemaVersion":1,"operation":"update","confirmed":true,"targetVersion":"<version>"}`.
+  `targetVersion` is a non-empty `major.minor.patch` string. Unknown
+  fields and any other input exit `3` before any lock or process. In a TTY
+  it asks for the exact phrase `update agent-bar`. `update run` stays a
+  grammar error (2026-09-22 amendment).
+- `CLI-029A`: After confirmation, `update apply` takes the maintenance
+  lock, resolves `omarchy` to an absolute path (exit `5` when missing),
+  reads the installed tree version from the plugin root's `bundle.json`
+  (exit `5` when unreadable), and runs
+  `omarchy plugin update othavi0.agent-bar --yes` as a child with
+  `GIT_TERMINAL_PROMPT=0`, stdin closed, and a 120 second timeout. It then
+  reads the tree version again. It does not restart the shell, touch
+  settings or cache, or retry. The 2026-09-10 `update run` unit and its
+  `update-run.lock` gate remain retired.
+- `CLI-029B`: stdout is exactly one JSON object plus newline:
+  `{"schemaVersion":1,"operation":"update","result":"<result>","installedVersion":"<version>","restartRequired":<bool>}`.
+  `result` is `updated` (exit 0 and the tree version changed),
+  `up_to_date` (exit 0 and the version did not change), `local_changes`
+  (stderr contains `cannot fast-forward`), `fetch_failed` (`fetch failed`),
+  `validation_failed` (`failed validation`), `timed_out`, or `failed` (any
+  other outcome). `installedVersion` is the tree version on disk after the
+  run. `restartRequired` is true only for `updated`. Every result exits
+  `0`. Plugin-manager output never reaches stdout.
 - `CLI-030`: Uninstall never touches unrelated Omarchy plugins or layout
   entries.
 - `CLI-031`: Notification dispatch failure is reported on stderr, does not

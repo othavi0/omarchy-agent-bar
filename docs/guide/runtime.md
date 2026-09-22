@@ -61,11 +61,15 @@ exists.
 ```
 
 The service checks for a new release only when the user clicks `Check for
-updates` in the Settings About tab; there is no background schedule. It
-never installs anything or reloads the shell on its own; when a release is
-available, Settings shows the target version, a release-notes link, a
-marketplace-page link, and, on its own read-only line, the command to run
-in a terminal: `GIT_PAGER=cat omarchy plugin update othavi0.agent-bar && omarchy-restart-shell`.
+updates` in the Settings About tab; there is no background schedule. When a
+release is available, Settings shows the target version, an
+`Update to <version>` button, a release-notes link, a marketplace-page
+link, and, on its own read-only line, the command to run in a terminal:
+`omarchy plugin update othavi0.agent-bar --yes && omarchy-restart-shell`.
+The plugin installs code only after the user confirms that button. It then
+runs `update apply`, which calls `omarchy plugin update` once in the
+foreground. It never reloads the shell on its own; the user presses
+`Restart shell` when the update reports `updated`.
 
 There is no `updates` block in the product settings any more. A document
 written by 10.3.24 through 10.5.1 that still carries
