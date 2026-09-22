@@ -178,7 +178,11 @@ JSON line:
 `result` is one of `reset`, `already_used`, `not_limited`, `cooldown`,
 `ineligible`, `unavailable`, `unauthenticated`, `network_error`, or
 `provider_error`. Every one of them exits `0`, because they are typed data,
-not process failures. A reset id that fails validation exits `3`
+not process failures. `unavailable` means the claim cannot be made from this
+machine right now: the fresh usage response does not list the id as
+`claimable`, or `$HOME/.claude.json` has no valid
+`oauthAccount.organizationUuid`. Signing in again does not fix the second
+case. A reset id that fails validation exits `3`
 (`VALIDATION`) before any network request; a provider other than `claude` is
 a grammar error (exit `2`).
 

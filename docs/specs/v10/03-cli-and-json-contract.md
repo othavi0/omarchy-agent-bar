@@ -372,8 +372,11 @@ amendment landed.
   `JSON-022E` exits with `VALIDATION`.
 - `CLI-033`: The command reads the same credentials file as collection and
   applies the same expiry precheck. It reads the organization uuid from
-  `$HOME/.claude.json` at `oauthAccount.organizationUuid`. The uuid, the
-  token, and the request body never reach logs, cache, or stdout.
+  `$HOME/.claude.json` at `oauthAccount.organizationUuid` and accepts only
+  36 hex digits and hyphens. A missing file, a missing key, or any other
+  value returns `unavailable` before any request, because signing in again
+  does not create the key. The uuid, the token, and the request body never
+  reach logs, cache, or stdout.
 - `CLI-034`: The command fetches usage first, with the collection headers,
   and claims only a reset that the fresh response lists as `claimable`. An
   id that the fresh response does not list, or lists as not claimable,

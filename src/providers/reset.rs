@@ -161,8 +161,9 @@ fn request_id_for(reset_id: &str, now_ns: i128, pid: u32) -> String {
     )
 }
 
-/// Reads `oauthAccount.organizationUuid` from `$HOME/.claude.json`. Never
-/// logged, cached, or echoed back; used only to build the claim URL.
+/// Reads `oauthAccount.organizationUuid` from `$HOME/.claude.json`, accepting
+/// only 36 hex-or-hyphen characters since the value becomes a URL path
+/// segment. Never logged, cached, or echoed back.
 fn organization_uuid(fs: &dyn FileSystem, home: &Path) -> Option<String> {
     let bytes = fs.read(&home.join(".claude.json")).ok()?;
     let value: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
@@ -170,7 +171,7 @@ fn organization_uuid(fs: &dyn FileSystem, home: &Path) -> Option<String> {
         .get("oauthAccount")?
         .get("organizationUuid")?
         .as_str()
-        .filter(|s| !s.is_empty())
+        .filter(|s| s.len() == 36 && s.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-'))
         .map(str::to_owned)
 }
 
@@ -200,10 +201,10 @@ pub async fn claim_claude_reset(ctx: &ResetContext<'_>, reset_id: &str) -> Reset
         return ResetReport::simple(ResetResult::Unauthenticated);
     };
 
-    // Without the organization uuid the claim URL cannot be built at all;
-    // that only happens for a Claude Code install this command cannot use.
+    // Signing in again does not create the organization uuid, so its absence
+    // is `unavailable`, not `unauthenticated`.
     let Some(org_uuid) = organization_uuid(ctx.fs, &ctx.env.home) else {
-        return ResetReport::simple(ResetResult::Unauthenticated);
+        return ResetReport::simple(ResetResult::Unavailable);
     };
 
     let version = probe_claude_version(ctx.process, &discovery).await;
@@ -339,7 +340,8 @@ mod tests {
         );
         fs.files.insert(
             std::path::PathBuf::from("/home/u/.claude.json"),
-            br#"{"oauthAccount":{"organizationUuid":"org-123"}}"#.to_vec(),
+            br#"{"oauthAccount":{"organizationUuid":"0f8e6a52-3c1d-4b7a-9e2f-5d4c3b2a1908"}}"#
+                .to_vec(),
         );
         fs
     }
@@ -422,16 +424,57 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn missing_organization_uuid_is_unauthenticated_without_http() {
-        let mut fs = MapFileSystem::default();
-        fs.files.insert(
-            std::path::PathBuf::from("/home/u/.claude/.credentials.json"),
-            br#"{"claudeAiOauth":{"accessToken":"tok"}}"#.to_vec(),
-        );
+    async fn missing_or_malformed_organization_uuid_is_unavailable_without_http() {
+        for claude_json in [
+            None,
+            Some(&br#"{}"#[..]),
+            Some(br#"{"oauthAccount":{}}"#),
+            Some(br#"{"oauthAccount":{"organizationUuid":"org-123"}}"#),
+            Some(
+                br#"{"oauthAccount":{"organizationUuid":"../../../../../../../../../../../../x"}}"#,
+            ),
+            Some(
+                br#"{"oauthAccount":{"organizationUuid":"0f8e6a52-3c1d-4b7a-9e2f-5d4c3b2a19080"}}"#,
+            ),
+            Some(br#"{"oauthAccount":{"organizationUuid":42}}"#),
+            Some(b"not json"),
+        ] {
+            let mut fs = MapFileSystem::default();
+            fs.files.insert(
+                std::path::PathBuf::from("/home/u/.claude/.credentials.json"),
+                br#"{"claudeAiOauth":{"accessToken":"tok"}}"#.to_vec(),
+            );
+            if let Some(bytes) = claude_json {
+                fs.files.insert(
+                    std::path::PathBuf::from("/home/u/.claude.json"),
+                    bytes.to_vec(),
+                );
+            }
+            let env = test_env();
+            let clock = FixedClock(datetime!(2026-09-22 18:00:00 UTC));
+            let process = version_process("2.1.280");
+            let http = scripted_http(ok(CLAIMABLE_USAGE_BODY), ok(br#"{"result":"reset"}"#));
+            let ctx = ResetContext {
+                env: &env,
+                clock: &clock,
+                fs: &fs,
+                process: &process,
+                http: &http,
+            };
+            let report = claim_claude_reset(&ctx, "cedar-ember:g1").await;
+            let label = claude_json.map(String::from_utf8_lossy);
+            assert_eq!(report.result, ResetResult::Unavailable, "{label:?}");
+            assert!(http.last_url.lock().unwrap().is_none(), "{label:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn claim_url_carries_the_organization_uuid() {
+        let fs = creds_and_org_fs();
         let env = test_env();
         let clock = FixedClock(datetime!(2026-09-22 18:00:00 UTC));
         let process = version_process("2.1.280");
-        let http = scripted_http(ok(b"{}"), ok(b"{}"));
+        let http = scripted_http(ok(CLAIMABLE_USAGE_BODY), ok(br#"{"result":"reset"}"#));
         let ctx = ResetContext {
             env: &env,
             clock: &clock,
@@ -439,9 +482,11 @@ mod tests {
             process: &process,
             http: &http,
         };
-        let report = claim_claude_reset(&ctx, "juniper-tide").await;
-        assert_eq!(report.result, ResetResult::Unauthenticated);
-        assert!(http.last_url.lock().unwrap().is_none());
+        claim_claude_reset(&ctx, "cedar-ember:g1").await;
+        assert_eq!(
+            http.last_url.lock().unwrap().as_deref(),
+            Some("https://api.anthropic.com/api/organizations/0f8e6a52-3c1d-4b7a-9e2f-5d4c3b2a1908/reset_rate_limits")
+        );
     }
 
     #[tokio::test]
