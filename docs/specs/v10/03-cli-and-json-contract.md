@@ -5,6 +5,11 @@ Amended by the plugin-ID rename (2026-08-06):
 is `othavi0.agent-bar`; it read `agent-bar.usage` when this document was
 approved.
 
+Amended by the banked usage resets design (2026-09-22):
+`docs/specs/v10/amendments/2026-09-22-usage-resets-design.md`. `resets`
+replaces `rateLimitResetsAvailable` on every provider row, and the `reset`
+command claims a banked Claude usage reset.
+
 The bundled helper is not the normal user interface. Its command contract is
 still strict because QML, tests, recovery procedures, and migration depend on
 it.
@@ -30,6 +35,8 @@ agent-bar update
 agent-bar update check
 agent-bar uninstall
 agent-bar uninstall purge
+
+agent-bar reset claude <reset-id>
 
 agent-bar help
 agent-bar help <command>
@@ -181,10 +188,35 @@ provider_error
   arbitrary extras, or generic monetary facts. A window whose percentage was
   derived from a limit ratio carries only `usedPercent`/`remainingPercent`
   (PROD-019A).
-- `JSON-022C`: `rateLimitResetsAvailable`, when present, is a non-negative
-  integer count of provider-granted rate-limit resets. It is a quota-reset
-  count, not a monetary fact: it never carries balance, price, or currency,
-  and `JSON-022B` continues to ban those.
+- `JSON-022C`: **Withdrawn**, replaced by `JSON-022D` in the 2026-09-22
+  amendment. `rateLimitResetsAvailable` no longer exists in the schema.
+- `JSON-022D`: `resets` is a required array on every provider row. A row
+  without resets carries `[]`. Each entry is a `UsageReset`:
+
+  ```json
+  {
+    "id": "cedar-ember:opus55-launch-promax-20260921",
+    "label": "Claude Opus 5.5 launch",
+    "available": 1,
+    "total": 1,
+    "clears": ["session", "weekly"],
+    "expiresAt": "2026-10-22T16:00:00Z",
+    "refillsAt": null,
+    "cooldownUntil": null,
+    "claimable": true
+  }
+  ```
+
+  `available` and `total` count resets, not money; `JSON-022B` still bans
+  monetary fields.
+- `JSON-022E`: `label` passes the same sanitization as a dynamic model
+  label (plain text, control characters stripped, length capped at 64). The
+  grant id in `id` is lowercased and limited to `[a-z0-9-]`, at most 48
+  characters, behind one of the fixed prefixes/literals
+  `cedar-ember:<grant id>`, `juniper-tide`, or `codex-credits`.
+- `JSON-022F`: `claimable` is true only when the helper can claim that reset
+  through the `reset` command right now. Codex resets are never claimable
+  here; Codex owns that action.
 
 ### Structural and semantic validation
 
@@ -326,6 +358,57 @@ plugin never fetches, installs, or restarts the shell on its own.
   invalidate an otherwise valid status envelope, and does not persist a false
   deduplication success.
 
+## Reset command contract
+
+Amended by the banked usage resets design (2026-09-22):
+`docs/specs/v10/amendments/2026-09-22-usage-resets-design.md`. Numbered from
+`CLI-032` because `CLI-030`/`CLI-031` above were already assigned when this
+amendment landed.
+
+`agent-bar reset claude <reset-id>` claims one banked Claude usage reset.
+
+- `CLI-032`: The grammar accepts only `reset claude <reset-id>`. Any other
+  provider is a grammar error (`CLI-007`). A reset id that fails
+  `JSON-022E` exits with `VALIDATION`.
+- `CLI-033`: The command reads the same credentials file as collection and
+  applies the same expiry precheck. It reads the organization uuid from
+  `$HOME/.claude.json` at `oauthAccount.organizationUuid`. The uuid, the
+  token, and the request body never reach logs, cache, or stdout.
+- `CLI-034`: The command fetches usage first, with the collection headers,
+  and claims only a reset that the fresh response lists as `claimable`. An
+  id that the fresh response does not list, or lists as not claimable,
+  returns `unavailable` without a POST.
+- `CLI-035`: The claim is one `POST` to
+  `https://api.anthropic.com/api/organizations/<uuid>/reset_rate_limits`
+  with `Content-Type: application/json`, the collection headers, and a body
+  of `program` (`cedar_ember` or `juniper_tide`), `grant_id` for
+  `cedar_ember`, and a fresh `request_id` in UUID form. The POST follows
+  the GET discipline: HTTPS only, no redirects, body size cap, provider
+  timeout. The POST is never retried.
+- `CLI-036`: stdout is exactly one JSON object plus newline:
+
+  ```json
+  {
+    "schemaVersion": 1,
+    "operation": "reset",
+    "provider": "claude",
+    "resetId": "cedar-ember:opus55-launch-promax-20260921",
+    "result": "reset",
+    "resetsLeft": 0,
+    "cooldownUntil": null,
+    "clears": ["session", "weekly"]
+  }
+  ```
+
+  `result` is one of `reset`, `already_used`, `not_limited`, `cooldown`,
+  `ineligible`, `unavailable`, `unauthenticated`, `network_error`, or
+  `provider_error`. Every one of them exits `0`; they are typed data.
+  `resetsLeft` and `cooldownUntil` are null when the response does not
+  carry them. `clears` lists the window ids the response reports as
+  cleared, mapped as in collection.
+- `CLI-037`: The command does not touch the cache. The popup forces a
+  refresh of the provider after any result.
+
 Accepted help topics are exactly:
 
 ```text
@@ -334,6 +417,7 @@ login
 config
 update
 uninstall
+reset
 help
 version
 ```

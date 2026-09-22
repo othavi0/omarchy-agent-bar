@@ -150,6 +150,38 @@ handoff. Both forms print one stdout JSON line once the handoff is accepted:
 }
 ```
 
+## Reset
+
+```bash
+"$PLUGIN" reset claude <reset-id>
+```
+
+Claims one banked Claude usage reset (a `resets[].id` from `status`, such as
+`cedar-ember:opus55-launch-promax-20260921` or `juniper-tide`). The command
+fetches fresh usage first and claims the id only if that fresh response still
+lists it as `claimable`; it never retries the claim. stdout is exactly one
+JSON line:
+
+```json
+{
+  "schemaVersion": 1,
+  "operation": "reset",
+  "provider": "claude",
+  "resetId": "cedar-ember:opus55-launch-promax-20260921",
+  "result": "reset",
+  "resetsLeft": 0,
+  "cooldownUntil": null,
+  "clears": ["session", "weekly"]
+}
+```
+
+`result` is one of `reset`, `already_used`, `not_limited`, `cooldown`,
+`ineligible`, `unavailable`, `unauthenticated`, `network_error`, or
+`provider_error`. Every one of them exits `0`, because they are typed data,
+not process failures. A reset id that fails validation exits `3`
+(`VALIDATION`) before any network request; a provider other than `claude` is
+a grammar error (exit `2`).
+
 ## Help and version
 
 ```bash

@@ -103,7 +103,14 @@ provider's TTL instead.
 
 ## Provider data sources
 
-- Claude may use local credentials plus provider HTTP.
+- Claude may use local credentials plus provider HTTP. Before the usage
+  request the helper best-effort runs the discovered `claude --version`; a
+  parsed version adds `User-Agent: claude-cli/<version> (external, cli)` and
+  `x-app: cli` so the account's banked usage-reset grants (`cedar_ember`,
+  `juniper_tide`) are included in the response. Windows collect the same
+  either way. `agent-bar reset claude <reset-id>` claims one of those
+  grants; it reads the account's organization uuid from
+  `$HOME/.claude.json`, which is never logged, cached, or echoed back.
 - Codex uses the `codex app-server` JSON-RPC only. A Codex CLI older than
   the app-server subcommand reports a typed provider error instead.
 - Grok may use local auth for an authenticated billing HTTPS request. The

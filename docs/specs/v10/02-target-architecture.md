@@ -5,6 +5,10 @@ Amended by the plugin-ID rename (2026-08-06):
 is `othavi0.agent-bar`; it read `agent-bar.usage` when this document was
 approved.
 
+Amended by the banked usage resets design (2026-09-22):
+`docs/specs/v10/amendments/2026-09-22-usage-resets-design.md`. The Claude
+row below reflects the current collection URL and client-identity headers.
+
 ## System shape
 
 ```text
@@ -201,7 +205,7 @@ Locked collection policy:
 
 | ID | Source order | Normalized window IDs | TTL | Timeout | Retry |
 | --- | --- | --- | --- | --- | --- |
-| `claude` | `$HOME/.claude/.credentials.json`, then authenticated `GET https://api.anthropic.com/api/oauth/usage` | `session`, `weekly`, then provider-scoped `weekly-model:<sanitized-id>` | 300 s | 10 s | one network/timeout retry |
+| `claude` | `$HOME/.claude/.credentials.json`, then a resolved `claude --version` probe (best-effort; its result only gates the two client-identity headers below), then authenticated `GET https://api.anthropic.com/api/oauth/usage?at_wall=1&skip_spend=1` with `User-Agent: claude-cli/<version> (external, cli)` and `x-app: cli` added only when the version parsed | `session`, `weekly`, then provider-scoped `weekly-model:<sanitized-id>`; `cedar_ember`/`juniper_tide` map into `resets`, never `windows` | 300 s | 10 s | one network/timeout retry |
 | `codex` | resolved `codex app-server` JSON-RPC `rateLimits/read` | `session`, `weekly`, then `other:<duration-minutes>:<ordinal>` | 90 s | 10 s | one app-server timeout retry |
 | `grok` | `$GROK_HOME/auth.json` (when its `expires_at` is at most 60 s in the future and the `grok` executable was discovered, one argv-only `grok models` run with the catalog timeout, `NO_COLOR=1`, `TERM=dumb`, output ignored, then `auth.json` re-read; a token still expired is a retryable `unauthenticated` so the prior reading is retained as `stale`; a file the CLI cleared is a non-retryable `unauthenticated`; a torn document is retryable; a file that cannot be read is a non-retryable `provider_error`), then authenticated GET `https://cli-chat-proxy.grok.com/v1/billing?format=credits` (literal; headers Authorization Bearer + x-grok-client-mode); when that payload has no `creditUsagePercent`, the highest finite `productUsage[].usagePercent` becomes that same window, and otherwise one GET `https://cli-chat-proxy.grok.com/v1/billing` (same headers) whose `used / monthlyLimit` ratio becomes `monthly` (amounts discarded); its HTTP failures are the same typed results as the first request so stale retention applies, and a 2xx body without a ratio keeps the credits reading; a ready row that already has windows stays stale when a later ready row has none | `weekly` (credits) or `monthly` (limit ratio), or no windows when the plan publishes neither | 90 s | 10 s | one network/timeout retry per request |
 | `antigravity` | resolved `agy --version` (requires 1.1.11 or newer, because older builds send `/usage` to the model as a prompt) then `agy --print /usage --output-format json` with `NO_COLOR=1`, `TERM=dumb`; windows come from the `gemini-weekly`, `gemini-5h`, `3p-weekly`, and `3p-5h` bucket ids in that order, labelled with their family and duration (`Gemini · 7d`, `Claude/GPT · 5h`); a bucket with a remaining fraction of 1 or more carries no reset, because no window is running | `gemini-weekly`, `gemini-5h`, `3p-weekly`, `3p-5h` | 90 s | 10 s | none |
