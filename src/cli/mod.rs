@@ -426,7 +426,7 @@ struct ResetStdout<'a> {
 /// claim program are validated here, at exit VALIDATION, before any
 /// filesystem or network I/O; grammar already rejected a non-Claude provider.
 fn dispatch_reset(reset_id: String) -> Result<(), CliFailure> {
-    use crate::providers::catalog::ExecutionEnvironment;
+    use crate::providers::catalog::{ExecutionEnvironment, CLAUDE};
     use crate::providers::http::ReqwestHttpClient;
     use crate::providers::process::TokioProcessRunner;
     use crate::providers::{claim_claude_reset, ClaimTarget, ResetContext};
@@ -441,7 +441,7 @@ fn dispatch_reset(reset_id: String) -> Result<(), CliFailure> {
     }
 
     let env = ExecutionEnvironment::from_process();
-    let http = ReqwestHttpClient::new(std::time::Duration::from_secs(10))
+    let http = ReqwestHttpClient::new(CLAUDE.timeout)
         .map_err(|err| CliFailure::internal(err.to_string()))?;
     let process = TokioProcessRunner;
     let fs = RealFileSystem;
