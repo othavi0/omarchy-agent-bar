@@ -432,6 +432,74 @@ fn binary_help_names_both_update_subcommands() {
         .stdout(predicates::str::contains("update apply"));
 }
 
+fn tree_entries(root: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap().flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path.clone());
+            }
+            out.push(path);
+        }
+    }
+    out.sort();
+    out
+}
+
+#[test]
+fn binary_update_apply_rejects_bad_confirmation_before_any_side_effect() {
+    let good_shape =
+        r#"{"schemaVersion":1,"operation":"update","confirmed":true,"targetVersion":"10.7.0"}"#;
+    let cases: Vec<String> = vec![
+        String::new(),
+        "   \n".to_owned(),
+        "{not-json".to_owned(),
+        r#"{"schemaVersion":1,"operation":"update","confirmed":false,"targetVersion":"10.7.0"}"#
+            .to_owned(),
+        r#"{"schemaVersion":2,"operation":"update","confirmed":true,"targetVersion":"10.7.0"}"#
+            .to_owned(),
+        r#"{"schemaVersion":1,"operation":"uninstall","confirmed":true,"targetVersion":"10.7.0"}"#
+            .to_owned(),
+        r#"{"schemaVersion":1,"operation":"update","confirmed":true,"targetVersion":""}"#
+            .to_owned(),
+        r#"{"schemaVersion":1,"operation":"update","confirmed":true,"targetVersion":"10.7"}"#
+            .to_owned(),
+        r#"{"schemaVersion":1,"operation":"update","confirmed":true,"targetVersion":"10.7.0-rc1"}"#
+            .to_owned(),
+        r#"{"schemaVersion":1,"operation":"update","confirmed":true}"#.to_owned(),
+        r#"{"schemaVersion":1,"operation":"update","confirmed":true,"targetVersion":"10.7.0","extra":1}"#
+            .to_owned(),
+        format!("{good_shape}{good_shape}"),
+        format!("{good_shape}\n{{}}"),
+    ];
+    for input in cases {
+        let dir = tempdir().unwrap();
+        let home = dir.path().join("home");
+        std::fs::create_dir_all(&home).unwrap();
+        let empty_path = dir.path().join("empty-path");
+        std::fs::create_dir_all(&empty_path).unwrap();
+        CargoBin::cargo_bin("agent-bar")
+            .unwrap()
+            .args(["update", "apply"])
+            .env("HOME", &home)
+            .env_remove("XDG_STATE_HOME")
+            .env_remove("XDG_CACHE_HOME")
+            .env_remove("XDG_CONFIG_HOME")
+            .env("PATH", &empty_path)
+            .write_stdin(input.clone())
+            .assert()
+            .code(VALIDATION)
+            .stdout("");
+        assert!(
+            tree_entries(dir.path()) == vec![empty_path.clone(), home.clone()],
+            "input {input:?} left side effects: {:?}",
+            tree_entries(dir.path())
+        );
+    }
+}
+
 #[test]
 fn binary_interactive_update_rejects_non_tty() {
     let dir = tempdir().unwrap();

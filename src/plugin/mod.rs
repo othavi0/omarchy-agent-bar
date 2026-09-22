@@ -2,6 +2,7 @@ pub mod bundle;
 pub mod maintenance;
 pub mod omarchy;
 pub mod paths;
+pub mod update_apply;
 
 pub use bundle::{
     BundleBuilder, BundleError, BundleFileEntry, BundleReceipt, BundleValidator,
@@ -14,3 +15,4 @@ pub use maintenance::{
 };
 pub use omarchy::{CommandOutput, CommandRunner, OmarchyError, ProcessCommandRunner};
 pub use paths::{txid_from_bytes, validate_archive_entry_path, PathError, PluginPaths, PLUGIN_ID};
+pub use update_apply::{UpdateConfirmation, UPDATE_TTY_PHRASE, UPDATE_TTY_PROMPT};

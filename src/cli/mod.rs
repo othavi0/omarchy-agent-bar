@@ -135,31 +135,84 @@ where
     use crate::plugin::{UninstallConfirmation, UNINSTALL_TTY_PHRASE, UNINSTALL_TTY_PROMPT};
 
     if is_tty {
-        write!(stderr, "{UNINSTALL_TTY_PROMPT}")
-            .map_err(|err| CliFailure::internal(err.to_string()))?;
-        let _ = stderr.flush();
-        let mut line = String::new();
-        match stdin.read_line(&mut line) {
-            Ok(0) => Err(CliFailure::validation("uninstall confirmation aborted")),
-            Ok(_) => {
-                let trimmed = line.trim_end_matches(['\r', '\n']);
-                if trimmed == UNINSTALL_TTY_PHRASE {
-                    Ok(())
-                } else {
-                    Err(CliFailure::validation("uninstall confirmation rejected"))
-                }
-            }
-            Err(err) => Err(CliFailure::internal(err.to_string())),
-        }
+        confirm_tty_phrase(
+            "uninstall",
+            UNINSTALL_TTY_PROMPT,
+            UNINSTALL_TTY_PHRASE,
+            stdin,
+            stderr,
+        )
     } else {
-        let mut buf = Vec::new();
-        stdin
-            .read_to_end(&mut buf)
-            .map_err(|err| CliFailure::internal(err.to_string()))?;
+        let buf = read_all(stdin)?;
         UninstallConfirmation::parse_strict(&buf, purge)
             .map_err(|err| CliFailure::validation(err.to_string()))?;
         Ok(())
     }
+}
+
+/// `update apply` confirmation gate (CLI-029): the TTY phrase, or exactly one
+/// structured JSON document on stdin. Exit code 3 on any failure, before any
+/// lock or process.
+pub fn confirm_update<R, E>(is_tty: bool, stdin: &mut R, stderr: &mut E) -> Result<(), CliFailure>
+where
+    R: BufRead,
+    E: Write,
+{
+    use crate::plugin::{UpdateConfirmation, UPDATE_TTY_PHRASE, UPDATE_TTY_PROMPT};
+
+    if is_tty {
+        confirm_tty_phrase(
+            "update",
+            UPDATE_TTY_PROMPT,
+            UPDATE_TTY_PHRASE,
+            stdin,
+            stderr,
+        )
+    } else {
+        let buf = read_all(stdin)?;
+        UpdateConfirmation::parse_strict(&buf)
+            .map_err(|err| CliFailure::validation(err.to_string()))?;
+        Ok(())
+    }
+}
+
+fn confirm_tty_phrase<R, E>(
+    operation: &str,
+    prompt: &str,
+    phrase: &str,
+    stdin: &mut R,
+    stderr: &mut E,
+) -> Result<(), CliFailure>
+where
+    R: BufRead,
+    E: Write,
+{
+    write!(stderr, "{prompt}").map_err(|err| CliFailure::internal(err.to_string()))?;
+    let _ = stderr.flush();
+    let mut line = String::new();
+    match stdin.read_line(&mut line) {
+        Ok(0) => Err(CliFailure::validation(format!(
+            "{operation} confirmation aborted"
+        ))),
+        Ok(_) => {
+            if line.trim_end_matches(['\r', '\n']) == phrase {
+                Ok(())
+            } else {
+                Err(CliFailure::validation(format!(
+                    "{operation} confirmation rejected"
+                )))
+            }
+        }
+        Err(err) => Err(CliFailure::internal(err.to_string())),
+    }
+}
+
+fn read_all<R: BufRead>(stdin: &mut R) -> Result<Vec<u8>, CliFailure> {
+    let mut buf = Vec::new();
+    stdin
+        .read_to_end(&mut buf)
+        .map_err(|err| CliFailure::internal(err.to_string()))?;
+    Ok(buf)
 }
 
 #[derive(Serialize)]
@@ -314,6 +367,12 @@ pub const UPDATE_COMMAND: &str =
     "omarchy plugin update othavi0.agent-bar --yes && omarchy-restart-shell";
 
 fn dispatch_update_apply() -> Result<(), CliFailure> {
+    let is_tty = io::stdin().is_terminal();
+    let stdin = io::stdin();
+    let mut locked_in = stdin.lock();
+    let stderr = io::stderr();
+    let mut locked_err = stderr.lock();
+    confirm_update(is_tty, &mut locked_in, &mut locked_err)?;
     Err(CliFailure::internal("update apply is not implemented yet"))
 }
 
@@ -577,6 +636,34 @@ mod tests {
 
         let mut stdin = Cursor::new(Vec::new());
         let err = confirm_uninstall(true, true, &mut stdin, &mut stderr).unwrap_err();
+        assert_eq!(err.exit_code, VALIDATION);
+    }
+
+    #[test]
+    fn update_tty_accepts_exact_phrase_only() {
+        let mut stdin = Cursor::new(b"update agent-bar\n".as_slice());
+        let mut stderr = Vec::new();
+        confirm_update(true, &mut stdin, &mut stderr).unwrap();
+        assert_eq!(
+            String::from_utf8_lossy(&stderr),
+            "Type update agent-bar to continue:"
+        );
+
+        for input in [b"update\n".as_slice(), b"uninstall agent-bar\n", b""] {
+            let mut stdin = Cursor::new(input);
+            let err = confirm_update(true, &mut stdin, &mut Vec::new()).unwrap_err();
+            assert_eq!(err.exit_code, VALIDATION, "{input:?}");
+        }
+    }
+
+    #[test]
+    fn update_json_confirmation_accepts_the_contract_document() {
+        let good = br#"{"schemaVersion":1,"operation":"update","confirmed":true,"targetVersion":"10.7.0"}"#;
+        let mut stdin = Cursor::new(good.as_slice());
+        confirm_update(false, &mut stdin, &mut Vec::new()).unwrap();
+
+        let mut stdin = Cursor::new(b"update agent-bar\n".as_slice());
+        let err = confirm_update(false, &mut stdin, &mut Vec::new()).unwrap_err();
         assert_eq!(err.exit_code, VALIDATION);
     }
 
