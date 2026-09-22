@@ -192,7 +192,11 @@ already assigned in `03-cli-and-json-contract.md`.
   reset.`, `On cooldown until <time>.`, `Reset not available right now.`
   (for `ineligible` and `unavailable`), `Sign in to Claude again.`,
   `Network error. Try again.`, and `Claude did not accept the reset.`
-  After any result the service forces a refresh of the provider.
+  A helper run that times out or exits without output renders `Could not
+  confirm the reset. Refreshing.`, because the POST may have completed.
+  The refresh the service forces after a result does not clear the
+  caption; the next successful refresh or the popup close does. After any
+  result the service forces a refresh of the provider.
 - `UX-074`: The bar chip, the rail, and the notifications do not change.
 
 ## Consequences
