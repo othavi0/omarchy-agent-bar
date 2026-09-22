@@ -42,6 +42,7 @@ function placeholderProvider(id) {
     source: null,
     plan: null,
     windows: [],
+    resets: [],
     lastSuccessAt: null,
     error: null,
     action: null
@@ -646,14 +647,174 @@ function windowLayout(provider, metric, nowMs) {
   return layout
 }
 
-function rateLimitResetsText(provider) {
-  if (!provider)
+function resetsOf(provider) {
+  if (!provider || !Kernel.isArrayLike(provider.resets))
+    return []
+  var out = []
+  for (var i = 0; i < provider.resets.length; i++) {
+    if (provider.resets[i])
+      out.push(provider.resets[i])
+  }
+  return out
+}
+
+// "Session (5h)" -> "session"; falls back to a humanized window id when the
+// provider carries no matching window (e.g. a stale clears list).
+function clearWord(provider, windowId) {
+  if (provider && Kernel.isArrayLike(provider.windows)) {
+    for (var i = 0; i < provider.windows.length; i++) {
+      var w = provider.windows[i]
+      if (w && String(w.id) === String(windowId)) {
+        var label = plainText(w.label || w.id)
+        return label.replace(/\s*\([^)]*\)\s*$/, "").trim().toLowerCase()
+      }
+    }
+  }
+  return String(windowId || "").replace(/[-_:]+/g, " ").trim().toLowerCase()
+}
+
+function joinWords(words) {
+  if (!words.length)
     return ""
-  var n = Number(provider.rateLimitResetsAvailable)
-  if (!isFinite(n) || n <= 0)
+  if (words.length === 1)
+    return words[0]
+  if (words.length === 2)
+    return words[0] + " and " + words[1]
+  return words.slice(0, -1).join(", ") + ", and " + words[words.length - 1]
+}
+
+function resetClearsText(provider, clears) {
+  var list = Kernel.isArrayLike(clears) ? clears : []
+  var words = []
+  for (var i = 0; i < list.length; i++)
+    words.push(clearWord(provider, list[i]))
+  return joinWords(words)
+}
+
+function resetCountText(available, total) {
+  var avail = Number(available)
+  var a = isFinite(avail) ? Math.max(0, Math.floor(avail)) : 0
+  if (total === null || total === undefined)
+    return String(a)
+  var t = Number(total)
+  return a + "/" + (isFinite(t) ? Math.max(0, Math.floor(t)) : 0)
+}
+
+function resetDateText(reset, nowMs, localeShortFormat) {
+  var fmt = String(localeShortFormat || "")
+  if (reset.expiresAt) {
+    var ms = parseIsoMs(reset.expiresAt)
+    if (isFinite(ms) && fmt.length)
+      return "until " + Qt.formatDate(new Date(ms), fmt)
+  }
+  if (reset.refillsAt) {
+    var rms = parseIsoMs(reset.refillsAt)
+    if (isFinite(rms) && fmt.length)
+      return "next " + Qt.formatDate(new Date(rms), fmt)
+  }
+  if (reset.cooldownUntil) {
+    var cms = parseIsoMs(reset.cooldownUntil)
+    if (isFinite(cms) && fmt.length)
+      return "cooldown " + Qt.formatTime(new Date(cms), fmt)
+  }
+  return ""
+}
+
+function resetCountAccessible(available, total) {
+  var avail = Number(available)
+  var a = isFinite(avail) ? Math.max(0, Math.floor(avail)) : 0
+  if (total === null || total === undefined)
+    return a + " available"
+  var t = Number(total)
+  return a + " of " + (isFinite(t) ? Math.max(0, Math.floor(t)) : 0)
+}
+
+function resetRows(provider, nowMs, localeShortFormat) {
+  var resets = resetsOf(provider)
+  var out = []
+  for (var i = 0; i < resets.length; i++) {
+    var r = resets[i]
+    var label = plainText(r.label || "")
+    var clearsText = resetClearsText(provider, r.clears)
+    var countText = resetCountText(r.available, r.total)
+    var dateText = resetDateText(r, nowMs, localeShortFormat)
+    var accessibleParts = [label, resetCountAccessible(r.available, r.total)]
+    if (dateText.length)
+      accessibleParts.push(dateText)
+    out.push({
+      id: String(r.id || ""),
+      label: label,
+      clearsText: clearsText,
+      countText: countText,
+      dateText: dateText,
+      claimable: !!r.claimable,
+      accessibleName: accessibleParts.join(", ")
+    })
+  }
+  return out
+}
+
+function resetsSummary(provider) {
+  var resets = resetsOf(provider)
+  var availableTotal = 0
+  var claimableId = null
+  for (var i = 0; i < resets.length; i++) {
+    var r = resets[i]
+    var n = Number(r.available)
+    if (isFinite(n))
+      availableTotal += Math.max(0, n)
+    if (claimableId === null && r.claimable)
+      claimableId = String(r.id || "")
+  }
+  return {
+    visible: resets.length > 0,
+    availableTotal: Math.floor(availableTotal),
+    claimableId: claimableId
+  }
+}
+
+var RESET_OUTCOME_TEXT = {
+  "reset": "Reset applied.",
+  "already_used": "This reset was already used.",
+  "not_limited": "Not at the limit, nothing to reset.",
+  "ineligible": "Reset not available right now.",
+  "unavailable": "Reset not available right now.",
+  "unauthenticated": "Sign in to Claude again.",
+  "network_error": "Network error. Try again.",
+  "provider_error": "Claude did not accept the reset."
+}
+
+function resetOutcomeText(outcome, localeShortFormat) {
+  if (!outcome)
     return ""
-  n = Math.floor(n)
-  return "↻ " + n + " rate-limit reset" + (n === 1 ? "" : "s") + " available"
+  var result = String(outcome.result || "")
+  if (result === "cooldown") {
+    var fmt = String(localeShortFormat || "")
+    var ms = parseIsoMs(outcome.cooldownUntil)
+    if (isFinite(ms) && fmt.length)
+      return "On cooldown until " + Qt.formatTime(new Date(ms), fmt) + "."
+    return "Reset not available right now."
+  }
+  return RESET_OUTCOME_TEXT[result] || "Claude did not accept the reset."
+}
+
+function resetConfirmModel(provider, row) {
+  var name = plainText(provider ? (provider.name || providerDisplayName(provider.id)) : "")
+  var label = row && row.label ? String(row.label) : ""
+  var count = row && row.countText ? String(row.countText) : ""
+  var clears = row && row.clearsText ? String(row.clearsText) : ""
+  var message = name.length ? name + ": " : ""
+  message += label
+  if (count.length)
+    message += " (" + count + ")"
+  message += "."
+  if (clears.length)
+    message += " Clears " + clears + "."
+  return {
+    title: "Use reset?",
+    message: message,
+    confirmText: "Use reset"
+  }
 }
 
 function headerModel(provider, refreshing) {
