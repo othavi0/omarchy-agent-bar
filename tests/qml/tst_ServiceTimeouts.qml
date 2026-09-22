@@ -910,6 +910,93 @@ TestCase {
     verify(src.indexOf("property int updateTimeoutMs: 30000") >= 0)
   }
 
+  function serviceAtStartup() {
+    service = Harness.createService(serviceUrl, testCase, testCase, null)
+    return service
+  }
+
+  function test_startup_reads_update_status_once_before_collecting() {
+    var s = serviceAtStartup()
+    compare(s.lanes.update.busy, true)
+    compare(JSON.stringify(s.lanes.update.process.command), '["/nonexistent","update","status"]')
+    compare(s.lanes.status.busy, false)
+    finishLane(s, "update", 0, noneDoc)
+    compare(s.maintenanceUi.phase, "idle")
+    compare(s.updateRunning, false)
+    compare(s.restartPending, false)
+    s.beginCollection()
+    compare(s.lanes.status.busy, true)
+    compare(s.lanes.update.busy, false)
+  }
+
+  function test_startup_running_then_finished_updated_asks_for_the_restart() {
+    var s = serviceAtStartup()
+    finishLane(s, "update", 0, runningDoc)
+    compare(s.maintenanceUi.phase, "updating")
+    compare(s.maintenanceUi.targetVersion, "10.3.18")
+    compare(s.updateRunning, true)
+    s.pollUpdateStatus()
+    compare(JSON.stringify(s.lanes.update.process.command), '["/nonexistent","update","status"]')
+    finishLane(s, "update", 0, finishedDoc("updated", "10.3.18"))
+    compare(s.maintenanceUi.phase, "restart_required")
+    compare(s.maintenanceUi.message, "10.3.18 installed. Restart the shell to load it.")
+    compare(s.restartPending, true)
+    compare(s.pendingVersion, "10.3.18")
+    compare(s.updateRunning, false)
+  }
+
+  function test_startup_finished_updated_asks_for_the_restart() {
+    var s = serviceAtStartup()
+    finishLane(s, "update", 0, finishedDoc("updated", "10.3.18"))
+    compare(s.maintenanceUi.phase, "restart_required")
+    compare(s.restartPending, true)
+    compare(s.pendingVersion, "10.3.18")
+  }
+
+  function test_startup_finished_failure_renders_its_line() {
+    var s = serviceAtStartup()
+    finishLane(s, "update", 0, finishedDoc("locked", "10.3.17"))
+    compare(s.maintenanceUi.phase, "update_failed")
+    compare(s.maintenanceUi.message, "Another maintenance task is running. Try again in a minute.")
+    compare(s.restartPending, false)
+    compare(s.updateRunning, false)
+  }
+
+  function test_startup_unreadable_status_does_nothing() {
+    var s = serviceAtStartup()
+    finishLane(s, "update", 1, "")
+    compare(s.maintenanceUi.phase, "idle")
+    compare(s.updateRunning, false)
+  }
+
+  function test_later_keeps_the_restart_flag_and_restart_shell_clears_it() {
+    var s = runUpdateToStatus(finishedDoc("updated", "10.3.18"))
+    s.openSettings("mon-a")
+    s.dismissPopup()
+    compare(s.popupOwner, null)
+    compare(s.restartPending, true)
+    compare(s.pendingVersion, "10.3.18")
+    compare(s.maintenanceUi.phase, "restart_required")
+    var before = s.restartShellRequestCount
+    s.restartShell()
+    compare(s.restartShellRequestCount, before + 1)
+    compare(JSON.stringify(s.lastRestartShellArgv), '["omarchy-restart-shell"]')
+    compare(s.restartPending, false)
+    compare(s.pendingVersion, "")
+  }
+
+  function test_uninstall_is_refused_while_an_update_runs() {
+    var s = startUpdate()
+    s.openUninstallConfirm()
+    compare(s.maintenanceUi.uninstallConfirmOpen, false)
+    compare(s.armOrConfirmUninstall(), false)
+    compare(s.lanes.maintenanceHandoff.busy, false)
+    compare(s.maintenanceUi.phase, "updating")
+    finishLane(s, "update", 0, startedDoc)
+    s.openUninstallConfirm()
+    compare(s.maintenanceUi.uninstallConfirmOpen, false, "polling still counts as running")
+  }
+
   function test_closing_and_reopening_during_the_update_keeps_the_phase() {
     var s = startUpdate()
     compare(s.updateRunning, true)

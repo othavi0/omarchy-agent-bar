@@ -99,7 +99,7 @@ TestCase {
     var done = Core.updateStatusFromLane(lane(finishedDoc("updated", "10.6.2")))
     compare(done.status, "finished")
     compare(JSON.stringify(done.outcome), '{"result":"updated","installedVersion":"10.6.2","restartRequired":true}')
-    var kinds = ["up_to_date", "local_changes", "fetch_failed", "validation_failed", "timed_out", "failed"]
+    var kinds = ["up_to_date", "local_changes", "fetch_failed", "validation_failed", "timed_out", "locked", "failed"]
     for (var i = 0; i < kinds.length; i++) {
       var o = Core.updateStatusFromLane(lane(finishedDoc(kinds[i], "10.6.1"))).outcome
       compare(o.result, kinds[i])
@@ -126,6 +126,7 @@ TestCase {
     compare(msg("fetch_failed"), "Could not reach GitHub. Try again.")
     compare(msg("validation_failed"), "The update failed validation and was rolled back. You are still on 10.6.1.")
     compare(msg("timed_out"), "The update timed out. You are still on 10.6.1.")
+    compare(msg("locked"), "Another maintenance task is running. Try again in a minute.")
     compare(msg("failed"), "The update did not finish. You are still on 10.6.1.")
     compare(msg("validation_failed", "10.6.0"), "The update failed validation and was rolled back. You are still on 10.6.0.")
   }
@@ -191,6 +192,32 @@ TestCase {
     compare(Core.maintenanceUiOpenUpdateConfirm(done).updateConfirmOpen, true)
     var failed = Core.maintenanceUiFromUpdateResult(ui, Core.failedUpdateOutcome())
     compare(failed.message, "The update did not finish. You are still on 10.3.1.")
+  }
+
+  function test_a_failure_offers_the_update_again_only_when_retrying_can_help() {
+    var retry = ["fetch_failed", "timed_out", "locked", "failed"]
+    for (var i = 0; i < retry.length; i++) {
+      var ui = Core.maintenanceUiFromUpdateResult(Core.maintenanceUiUpdating(availableUi()), outcome(retry[i], "10.3.1"))
+      compare(ui.phase, "update_failed", retry[i])
+      compare(Core.maintenanceUiCanUpdate(ui), true, retry[i])
+    }
+    var stuck = ["local_changes", "validation_failed"]
+    for (var j = 0; j < stuck.length; j++) {
+      var held = Core.maintenanceUiFromUpdateResult(Core.maintenanceUiUpdating(availableUi()), outcome(stuck[j], "10.3.1"))
+      compare(held.phase, "update_failed", stuck[j])
+      compare(Core.maintenanceUiCanUpdate(held), false, stuck[j])
+      compare(Core.maintenanceUiOpenUpdateConfirm(held).updateConfirmOpen, false, stuck[j])
+      var rechecked = Core.maintenanceUiFromCheck(held, checkFixture("available.json"), 0, "10.3.1")
+      compare(Core.maintenanceUiCanUpdate(rechecked), true, "the next check offers it again")
+    }
+  }
+
+  function test_a_run_seen_at_startup_enters_updating_with_its_target() {
+    var ui = Core.maintenanceUiUpdating(Core.maintenanceUiIdle("10.3.1"), "10.4.0")
+    compare(ui.phase, "updating")
+    compare(ui.targetVersion, "10.4.0")
+    compare(ui.message, "Updating\u2026 this takes a few seconds.")
+    compare(Core.maintenanceUiUpdating(availableUi(), "").targetVersion, "10.4.0")
   }
 
   function test_uninstall_confirmation_json() {

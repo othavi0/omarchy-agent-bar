@@ -86,8 +86,11 @@ var UPDATE_RESULT_MESSAGES = {
     return "The update failed validation and was rolled back. You are still on " + v + "."
   },
   timed_out: function (v) { return "The update timed out. You are still on " + v + "." },
+  locked: function (v) { return "Another maintenance task is running. Try again in a minute." },
   failed: function (v) { return "The update did not finish. You are still on " + v + "." }
 }
+
+var UPDATE_RETRYABLE_RESULTS = { fetch_failed: true, timed_out: true, locked: true, failed: true }
 
 function failedUpdateOutcome() {
   return { result: "failed", installedVersion: "", restartRequired: false }
@@ -174,6 +177,7 @@ function maintenanceUiIdle(installedVersion) {
     purgeSettings: false,
     uninstallArmed: false,
     message: "",
+    updateResult: "",
     uninstallConfirmOpen: false,
     updateConfirmOpen: false
   }
@@ -196,6 +200,7 @@ function cloneMaintenanceUi(ui) {
     purgeSettings: !!(ui && ui.purgeSettings),
     uninstallArmed: !!(ui && ui.uninstallArmed),
     message: ui && ui.message ? String(ui.message) : "",
+    updateResult: ui && ui.updateResult ? String(ui.updateResult) : "",
     uninstallConfirmOpen: !!(ui && ui.uninstallConfirmOpen),
     updateConfirmOpen: !!(ui && ui.updateConfirmOpen)
   }
@@ -203,6 +208,7 @@ function cloneMaintenanceUi(ui) {
 
 function maintenanceUiFromCheck(ui, stdout, exitCode, fallbackVersion) {
   var next = cloneMaintenanceUi(ui)
+  next.updateResult = ""
   if (exitCode === 0) {
     try {
       var doc = JSON.parse(String(stdout || ""))
@@ -248,8 +254,11 @@ function maintenanceUiFromCheck(ui, stdout, exitCode, fallbackVersion) {
 }
 
 function maintenanceUiCanUpdate(ui) {
-  return !!ui && (ui.phase === "update_available" || ui.phase === "update_failed")
-      && !!ui.targetVersion && String(ui.targetVersion).length > 0
+  if (!ui || !ui.targetVersion || !String(ui.targetVersion).length)
+    return false
+  if (ui.phase === "update_available")
+    return true
+  return ui.phase === "update_failed" && UPDATE_RETRYABLE_RESULTS.hasOwnProperty(ui.updateResult)
 }
 
 function maintenanceUiOpenUpdateConfirm(ui) {
@@ -264,8 +273,10 @@ function maintenanceUiCloseUpdateConfirm(ui) {
   return next
 }
 
-function maintenanceUiUpdating(ui) {
+function maintenanceUiUpdating(ui, targetVersion) {
   var next = cloneMaintenanceUi(ui)
+  if (targetVersion && String(targetVersion).length)
+    next.targetVersion = String(targetVersion)
   next.phase = "updating"
   next.updateConfirmOpen = false
   next.message = "Updating\u2026 this takes a few seconds."
@@ -276,6 +287,7 @@ function maintenanceUiFromUpdateResult(ui, outcome) {
   var next = cloneMaintenanceUi(ui)
   next.updateConfirmOpen = false
   next.message = updateResultMessage(outcome, next.installedVersion)
+  next.updateResult = outcome.result
   if (outcome.restartRequired) {
     next.phase = "restart_required"
     if (outcome.installedVersion.length)

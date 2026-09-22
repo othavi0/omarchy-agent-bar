@@ -38,7 +38,11 @@ function finishLane(s, name, exitCode, stdout, stderr) {
 // cannot load Process/IpcHandler; when that happens this splices QtObject
 // mocks in place of the native Process blocks, keeping Service.qml's
 // production logic intact and replacing only those native test seams.
-function createService(serviceUrl, parent, testCase) {
+var UPDATE_STATUS_NONE = '{"schemaVersion":1,"operation":"update","status":"none"}\n'
+
+// startupUpdateStatus is the stdout the startup `update status` read returns;
+// null leaves that read in flight for the test to finish.
+function createService(serviceUrl, parent, testCase, startupUpdateStatus) {
   var component = Qt.createComponent(serviceUrl)
   var service = null
   if (component.status === 1 /* Component.Ready: unavailable to a .pragma library JS module */) {
@@ -85,6 +89,9 @@ function createService(serviceUrl, parent, testCase) {
   service.updateTimeoutMs = 50
   service.collectionDelayMs = 10000
   service.applyVersionProbeResult({ ok: true, exitCode: 0, stdout: "10.3.17\n", stderr: "", timedOut: false })
+  if (startupUpdateStatus !== null)
+    finishLane(service, "update", 0,
+               startupUpdateStatus === undefined ? UPDATE_STATUS_NONE : startupUpdateStatus)
   return service
 }
 

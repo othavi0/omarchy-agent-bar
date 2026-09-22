@@ -423,11 +423,19 @@ Item {
       return
     }
     var status = Maintenance.updateStatusFromLane(outcome)
-    if (status.status === "finished")
+    if (status.status === "finished") {
       finishUpdate(status.outcome)
+      return
+    }
+    if (status.status === "running" && !updatePollWindow.running) {
+      maintenanceUi = Maintenance.maintenanceUiUpdating(maintenanceUi, status.targetVersion)
+      beginUpdatePoll()
+    }
   }
 
   function openUninstallConfirm() {
+    if (maintenanceState.blocked || updateRunning)
+      return
     maintenanceUi = Maintenance.maintenanceUiOpenUninstallConfirm(maintenanceUi)
   }
 
@@ -440,6 +448,8 @@ Item {
   }
 
   function armOrConfirmUninstall() {
+    if (maintenanceState.blocked || updateRunning)
+      return false
     var result = Maintenance.maintenanceUiArmOrConfirmUninstall(maintenanceUi)
     maintenanceUi = result.ui
     if (!result.confirmed)
@@ -569,6 +579,7 @@ Item {
     versionReady = true
     versionFailed = false
     syncMaintenanceVersion()
+    pollUpdateStatus()
     kickSettingsBootstrap()
     if (collectionDelayMs > 0) {
       collectionDelay.interval = collectionDelayMs
