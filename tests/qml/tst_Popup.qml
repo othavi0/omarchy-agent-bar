@@ -428,8 +428,6 @@ TestCase {
     verify(win.indexOf("property string resetClock") >= 0)
   }
 
-  // #83: a deferred rebuild can run after the popup was destroyed, where an
-  // unguarded root.rebuildFocusTargets() throws on every open/close cycle.
   function test_reset_argv_is_typed_array() {
     compare(JSON.stringify(Service.resetArgv("/bin/agent-bar", "claude", "juniper-tide")),
             JSON.stringify(["/bin/agent-bar", "reset", "claude", "juniper-tide"]))
@@ -503,6 +501,8 @@ TestCase {
     verify(src.indexOf("root.agentService.confirmReset()") >= 0)
   }
 
+  // #83: a deferred rebuild can run after the popup was destroyed, where an
+  // unguarded root.rebuildFocusTargets() throws on every open/close cycle.
   function test_deferred_focus_rebuild_survives_popup_destruction() {
     var src = read("Popup.qml")
     verify(src.indexOf("Qt.callLater(root.rebuildFocusTargets)") < 0)
