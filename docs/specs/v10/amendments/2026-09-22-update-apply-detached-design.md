@@ -39,16 +39,29 @@ process group on timeout.
    `systemd-run` to absolute paths (exit `PLUGIN` when either is missing),
    and starts a transient unit
    `systemd-run --user --collect --no-block --unit=agent-bar-update-<txid>
-   --property=RuntimeMaxSec=180 -- <helper> update run`. It writes the
-   marker `$XDG_STATE_HOME/agent-bar/update-running.json`
+   --property=RuntimeMaxSec=240 -- <helper> update run <txid>`. The 240 s
+   limit leaves a minute past the 60 s lock wait plus the 120 s
+   plugin-manager timeout. It writes the marker
+   `$XDG_STATE_HOME/agent-bar/update-running.json`
    (`{"schemaVersion":1,"operation":"update","txid":"<txid>",
-   "startedAt":"<RFC 3339>","targetVersion":"<v>"}`) before starting the
-   unit and prints `{"schemaVersion":1,"operation":"update",
-   "result":"started","unit":"<unit>"}`. It returns before any write to
-   the plugin tree. A marker younger than 180 s that already exists makes
+   "startedAt":"<RFC 3339>","targetVersion":"<v>",
+   "fromVersion":"<tree version>"}`) before starting the unit and prints
+   `{"schemaVersion":1,"operation":"update","result":"started",
+   "unit":"<unit>"}`. It returns before any write to the plugin tree. The
+   marker appears by hard link from a temporary file, which fails when any
+   marker exists, so two racing launchers never both start a unit. An
+   existing marker younger than 240 s whose `txid` has no result file makes
    `update apply` print `{"result":"already_running"}` and start nothing.
-2. `CLI-029C`: `update run` is the unit body. It takes the maintenance lock
-   with a bounded wait (60 s of retries, then `result: "locked"`), reads
+   Any other marker is stale: `update apply` takes it over only while it
+   still holds the bytes it read, and never removes a marker another
+   launcher wrote meanwhile.
+2. `CLI-029C`: `update run <txid>` is the unit body. It takes exactly one
+   argument, the 32 lowercase hex digits of the run's `txid`; any other
+   form exits `2`. It takes the exclusive maintenance lock with a bounded
+   wait (60 s of retries, then `result: "locked"`) and holds it for the
+   plugin-manager run. A status collection or settings apply that starts
+   meanwhile waits on the shared lock, up to the run's 120 s budget,
+   rather than failing. It reads
    the tree version from `bundle.json`, runs
    `omarchy plugin update othavi0.agent-bar --yes` in its own process group
    with `GIT_TERMINAL_PROMPT=0`, stdin closed, and a 120 s timeout that
@@ -60,24 +73,33 @@ process group on timeout.
    `failed`); a timeout is `timed_out`. It writes
    `$XDG_STATE_HOME/agent-bar/update-result.json` atomically (temporary
    file plus rename), `{"schemaVersion":1,"operation":"update",
-   "result":"<result>","fromVersion":"<before>",
+   "txid":"<txid>","result":"<result>","fromVersion":"<before>",
    "installedVersion":"<after>","restartRequired":<after != before>,
-   "finishedAt":"<RFC 3339>"}`, deletes the running marker, and exits 0.
+   "finishedAt":"<RFC 3339>"}`, deletes the running marker only when it
+   carries the same `txid`, and exits 0. A run whose marker is missing
+   still runs and writes its result, which the popup or a later service
+   start consumes.
    Raw plugin-manager output never enters the file. The stderr matching is
    the only coupling to the external script and is marked as such in code.
 3. `CLI-029B`: `update status` prints exactly one JSON object:
    `{"schemaVersion":1,"operation":"update","status":"none"}` when neither
    file exists, `{"status":"running","startedAt":..,"targetVersion":..}`
-   while the marker is younger than 180 s, `{"status":"finished", ...the
-   result document fields...}` when the result file exists. Reading the
-   result file consumes it. A marker older than 180 s with no result is
-   reported once as `{"status":"finished","result":"failed", ...}` and
-   deleted.
+   while the marker is younger than 240 s, `{"status":"finished", ...the
+   result document fields...}` when the result file exists, whatever its
+   `txid`. Reading the result file consumes it, together with the marker
+   when that carries the same `txid`. A marker older than 240 s with no
+   result is reported once as `{"status":"finished", "txid":"<marker
+   txid>", ...}` and deleted, and only the marker this read judged is
+   deleted. The tree decides its result: a tree version that differs from
+   the marker's `fromVersion` is `updated` with `restartRequired: true`,
+   and any other tree is `failed`. `update status` exits `5` when a state
+   file cannot be read or renamed.
 4. `UX-043A`: Confirm runs `update apply` on the update lane (30 s
    deadline). On `started` or `already_running` the About tab enters
    `updating` (`Updating… this takes a few seconds.`, buttons disabled),
    and the service polls `update status` every 2 s on the same lane for up
-   to 180 s. Polling of provider status continues; nothing is blocked.
+   to 180 s. Polling of provider status continues; a collection that
+   starts while the run holds the exclusive lock waits for it (item 2).
 5. `UX-043B`: On every service start, after the version probe succeeds and
    before the first status poll, the service runs `update status` once.
    `running` enters `updating` and starts the 2 s poll. `finished` with
@@ -97,7 +119,8 @@ process group on timeout.
    `locked`, and `failed`; for `local_changes` and `validation_failed` the
    button is hidden until the next check.
 8. The maintenance handoff (`beginMaintenanceHandoff`, lanes blocked) is
-   used by `uninstall` only. The update never blocks other lanes.
+   used by `uninstall` only. The update never blocks other lanes in QML;
+   a helper command on another lane can still wait on the lock (item 2).
 
 ## Consequences
 

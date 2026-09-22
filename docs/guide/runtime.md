@@ -114,17 +114,22 @@ provider's TTL instead.
 in `$XDG_STATE_HOME/agent-bar/`. Both are JSON documents with
 `schemaVersion` 1 and `operation` `update`, written with mode `0600`.
 
-- `update-running.json` holds `txid`, `startedAt`, and `targetVersion`.
-  `update apply` writes it before it starts the unit, and `update run`
-  deletes it after it writes the result. A marker older than 180 seconds
+- `update-running.json` holds `txid`, `startedAt`, `targetVersion`, and
+  `fromVersion`, the installed version when the run started. `update
+  apply` creates it before it starts the unit, and `update run <txid>`
+  deletes it after it writes the result, only when the marker carries the
+  same `txid`. A marker older than 240 seconds, the unit's `RuntimeMaxSec`,
   belongs to a unit that systemd has already stopped.
-- `update-result.json` holds `result`, `fromVersion`, `installedVersion`,
-  `restartRequired`, and `finishedAt`. `update run` writes it through a
-  temporary file and a rename, so a reader never sees a partial file.
+- `update-result.json` holds `txid`, `result`, `fromVersion`,
+  `installedVersion`, `restartRequired`, and `finishedAt`. `update run`
+  writes it through a temporary file and a rename, so a reader never sees
+  a partial file.
 
-`update status` deletes the result file when it reports it, and deletes a
-stale marker when it reports it as `failed`. A new `update apply` deletes
-both files left by an earlier run. Neither file holds plugin-manager
+`update status` deletes the result file when it reports it, together with
+the marker of the same `txid`. It deletes a stale marker when it reports
+it; the run is `updated` when the installed version differs from the
+marker's `fromVersion`, and `failed` otherwise. A new `update apply`
+replaces a stale marker and deletes a result left by an earlier run. Neither file holds plugin-manager
 output, credentials, or account data. Deleting both files by hand is
 always safe; the next `update status` then prints `none`.
 

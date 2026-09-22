@@ -35,7 +35,7 @@ agent-bar update
 agent-bar update check
 agent-bar update apply
 agent-bar update status
-agent-bar update run
+agent-bar update run <txid>
 agent-bar uninstall
 agent-bar uninstall purge
 
@@ -379,40 +379,57 @@ through two state files. `CLI-029` keeps the confirmation contract;
 - `CLI-029A`: After confirmation, `update apply` logs
   `confirmed <targetVersion>` on stderr (`confirmed` alone after the TTY
   phrase), resolves `omarchy` and `systemd-run` to absolute paths (exit
-  `5` when either is missing), and resolves its own executable path. When
-  `$XDG_STATE_HOME/agent-bar/update-running.json` holds a marker younger
-  than 180 seconds, it prints
+  `5` when either is missing), and resolves its own executable path. It
+  creates the marker `$XDG_STATE_HOME/agent-bar/update-running.json`
+  atomically, by hard link from a temporary file, so two racing launchers
+  never both start a unit:
+  `{"schemaVersion":1,"operation":"update","txid":"<txid>","startedAt":"<RFC 3339>","targetVersion":"<version>","fromVersion":"<tree version>"}`
+  (`targetVersion` is `null` after the TTY phrase, and `fromVersion` is the
+  plugin root's `bundle.json` version, `null` when unreadable). When a
+  marker younger than 240 seconds already exists and no
+  `update-result.json` carries its `txid`, it prints
   `{"schemaVersion":1,"operation":"update","result":"already_running"}`
-  and starts nothing. Otherwise it deletes any stale marker and any unread
-  `update-result.json`, writes the marker
-  `{"schemaVersion":1,"operation":"update","txid":"<txid>","startedAt":"<RFC 3339>","targetVersion":"<version>"}`
-  (`targetVersion` is `null` after the TTY phrase), and runs
+  and starts nothing. Any other existing marker is stale: it is taken over
+  only while it still holds the bytes that were read, so a marker another
+  launcher wrote meanwhile is never removed. Once its marker is in place it
+  deletes any unread `update-result.json` and runs
   `systemd-run --user --collect --no-block --unit=agent-bar-update-<txid>
-  --property=RuntimeMaxSec=180 --setenv=HOME=<home>
+  --property=RuntimeMaxSec=240 --setenv=HOME=<home>
   --setenv=XDG_STATE_HOME=<state home> --setenv=PATH=<path> --
-  <helper> update run`. The `--setenv` values are the caller's, with
+  <helper> update run <txid>`. The 240 second limit leaves a minute past
+  the 60 second lock wait plus the 120 second plugin-manager timeout. The
+  `--setenv` values are the caller's, with
   `XDG_STATE_HOME` defaulting to `$HOME/.local/state`, so the unit reads
   and writes the same files and finds the same tools as the caller. On
   success it prints
   `{"schemaVersion":1,"operation":"update","result":"started","unit":"agent-bar-update-<txid>"}`
-  and exits `0`. When `systemd-run` fails, it deletes the marker and exits
-  `5`. It returns before anything writes the plugin tree, and it never
+  and exits `0`. When `systemd-run` fails, it deletes its own marker and
+  exits `5`. It returns before anything writes the plugin tree, and it never
   takes the maintenance lock.
 - `CLI-029B`: `update status` takes no argument and prints exactly one JSON
   object plus newline. With neither state file it prints
   `{"schemaVersion":1,"operation":"update","status":"none"}`. While the
-  marker is younger than 180 seconds it prints
+  marker is younger than 240 seconds it prints
   `{"schemaVersion":1,"operation":"update","status":"running","startedAt":"<RFC 3339>","targetVersion":<version or null>}`.
   When `update-result.json` exists it prints `"status":"finished"` followed
-  by the result document's fields and deletes the file, so each result is
-  reported once. A marker older than 180 seconds, or an unreadable one,
-  with no result is reported once as `"status":"finished"` with
-  `"result":"failed"`, `"fromVersion":null`, the tree version on disk as
-  `installedVersion`, and `"restartRequired":false`, and is deleted. It
-  never takes the maintenance lock and exits `0`.
-- `CLI-029C`: `update run` is the unit body and takes no argument. It
-  retries the maintenance lock every 500 ms for up to 60 seconds and
-  reports `locked` when the lock stays held. It reads the tree version
+  by the result document's fields, whatever its `txid`, and deletes the
+  file, so each result is reported once. It deletes the marker with it only
+  when the marker carries the same `txid`. A marker older than 240
+  seconds, or an unreadable one, with no result is reported once as
+  `"status":"finished"` with the marker's `txid` (`null` when unreadable),
+  its `fromVersion`, and the tree version on disk as `installedVersion`,
+  and is deleted; only the marker this read judged is deleted. When both
+  versions are known and differ, the result is `updated` with
+  `"restartRequired":true`; otherwise it is `failed` with
+  `"restartRequired":false`. It never takes the maintenance lock. It exits
+  `0`, or `5` when a state file cannot be read or renamed.
+- `CLI-029C`: `update run <txid>` is the unit body. It takes exactly one
+  argument, the 32 lowercase hex digits of the run's `txid`; any other
+  form exits `2`. It retries the exclusive maintenance lock every 500 ms
+  for up to 60 seconds and reports `locked` when the lock stays held. It
+  holds the lock for the whole plugin-manager run, so a status collection
+  or settings apply that starts meanwhile waits on the shared lock, up to
+  the run's 120 second budget, rather than failing. It reads the tree version
   from the plugin root's `bundle.json`, runs
   `omarchy plugin update othavi0.agent-bar --yes` in its own process group
   with `GIT_TERMINAL_PROMPT=0`, stdin closed, and a 120 second timeout
@@ -426,10 +443,12 @@ through two state files. `CLI-029` keeps the confirmation contract;
   without running the plugin manager. It writes
   `$XDG_STATE_HOME/agent-bar/update-result.json` atomically (temporary
   file plus rename, mode `0600`):
-  `{"schemaVersion":1,"operation":"update","result":"<result>","fromVersion":"<before>","installedVersion":"<after>","restartRequired":<bool>,"finishedAt":"<RFC 3339>"}`.
+  `{"schemaVersion":1,"operation":"update","txid":"<txid>","result":"<result>","fromVersion":"<before>","installedVersion":"<after>","restartRequired":<bool>,"finishedAt":"<RFC 3339>"}`.
   A version is `null` only when `bundle.json` was unreadable at that
   point, and `restartRequired` is true only for `updated`. It then deletes
-  the running marker, writes one stderr line
+  the running marker only when it carries the same `txid`; a run whose
+  marker is missing still runs and writes its result. It writes one stderr
+  line
   `agent-bar: update run: <result>`, prints nothing on stdout, and exits
   `0`. Only a failure to write the result file exits `5`. Plugin-manager
   output never enters the file, stdout, or stderr. It never restarts the

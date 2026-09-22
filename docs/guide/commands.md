@@ -99,8 +99,8 @@ recovery path.
   [docs/specs/v10/amendments/2026-09-22-update-apply-detached-design.md](../specs/v10/amendments/2026-09-22-update-apply-detached-design.md)).
   It never runs on a schedule.
 - `update status` reports whether an update is running or has finished.
-- `update run` is the body of that unit. `update apply` starts it; do not
-  run it by hand.
+- `update run <txid>` is the body of that unit. `update apply` starts it
+  with the run's `txid`; do not run it by hand.
 
 `update apply` requires confirmation before it reads or writes any file
 or starts any process:
@@ -135,9 +135,10 @@ writes the running marker and starts the unit
 }
 ```
 
-If a run started less than 180 seconds ago is still marked as running,
-the command starts nothing and prints `"result": "already_running"`
-instead. Exit `3` means the confirmation was rejected, and exit `5` means
+If a run started less than 240 seconds ago is still marked as running and
+has not written its result, the command starts nothing and prints
+`"result": "already_running"` instead. Two `update apply` commands that
+race never both start a unit. Exit `3` means the confirmation was rejected, and exit `5` means
 `HOME`, `omarchy`, `systemd-run`, or the state directory was unavailable,
 or the unit did not start.
 
@@ -145,18 +146,22 @@ The unit takes the maintenance lock (it waits up to 60 seconds for it),
 reads the installed version from the plugin root's `bundle.json`, and runs
 `omarchy plugin update othavi0.agent-bar --yes` with a 120 second timeout
 that stops the plugin manager and every process it started. The unit
-itself stops after 180 seconds. It never restarts the shell.
+itself stops after 240 seconds. It never restarts the shell. While the
+unit holds the lock, a `status` or `config apply` that starts waits for
+it, up to the run's 120 second budget, instead of failing.
 
 `update status` prints one JSON line in one of three shapes:
 
 ```text
 {"schemaVersion":1,"operation":"update","status":"none"}
 {"schemaVersion":1,"operation":"update","status":"running","startedAt":"2026-09-22T19:38:29.684110524Z","targetVersion":"10.6.2"}
-{"schemaVersion":1,"operation":"update","status":"finished","result":"updated","fromVersion":"10.6.1","installedVersion":"10.6.2","restartRequired":true,"finishedAt":"2026-09-22T19:38:30.354222453Z"}
+{"schemaVersion":1,"operation":"update","status":"finished","txid":"0123456789abcdef0123456789abcdef","result":"updated","fromVersion":"10.6.1","installedVersion":"10.6.2","restartRequired":true,"finishedAt":"2026-09-22T19:38:30.354222453Z"}
 ```
 
 A `finished` line is printed once. Reading it deletes the result file, so
-the next `update status` prints `none`.
+the next `update status` prints `none`. `txid` names the run that wrote
+the result. `update status` exits `5` when it cannot read or rename a
+state file.
 
 | `result` | Meaning |
 | --- | --- |
@@ -167,10 +172,12 @@ the next `update status` prints `none`.
 | `validation_failed` | The new tree failed `omarchy-plugin-validate` and was rolled back. |
 | `timed_out` | The plugin manager did not finish within 120 seconds. |
 | `locked` | Another maintenance operation held the lock for 60 seconds. |
-| `failed` | Any other outcome, including a unit that stopped before it wrote a result. |
+| `failed` | Any other outcome, including a unit that stopped before it wrote a result and left the installed version unchanged. |
 
 `installedVersion` is the version on disk after the run, and
-`restartRequired` is `true` only for `updated`. A version is `null` only
+`restartRequired` is `true` only for `updated`. A unit that systemd
+stopped before it wrote a result is `updated` when the installed version
+differs from the one recorded when `update apply` started it. A version is `null` only
 when `bundle.json` could not be read. The plugin manager's own output never
 reaches the result file or the journal; the unit writes one stderr line
 with the result name. The two state files are described in
