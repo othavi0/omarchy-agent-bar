@@ -55,7 +55,7 @@ Item {
   property string restartPendingVersion: ""
   readonly property bool restartPending: restartPendingVersion.length > 0
   readonly property string pendingVersion: restartPendingVersion
-  readonly property bool updateRunning: updateLane.busy || updatePollWindow.running
+  readonly property bool updateRunning: updatePollWindow.running
   property string pendingMaintenancePayload: ""
   property int resetTimeoutMs: 45000
   property var resetUi: Core.resetUiIdle()
@@ -390,6 +390,7 @@ Item {
       return false
     }
     maintenanceUi = Maintenance.maintenanceUiUpdating(maintenanceUi)
+    updatePollWindow.restart()
     return updateLane.start(argv, JSON.stringify(Maintenance.updateConfirmation(target)), "apply")
   }
 
