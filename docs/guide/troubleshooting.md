@@ -140,8 +140,11 @@ settings file is untouched until then. `update check` takes no lock.
 ## Update available or update failed
 
 When Settings shows a new version, click `Update to <version>` and
-confirm. The popup runs `update apply`, which runs
-`omarchy plugin update othavi0.agent-bar --yes` and reports one result.
+confirm. The popup runs `update apply`, which starts the user unit
+`agent-bar-update-<txid>`. The unit runs
+`omarchy plugin update othavi0.agent-bar --yes`, and the popup reads the
+result with `update status`. When the version changes, the shell reloads
+the plugin and the popup closes; reopen it to see the restart prompt.
 From a terminal, the same update is:
 
 ```bash
@@ -149,7 +152,7 @@ omarchy plugin update othavi0.agent-bar --yes && omarchy-restart-shell
 ```
 
 `omarchy plugin update` owns the actual result. Its failure modes, with
-the `update apply` result each one produces:
+the result each one produces in `update status`:
 
 - **Non-fast-forward** (`local_changes`): `omarchy plugin update` refuses
   to update a plugin directory with local modifications or diverged
@@ -163,8 +166,16 @@ the `update apply` result each one produces:
   A failing validation runs `git reset --hard ORIG_HEAD` automatically,
   restoring the previous version; nothing is left half-installed.
 - **Timeout** (`timed_out`): the plugin manager did not finish within 120
-  seconds. The installed version on disk is reported unchanged unless the
-  fast-forward had already happened.
+  seconds, and the helper stopped it and every process it started. If the
+  fast-forward had already happened, the result is `updated` instead.
+- **Lock held** (`locked`): an uninstall or another update held the
+  maintenance lock for 60 seconds. Retry once it finishes.
+- **Unit stopped early** (`failed`): systemd stopped the unit at its 180
+  second limit, or it died, before it wrote a result. Read its journal with
+  `journalctl --user -u 'agent-bar-update-*'`. The unit logs only
+  `agent-bar: update run: <result>`, never plugin-manager output.
+  `already_running` from `update apply` means a run started less than 180
+  seconds ago; wait for `update status` to report it.
 - **Not a git checkout**: a plugin directory installed before the git-based
   distribution has no `.git`. `omarchy plugin update` silently skips it in
   a bulk run and refuses it outright when targeted by ID. See

@@ -254,13 +254,19 @@ Amended by the 2026-09-14 update-execution removal:
 `docs/specs/v10/amendments/2026-09-14-remove-update-execution-design.md`.
 Amended again by the 2026-09-22 in-popup update apply:
 `docs/specs/v10/amendments/2026-09-22-update-apply-in-popup-design.md`.
-`update apply` returns as a confirmed foreground command (`CLI-029`,
-`CLI-029A`, `CLI-029B`). The private command surface for update is now:
+`update apply` returns as a confirmed command (`CLI-029`). Amended by the
+2026-09-22 detached update run
+(`docs/specs/v10/amendments/2026-09-22-update-apply-detached-design.md`):
+`update apply` starts the transient unit that runs `update run`, and
+`update status` reports its outcome (`CLI-029A`..`CLI-029C`). The private
+command surface for update is now:
 
 ```text
 agent-bar update
 agent-bar update check
 agent-bar update apply
+agent-bar update status
+agent-bar update run
 ```
 
 - `BUNDLE-020` (amended 2026-09-22): Bare `update` has no interactive flow.
@@ -276,7 +282,7 @@ agent-bar update apply
   `current.quickshellVersion` is probed from the installed `qs --version`
   rather than assumed to equal the build's own minimum.
 - `BUNDLE-022`: **Retired**, removed by the 2026-09-14 amendment. The
-  2026-09-22 `update apply` is specified by `CLI-029`..`CLI-029B`, not by
+  2026-09-22 `update apply` is specified by `CLI-029`..`CLI-029C`, not by
   this requirement.
 - `BUNDLE-023`: **Retired**, removed by the 2026-09-14 amendment. There is
   no apply state left for the Settings UI to trigger; check is the only
@@ -397,7 +403,11 @@ kind. `update check` is the entire update surface; see MIG-021.
   --unit=agent-bar-remove-<32-lowercase-hex-txid>.service -- <omarchy>
   plugin remove othavi0.agent-bar --yes` and returns once systemd has
   accepted the unit, so the operation outlives the shell process that
-  started it. `MIG-022`–`MIG-026` are the current contract.
+  started it. `MIG-022`–`MIG-026` are the current contract. The
+  2026-09-22 detached update run adds a second one,
+  `agent-bar-update-<txid>` with `RuntimeMaxSec=180`, which runs
+  `update run` so the update outlives the plugin reload its own
+  fast-forward causes (`CLI-029A`..`CLI-029C`).
 
 ## UI uninstall
 

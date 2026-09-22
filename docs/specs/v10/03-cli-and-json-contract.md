@@ -34,6 +34,8 @@ agent-bar config apply json <value>
 agent-bar update
 agent-bar update check
 agent-bar update apply
+agent-bar update status
+agent-bar update run
 agent-bar uninstall
 agent-bar uninstall purge
 
@@ -347,6 +349,16 @@ unit, and the automatic shell restart stay removed. The terminal fallback
 command is now
 `omarchy plugin update othavi0.agent-bar --yes && omarchy-restart-shell`.
 
+Amended by the 2026-09-22 detached update run:
+`docs/specs/v10/amendments/2026-09-22-update-apply-detached-design.md`.
+It supersedes the foreground mechanism above. A successful fast-forward
+makes the shell reload the plugin service, which stops any helper the old
+service started, so `update apply` now only starts a transient user unit.
+The unit runs `update run`, and `update status` reports what it did
+through two state files. `CLI-029` keeps the confirmation contract;
+`CLI-029A`, `CLI-029B`, and `CLI-029C` below replace the earlier
+`CLI-029A` and `CLI-029B`.
+
 - `CLI-024`: **Retired**, removed by the 2026-09-15 amendment. `doctor scan`
   no longer exists.
 - `CLI-025`: **Retired**, removed by the 2026-09-15 amendment. `doctor clean`
@@ -362,27 +374,66 @@ command is now
   whitespace and nothing after it:
   `{"schemaVersion":1,"operation":"update","confirmed":true,"targetVersion":"<version>"}`.
   `targetVersion` is a non-empty `major.minor.patch` string. Unknown
-  fields and any other input exit `3` before any lock or process. In a TTY
-  it asks for the exact phrase `update agent-bar`. `update run` stays a
-  grammar error (2026-09-22 amendment).
-- `CLI-029A`: After confirmation, `update apply` takes the maintenance
-  lock, resolves `omarchy` to an absolute path (exit `5` when missing),
-  reads the installed tree version from the plugin root's `bundle.json`
-  (exit `5` when unreadable), and runs
-  `omarchy plugin update othavi0.agent-bar --yes` as a child with
-  `GIT_TERMINAL_PROMPT=0`, stdin closed, and a 120 second timeout. It then
-  reads the tree version again. It does not restart the shell, touch
-  settings or cache, or retry. The 2026-09-10 `update run` unit and its
-  `update-run.lock` gate remain retired.
-- `CLI-029B`: stdout is exactly one JSON object plus newline:
-  `{"schemaVersion":1,"operation":"update","result":"<result>","installedVersion":"<version>","restartRequired":<bool>}`.
-  `result` is `updated` (exit 0 and the tree version changed),
-  `up_to_date` (exit 0 and the version did not change), `local_changes`
-  (stderr contains `cannot fast-forward`), `fetch_failed` (`fetch failed`),
-  `validation_failed` (`failed validation`), `timed_out`, or `failed` (any
-  other outcome). `installedVersion` is the tree version on disk after the
-  run. `restartRequired` is true only for `updated`. Every result exits
-  `0`. Plugin-manager output never reaches stdout.
+  fields and any other input exit `3` before any lock, file, or process.
+  In a TTY it asks for the exact phrase `update agent-bar`.
+- `CLI-029A`: After confirmation, `update apply` logs
+  `confirmed <targetVersion>` on stderr (`confirmed` alone after the TTY
+  phrase), resolves `omarchy` and `systemd-run` to absolute paths (exit
+  `5` when either is missing), and resolves its own executable path. When
+  `$XDG_STATE_HOME/agent-bar/update-running.json` holds a marker younger
+  than 180 seconds, it prints
+  `{"schemaVersion":1,"operation":"update","result":"already_running"}`
+  and starts nothing. Otherwise it deletes any stale marker and any unread
+  `update-result.json`, writes the marker
+  `{"schemaVersion":1,"operation":"update","txid":"<txid>","startedAt":"<RFC 3339>","targetVersion":"<version>"}`
+  (`targetVersion` is `null` after the TTY phrase), and runs
+  `systemd-run --user --collect --no-block --unit=agent-bar-update-<txid>
+  --property=RuntimeMaxSec=180 --setenv=HOME=<home>
+  --setenv=XDG_STATE_HOME=<state home> --setenv=PATH=<path> --
+  <helper> update run`. The `--setenv` values are the caller's, with
+  `XDG_STATE_HOME` defaulting to `$HOME/.local/state`, so the unit reads
+  and writes the same files and finds the same tools as the caller. On
+  success it prints
+  `{"schemaVersion":1,"operation":"update","result":"started","unit":"agent-bar-update-<txid>"}`
+  and exits `0`. When `systemd-run` fails, it deletes the marker and exits
+  `5`. It returns before anything writes the plugin tree, and it never
+  takes the maintenance lock.
+- `CLI-029B`: `update status` takes no argument and prints exactly one JSON
+  object plus newline. With neither state file it prints
+  `{"schemaVersion":1,"operation":"update","status":"none"}`. While the
+  marker is younger than 180 seconds it prints
+  `{"schemaVersion":1,"operation":"update","status":"running","startedAt":"<RFC 3339>","targetVersion":<version or null>}`.
+  When `update-result.json` exists it prints `"status":"finished"` followed
+  by the result document's fields and deletes the file, so each result is
+  reported once. A marker older than 180 seconds, or an unreadable one,
+  with no result is reported once as `"status":"finished"` with
+  `"result":"failed"`, `"fromVersion":null`, the tree version on disk as
+  `installedVersion`, and `"restartRequired":false`, and is deleted. It
+  never takes the maintenance lock and exits `0`.
+- `CLI-029C`: `update run` is the unit body and takes no argument. It
+  retries the maintenance lock every 500 ms for up to 60 seconds and
+  reports `locked` when the lock stays held. It reads the tree version
+  from the plugin root's `bundle.json`, runs
+  `omarchy plugin update othavi0.agent-bar --yes` in its own process group
+  with `GIT_TERMINAL_PROMPT=0`, stdin closed, and a 120 second timeout
+  that kills the whole group, then reads the tree version again. A tree
+  version that changed is `updated` whatever the exit status or timeout.
+  Otherwise exit `0` is `up_to_date`, a timeout is `timed_out`, and a
+  non-zero exit maps by the plugin manager's stderr: `cannot fast-forward`
+  to `local_changes`, `fetch failed` to `fetch_failed`,
+  `failed validation` to `validation_failed`, and anything else to
+  `failed`. A missing `omarchy` or an unreadable tree version is `failed`
+  without running the plugin manager. It writes
+  `$XDG_STATE_HOME/agent-bar/update-result.json` atomically (temporary
+  file plus rename, mode `0600`):
+  `{"schemaVersion":1,"operation":"update","result":"<result>","fromVersion":"<before>","installedVersion":"<after>","restartRequired":<bool>,"finishedAt":"<RFC 3339>"}`.
+  A version is `null` only when `bundle.json` was unreadable at that
+  point, and `restartRequired` is true only for `updated`. It then deletes
+  the running marker, writes one stderr line
+  `agent-bar: update run: <result>`, prints nothing on stdout, and exits
+  `0`. Only a failure to write the result file exits `5`. Plugin-manager
+  output never enters the file, stdout, or stderr. It never restarts the
+  shell, touches settings or cache, or retries the plugin manager.
 - `CLI-030`: Uninstall never touches unrelated Omarchy plugins or layout
   entries.
 - `CLI-031`: Notification dispatch failure is reported on stderr, does not

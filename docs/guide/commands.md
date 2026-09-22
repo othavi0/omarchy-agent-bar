@@ -81,6 +81,7 @@ recovery path.
 "$PLUGIN" update
 "$PLUGIN" update check
 "$PLUGIN" update apply
+"$PLUGIN" update status
 ```
 
 - Bare `update` has no interactive flow. It prints usage that names
@@ -91,14 +92,18 @@ recovery path.
   the plugin tree; see [ADR 0006](../adr/0006-single-repository-distribution.md)).
   It never fetches, installs, or restarts the shell. It only reports what
   is available.
-- `update apply` installs the release that `master` holds, through the
-  Omarchy plugin manager, after one confirmation (see
-  [docs/specs/v10/amendments/2026-09-22-update-apply-in-popup-design.md](../specs/v10/amendments/2026-09-22-update-apply-in-popup-design.md)).
-  It runs in the foreground and never on a schedule. `update run` is a
-  grammar error like any other unknown argument.
+- `update apply` starts the install of the release that `master` holds,
+  after one confirmation, and returns at once. The install runs in a
+  transient user unit, so it survives the shell reloading the plugin when
+  the tree changes (see
+  [docs/specs/v10/amendments/2026-09-22-update-apply-detached-design.md](../specs/v10/amendments/2026-09-22-update-apply-detached-design.md)).
+  It never runs on a schedule.
+- `update status` reports whether an update is running or has finished.
+- `update run` is the body of that unit. `update apply` starts it; do not
+  run it by hand.
 
-`update apply` requires confirmation before it takes any lock or starts
-any process:
+`update apply` requires confirmation before it reads or writes any file
+or starts any process:
 
 - On a TTY, type the exact phrase `update agent-bar` at the prompt.
 - On non-TTY stdin, provide exactly one JSON confirmation document:
@@ -116,41 +121,64 @@ any process:
   must be `true`. Unknown fields and trailing bytes after the object are
   rejected with exit `3`.
 
-After confirmation, the command takes the maintenance lock, reads the
-installed version from the plugin root's `bundle.json`, and runs
-`omarchy plugin update othavi0.agent-bar --yes` with a 120 second timeout.
-It prints one stdout JSON line:
+After confirmation, stderr gets `confirmed <targetVersion>`. The command
+writes the running marker and starts the unit
+`agent-bar-update-<txid>` with `systemd-run --user`, passing the caller's
+`HOME`, `XDG_STATE_HOME`, and `PATH`. It prints one stdout JSON line:
 
 ```json
 {
   "schemaVersion": 1,
   "operation": "update",
-  "result": "updated",
-  "installedVersion": "10.7.0",
-  "restartRequired": true
+  "result": "started",
+  "unit": "agent-bar-update-0123456789abcdef0123456789abcdef"
 }
 ```
 
+If a run started less than 180 seconds ago is still marked as running,
+the command starts nothing and prints `"result": "already_running"`
+instead. Exit `3` means the confirmation was rejected, and exit `5` means
+`HOME`, `omarchy`, `systemd-run`, or the state directory was unavailable,
+or the unit did not start.
+
+The unit takes the maintenance lock (it waits up to 60 seconds for it),
+reads the installed version from the plugin root's `bundle.json`, and runs
+`omarchy plugin update othavi0.agent-bar --yes` with a 120 second timeout
+that stops the plugin manager and every process it started. The unit
+itself stops after 180 seconds. It never restarts the shell.
+
+`update status` prints one JSON line in one of three shapes:
+
+```text
+{"schemaVersion":1,"operation":"update","status":"none"}
+{"schemaVersion":1,"operation":"update","status":"running","startedAt":"2026-09-22T19:38:29.684110524Z","targetVersion":"10.6.2"}
+{"schemaVersion":1,"operation":"update","status":"finished","result":"updated","fromVersion":"10.6.1","installedVersion":"10.6.2","restartRequired":true,"finishedAt":"2026-09-22T19:38:30.354222453Z"}
+```
+
+A `finished` line is printed once. Reading it deletes the result file, so
+the next `update status` prints `none`.
+
 | `result` | Meaning |
 | --- | --- |
-| `updated` | The plugin manager succeeded and the installed version changed. Restart the shell to load it. |
+| `updated` | The installed version changed, whatever the plugin manager's exit status. Restart the shell to load it. |
 | `up_to_date` | The plugin manager succeeded and the installed version did not change. |
 | `local_changes` | The plugin folder has local changes, so the fast-forward was refused. |
 | `fetch_failed` | The plugin manager could not fetch from GitHub. |
 | `validation_failed` | The new tree failed `omarchy-plugin-validate` and was rolled back. |
 | `timed_out` | The plugin manager did not finish within 120 seconds. |
-| `failed` | Any other outcome. |
+| `locked` | Another maintenance operation held the lock for 60 seconds. |
+| `failed` | Any other outcome, including a unit that stopped before it wrote a result. |
 
-Every result exits `0`. `installedVersion` is the version on disk after
-the run, and `restartRequired` is `true` only for `updated`. The plugin
-manager's own output never reaches stdout, and stderr gets one line with
-the result name. Exit `3` means the confirmation was rejected, and exit
-`5` means `HOME`, `omarchy`, the maintenance lock, or the installed
-`bundle.json` was unavailable. The command never restarts the shell.
+`installedVersion` is the version on disk after the run, and
+`restartRequired` is `true` only for `updated`. A version is `null` only
+when `bundle.json` could not be read. The plugin manager's own output never
+reaches the result file or the journal; the unit writes one stderr line
+with the result name. The two state files are described in
+[runtime.md](runtime.md#update-state).
 
 When an update is available, the Settings About tab offers
-`Update to <version>`, which runs `update apply`, and also shows the
-command for a terminal:
+`Update to <version>`, which runs `update apply` and then polls
+`update status`, and also shows the command for a terminal:
 
 ```bash
 omarchy plugin update othavi0.agent-bar --yes && omarchy-restart-shell

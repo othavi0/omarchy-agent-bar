@@ -134,9 +134,10 @@ Run this checklist after every product merge.
 
 The plugin checks for updates only when the user asks, and installs one
 only after the user confirms `Update to <version>` in Settings. That button
-runs `update apply`, which runs `omarchy plugin update` once. Verification
-below proves `update check` reports the new version, then proves
-`update apply` actually installs it on a live host.
+runs `update apply`, which starts a user unit that runs
+`omarchy plugin update` once; `update status` reports the outcome.
+Verification below proves `update check` reports the new version, then
+proves `update apply` actually installs it on a live host.
 
 Before merging, the standing gates already cover the update contract:
 `cargo test --test root_tree_validate` mirrors `omarchy-plugin-validate`
@@ -169,10 +170,13 @@ After merging:
    # What Settings reports: must show the new version is available.
    ~/.config/omarchy/plugins/othavi0.agent-bar/bin/agent-bar update check
 
-   # What the Update button runs. Must print result "updated" with
-   # installedVersion == the new version.
+   # What the Update button runs. Must print result "started".
    printf '{"schemaVersion":1,"operation":"update","confirmed":true,"targetVersion":"%s"}' "$VERSION" \
      | ~/.config/omarchy/plugins/othavi0.agent-bar/bin/agent-bar update apply
+
+   # Repeat until status is "finished". It must show result "updated"
+   # with installedVersion == the new version. The line is printed once.
+   ~/.config/omarchy/plugins/othavi0.agent-bar/bin/agent-bar update status
    omarchy-restart-shell
 
    # Must now report available: false with current == the new version.

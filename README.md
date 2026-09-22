@@ -69,8 +69,9 @@ default), and toggle notifications. The file is
 ## Update
 
 Settings tells you when a new version is out. Click
-`Update to <version>`, confirm, and then click `Restart shell` to load the
-new version.
+`Update to <version>` and confirm. The update runs in the background and
+the bar keeps working. When the new version is installed, the popup shows
+`Restart shell`; click it to load the new version.
 
 You can also update from a terminal:
 
