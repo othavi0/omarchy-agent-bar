@@ -29,7 +29,7 @@ Item {
   property int maintenanceHandoffTimeoutMs: 120000
   property int updateTimeoutMs: 30000
   property int updatePollIntervalMs: 2000
-  property int updatePollWindowMs: 180000
+  property int updatePollWindowMs: 240000
   property int pollIntervalMs: Core.pollIntervalMs(appliedSettings)
   property int collectionDelayMs: 0
 

@@ -909,7 +909,7 @@ TestCase {
 
   function test_no_result_within_the_poll_window_renders_as_failed() {
     var s = startUpdate()
-    compare(s.updatePollWindowMs, 180000)
+    compare(s.updatePollWindowMs, 240000)
     s.updatePollWindowMs = 150
     s.updatePollIntervalMs = 20
     finishLane(s, "update", 0, startedDoc)

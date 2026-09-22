@@ -98,7 +98,7 @@ process group on timeout.
    deadline). On `started` or `already_running` the About tab enters
    `updating` (`Updating… this takes a few seconds.`, buttons disabled),
    and the service polls `update status` every 2 s on the same lane for up
-   to 180 s. Polling of provider status continues; a collection that
+   to 240 s, the unit limit. Polling of provider status continues; a collection that
    starts while the run holds the exclusive lock waits for it (item 2).
 5. `UX-043B`: On every service start, after the version probe succeeds and
    before the first status poll, the service runs `update status` once.
