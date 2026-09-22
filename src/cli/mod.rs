@@ -78,7 +78,7 @@ pub fn help_text(topic: Option<HelpTopic>) -> String {
              update apply — after confirmation, start a user unit that installs\n\
              the latest release through the Omarchy plugin manager\n\
              update status — report the running or finished update once\n\
-             update run — the body of that unit; the shell restart stays yours\n\
+             update run <txid> — the body of that unit; the shell restart stays yours\n\
              From a terminal you can also run '{UPDATE_COMMAND}'.\n"
         ),
         Some(HelpTopic::Uninstall) => {
@@ -111,7 +111,7 @@ pub fn dispatch(command: Command) -> Result<(), CliFailure> {
         Command::Update(UpdateCommand::Interactive) => dispatch_update_interactive(),
         Command::Update(UpdateCommand::Check) => dispatch_update_check(),
         Command::Update(UpdateCommand::Apply) => dispatch_update_apply(),
-        Command::Update(UpdateCommand::Run) => dispatch_update_run(),
+        Command::Update(UpdateCommand::Run(txid)) => dispatch_update_run(&txid),
         Command::Update(UpdateCommand::Status) => dispatch_update_status(),
         Command::Config(config) => dispatch_config(config),
         Command::Login(provider) => dispatch_login(provider),
@@ -388,11 +388,9 @@ enum UpdateLaunch {
 /// tree, so a shell reload of the plugin cannot cut the run short.
 fn dispatch_update_apply() -> Result<(), CliFailure> {
     use crate::plugin::update_state::{
-        Begin, UpdateDocument, UpdateRunning, UpdateStateFiles, UPDATE_RUN_WINDOW,
+        Begin, Txid, UpdateDocument, UpdateRunning, UpdateStateFiles, UPDATE_RUN_WINDOW,
     };
-    use crate::plugin::{
-        resolve_absolute_executable, txid_from_bytes, CommandRunner, ProcessCommandRunner,
-    };
+    use crate::plugin::{resolve_absolute_executable, CommandRunner, ProcessCommandRunner};
     use crate::support::{Clock, SystemClock};
 
     let is_tty = io::stdin().is_terminal();
@@ -422,7 +420,7 @@ fn dispatch_update_apply() -> Result<(), CliFailure> {
 
     let clock = SystemClock;
     let now = Clock::now_utc(&clock);
-    let txid = txid_from_bytes(format!("update:{now}:{}", std::process::id()).as_bytes());
+    let txid = Txid::from_seed(format!("update:{now}:{}", std::process::id()).as_bytes());
     let files = UpdateStateFiles::in_state_dir(&state_home.join("agent-bar"));
     let marker = UpdateRunning {
         txid: txid.clone(),
@@ -464,6 +462,7 @@ fn dispatch_update_apply() -> Result<(), CliFailure> {
         helper.display().to_string(),
         "update".to_owned(),
         "run".to_owned(),
+        txid.to_string(),
     ]);
     let argv: Vec<&str> = argv.iter().map(String::as_str).collect();
     let started = ProcessCommandRunner
@@ -477,7 +476,7 @@ fn dispatch_update_apply() -> Result<(), CliFailure> {
             }
         });
     if let Err(reason) = started {
-        let _ = files.abandon();
+        let _ = files.release(&txid);
         return Err(CliFailure::plugin(format!(
             "failed to start update unit: {reason}"
         )));
@@ -488,7 +487,7 @@ fn dispatch_update_apply() -> Result<(), CliFailure> {
 /// The body of the `agent-bar-update-<txid>` unit (CLI-029C). Every outcome,
 /// including a missing `omarchy`, lands in `update-result.json`; only a
 /// failure to publish that file is a process failure.
-fn dispatch_update_run() -> Result<(), CliFailure> {
+fn dispatch_update_run(txid: &crate::plugin::update_state::Txid) -> Result<(), CliFailure> {
     use crate::plugin::update_apply::{run_update, LockWait};
     use crate::plugin::update_state::UpdateStateFiles;
     use crate::plugin::{resolve_absolute_executable, PluginPaths};
@@ -515,6 +514,7 @@ fn dispatch_update_run() -> Result<(), CliFailure> {
         LockWait::RUN,
         omarchy.as_deref(),
         &paths.plugin_root,
+        txid,
     ));
     UpdateStateFiles::in_state_dir(&paths.xdg_state)
         .finish(&outcome)

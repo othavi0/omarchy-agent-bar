@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use serde::{Deserialize, Serialize};
 use time::{Duration, OffsetDateTime};
 
+use crate::plugin::txid_from_bytes;
 use crate::plugin::update_apply::{UpdateOutcome, UpdateResult};
 use crate::support::{replace_atomically_with, FileMutator, StdFileMutator};
 
@@ -49,12 +50,53 @@ impl<T: Serialize> UpdateDocument<T> {
     }
 }
 
+/// The 32 lowercase hex digits that name one update run: the unit name
+/// suffix, the `update run` argument, and the `txid` of both state files.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct Txid(String);
+
+impl Txid {
+    pub fn parse(text: &str) -> Option<Self> {
+        (text.len() == 32 && text.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')))
+            .then(|| Self(text.to_owned()))
+    }
+
+    pub fn from_seed(seed: &[u8]) -> Self {
+        Self(txid_from_bytes(seed))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for Txid {
+    type Error = String;
+
+    fn try_from(text: String) -> Result<Self, Self::Error> {
+        Self::parse(&text).ok_or_else(|| "txid must be 32 lowercase hex digits".to_owned())
+    }
+}
+
+impl From<Txid> for String {
+    fn from(txid: Txid) -> Self {
+        txid.0
+    }
+}
+
+impl std::fmt::Display for Txid {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
 /// Body of `update-running.json` (CLI-029A). `targetVersion` is `null` when
 /// the confirmation came from the TTY phrase, which names no version.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateRunning {
-    pub txid: String,
+    pub txid: Txid,
     #[serde(with = "time::serde::rfc3339")]
     pub started_at: OffsetDateTime,
     pub target_version: Option<String>,
@@ -149,7 +191,7 @@ impl UpdateStateFiles {
             let Some(existing) = read_bytes(&self.running)? else {
                 continue;
             };
-            if self.is_live(&existing, now) {
+            if self.is_live(&existing, now)? {
                 return Ok(Begin::AlreadyRunning);
             }
             remove_if_unchanged(&self.running, &existing)?;
@@ -157,18 +199,39 @@ impl UpdateStateFiles {
         Ok(Begin::AlreadyRunning)
     }
 
-    fn is_live(&self, marker: &[u8], now: OffsetDateTime) -> bool {
-        parse_document::<UpdateRunning>(marker).is_some_and(|doc| doc.body.is_live(now))
+    /// A marker counts as live inside its run window until a result with
+    /// its `txid` shows that the run finished.
+    fn is_live(&self, marker: &[u8], now: OffsetDateTime) -> io::Result<bool> {
+        let Some(marker) = parse_document::<UpdateRunning>(marker) else {
+            return Ok(false);
+        };
+        if !marker.body.is_live(now) {
+            return Ok(false);
+        }
+        let finished = read_document::<UpdateOutcome>(&self.result)?
+            .is_some_and(|result| result.body.txid.as_ref() == Some(&marker.body.txid));
+        Ok(!finished)
     }
 
-    /// Drop the marker of a run whose unit never started.
-    pub fn abandon(&self) -> io::Result<()> {
-        remove_if_present(&self.running)
+    /// Drop the marker only when it belongs to the run `txid`: after that
+    /// run finished, or when its unit never started.
+    pub fn release(&self, txid: &Txid) -> io::Result<()> {
+        let Some(bytes) = read_bytes(&self.running)? else {
+            return Ok(());
+        };
+        let owned =
+            parse_document::<UpdateRunning>(&bytes).is_some_and(|marker| &marker.body.txid == txid);
+        if owned {
+            remove_if_unchanged(&self.running, &bytes)?;
+        }
+        Ok(())
     }
 
-    /// What the last update is doing (CLI-029B). A result is consumed by the
-    /// read that reports it, and so is a marker whose unit can no longer be
-    /// alive: each finished run is reported exactly once. `tree_version`
+    /// What the last update is doing (CLI-029B). A result is reported
+    /// whichever run wrote it and is consumed by the read that reports it,
+    /// together with that run's marker. A marker whose unit can no longer be
+    /// alive is consumed only while it still holds the bytes this read
+    /// judged: each finished run is reported exactly once. `tree_version`
     /// supplies `installedVersion` for a run that never wrote a result.
     pub fn read_status(
         &self,
@@ -176,38 +239,41 @@ impl UpdateStateFiles {
         tree_version: impl FnOnce() -> Option<String>,
     ) -> io::Result<UpdateStatus> {
         if let Some(bytes) = claim(&self.result)? {
-            let _ = self.abandon();
-            let outcome = parse_document::<UpdateOutcome>(&bytes)
-                .map(|doc| doc.body)
-                .unwrap_or_else(|| {
-                    UpdateOutcome::new(UpdateResult::Failed, None, tree_version(), now)
-                });
+            let outcome = match parse_document::<UpdateOutcome>(&bytes) {
+                Some(doc) => doc.body,
+                None => UpdateOutcome::new(None, UpdateResult::Failed, None, tree_version(), now),
+            };
+            if let Some(txid) = &outcome.txid {
+                self.release(txid)?;
+            }
             return Ok(UpdateStatus::Finished(outcome));
         }
-        if let Some(marker) = self.read_marker()? {
-            if marker.is_live(now) {
+        for _ in 0..LINK_ATTEMPTS {
+            let Some(bytes) = read_bytes(&self.running)? else {
+                return Ok(UpdateStatus::None);
+            };
+            let marker = parse_document::<UpdateRunning>(&bytes).map(|doc| doc.body);
+            if let Some(live) = marker.as_ref().filter(|m| m.is_live(now)) {
                 return Ok(UpdateStatus::Running {
-                    started_at: marker.started_at,
-                    target_version: marker.target_version,
+                    started_at: live.started_at,
+                    target_version: live.target_version.clone(),
                 });
             }
-        }
-        if claim(&self.running)?.is_some() {
-            return Ok(UpdateStatus::Finished(UpdateOutcome::new(
-                UpdateResult::Failed,
-                None,
-                tree_version(),
-                now,
-            )));
+            if remove_if_unchanged(&self.running, &bytes)? {
+                return Ok(UpdateStatus::Finished(UpdateOutcome::new(
+                    marker.map(|m| m.txid),
+                    UpdateResult::Failed,
+                    None,
+                    tree_version(),
+                    now,
+                )));
+            }
         }
         Ok(UpdateStatus::None)
     }
 
-    fn read_marker(&self) -> io::Result<Option<UpdateRunning>> {
-        Ok(read_document(&self.running)?.map(|doc| doc.body))
-    }
-
-    /// Publish the run's outcome, then drop the running marker (CLI-029C).
+    /// Publish the run's outcome, then drop the running marker if it is this
+    /// run's (CLI-029C).
     pub fn finish(&self, outcome: &UpdateOutcome) -> io::Result<()> {
         self.finish_with(&StdFileMutator, outcome)
     }
@@ -221,7 +287,10 @@ impl UpdateStateFiles {
             .to_json_line()
             .map_err(io::Error::other)?;
         replace_atomically_with(mutator, &self.result, line.as_bytes(), 0o600)?;
-        remove_if_present(&self.running)
+        match &outcome.txid {
+            Some(txid) => self.release(txid),
+            None => Ok(()),
+        }
     }
 }
 
@@ -314,8 +383,13 @@ mod tests {
     use crate::support::{AtomicFailPoint, FailingMutator};
     use time::macros::datetime;
 
+    fn txid(text: &str) -> Txid {
+        Txid::parse(text).unwrap()
+    }
+
     fn outcome() -> UpdateOutcome {
         UpdateOutcome::new(
+            Some(txid(TXID)),
             UpdateResult::Updated,
             Some("10.6.1".to_owned()),
             Some("10.6.2".to_owned()),
@@ -334,13 +408,15 @@ mod tests {
 
     fn marker(started_at: OffsetDateTime) -> UpdateRunning {
         UpdateRunning {
-            txid: "0123456789abcdef0123456789abcdef".to_owned(),
+            txid: txid(TXID),
             started_at,
             target_version: Some("10.6.2".to_owned()),
         }
     }
 
     const NOW: OffsetDateTime = datetime!(2026-09-22 16:40:05 UTC);
+    const TXID: &str = "0123456789abcdef0123456789abcdef";
+    const OTHER_TXID: &str = "fedcba9876543210fedcba9876543210";
 
     fn status_line(files: &UpdateStateFiles, now: OffsetDateTime) -> String {
         let status = files
@@ -380,7 +456,7 @@ mod tests {
         files.finish(&outcome()).unwrap();
         assert_eq!(
             status_line(&files, NOW),
-            "{\"schemaVersion\":1,\"operation\":\"update\",\"status\":\"finished\",\"result\":\"updated\",\"fromVersion\":\"10.6.1\",\"installedVersion\":\"10.6.2\",\"restartRequired\":true,\"finishedAt\":\"2026-09-22T16:40:05Z\"}\n"
+            "{\"schemaVersion\":1,\"operation\":\"update\",\"status\":\"finished\",\"txid\":\"0123456789abcdef0123456789abcdef\",\"result\":\"updated\",\"fromVersion\":\"10.6.1\",\"installedVersion\":\"10.6.2\",\"restartRequired\":true,\"finishedAt\":\"2026-09-22T16:40:05Z\"}\n"
         );
         assert_eq!(status_line(&files, NOW), NONE);
         assert!(entries(dir.path()).is_empty());
@@ -390,15 +466,18 @@ mod tests {
     fn status_reports_a_stale_or_unreadable_marker_once_as_failed() {
         let dir = tempfile::tempdir().unwrap();
         let files = UpdateStateFiles::in_state_dir(dir.path());
-        for stale in [
-            UpdateDocument::new(marker(NOW)).to_json_line().unwrap(),
-            "{not json".to_owned(),
+        for (stale, txid) in [
+            (
+                UpdateDocument::new(marker(NOW)).to_json_line().unwrap(),
+                format!("\"{TXID}\""),
+            ),
+            ("{not json".to_owned(), "null".to_owned()),
         ] {
             std::fs::write(&files.running, &stale).unwrap();
             let checked_at = NOW + Duration::seconds(180);
             assert_eq!(
                 status_line(&files, checked_at),
-                "{\"schemaVersion\":1,\"operation\":\"update\",\"status\":\"finished\",\"result\":\"failed\",\"fromVersion\":null,\"installedVersion\":\"10.6.2\",\"restartRequired\":false,\"finishedAt\":\"2026-09-22T16:43:05Z\"}\n",
+                format!("{{\"schemaVersion\":1,\"operation\":\"update\",\"status\":\"finished\",\"txid\":{txid},\"result\":\"failed\",\"fromVersion\":null,\"installedVersion\":\"10.6.2\",\"restartRequired\":false,\"finishedAt\":\"2026-09-22T16:43:05Z\"}}\n"),
                 "{stale}"
             );
             assert_eq!(status_line(&files, checked_at), NONE);
@@ -466,7 +545,7 @@ mod tests {
 
     fn other_marker() -> UpdateRunning {
         UpdateRunning {
-            txid: "fedcba9876543210fedcba9876543210".to_owned(),
+            txid: txid(OTHER_TXID),
             ..marker(NOW)
         }
     }
@@ -519,14 +598,59 @@ mod tests {
     }
 
     #[test]
+    fn finish_leaves_the_marker_of_another_run() {
+        let dir = tempfile::tempdir().unwrap();
+        let files = UpdateStateFiles::in_state_dir(dir.path());
+        assert_eq!(files.begin(&other_marker(), NOW).unwrap(), Begin::Started);
+        let before = std::fs::read(&files.running).unwrap();
+        files.finish(&outcome()).unwrap();
+        assert_eq!(std::fs::read(&files.running).unwrap(), before);
+        assert_eq!(
+            entries(dir.path()),
+            ["update-result.json", "update-running.json"]
+        );
+    }
+
+    #[test]
+    fn a_result_for_the_markers_run_frees_the_slot() {
+        let dir = tempfile::tempdir().unwrap();
+        let files = UpdateStateFiles::in_state_dir(dir.path());
+        std::fs::write(
+            &files.running,
+            UpdateDocument::new(marker(NOW)).to_json_line().unwrap(),
+        )
+        .unwrap();
+        files
+            .finish_with(
+                &StdFileMutator,
+                &UpdateOutcome {
+                    txid: None,
+                    ..outcome()
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            files.begin(&marker(NOW), NOW).unwrap(),
+            Begin::AlreadyRunning
+        );
+        files.finish(&outcome()).unwrap();
+        std::fs::write(
+            &files.running,
+            UpdateDocument::new(marker(NOW)).to_json_line().unwrap(),
+        )
+        .unwrap();
+        assert_eq!(files.begin(&other_marker(), NOW).unwrap(), Begin::Started);
+    }
+
+    #[test]
     fn finish_writes_the_result_and_removes_the_marker() {
         let dir = tempfile::tempdir().unwrap();
         let files = UpdateStateFiles::in_state_dir(dir.path());
-        std::fs::write(&files.running, "{}").unwrap();
+        files.begin(&marker(NOW), NOW).unwrap();
         files.finish(&outcome()).unwrap();
         assert_eq!(
             std::fs::read_to_string(&files.result).unwrap(),
-            "{\"schemaVersion\":1,\"operation\":\"update\",\"result\":\"updated\",\"fromVersion\":\"10.6.1\",\"installedVersion\":\"10.6.2\",\"restartRequired\":true,\"finishedAt\":\"2026-09-22T16:40:05Z\"}\n"
+            "{\"schemaVersion\":1,\"operation\":\"update\",\"txid\":\"0123456789abcdef0123456789abcdef\",\"result\":\"updated\",\"fromVersion\":\"10.6.1\",\"installedVersion\":\"10.6.2\",\"restartRequired\":true,\"finishedAt\":\"2026-09-22T16:40:05Z\"}\n"
         );
         assert_eq!(entries(dir.path()), ["update-result.json"]);
     }

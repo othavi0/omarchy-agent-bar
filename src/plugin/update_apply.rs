@@ -6,6 +6,7 @@ use time::OffsetDateTime;
 
 use crate::plugin::maintenance::MaintenanceError;
 use crate::plugin::paths::PLUGIN_ID;
+use crate::plugin::update_state::Txid;
 use crate::providers::{ProcessError, ProcessOutput, ProcessRunner, ProcessSpec};
 use crate::support::{Clock, ExclusiveMaintenanceGuard, MaintenanceGate};
 
@@ -95,10 +96,13 @@ impl UpdateResult {
 }
 
 /// What one `update run` did, as written to `update-result.json`
-/// (CLI-029C). A version is `None` only when `bundle.json` was unreadable.
+/// (CLI-029C). A version is `None` only when `bundle.json` was unreadable;
+/// `txid` is `None` only for an outcome `update status` reconstructs from a
+/// state file it could not parse.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateOutcome {
+    pub txid: Option<Txid>,
     pub result: UpdateResult,
     pub from_version: Option<String>,
     pub installed_version: Option<String>,
@@ -109,12 +113,14 @@ pub struct UpdateOutcome {
 
 impl UpdateOutcome {
     pub fn new(
+        txid: Option<Txid>,
         result: UpdateResult,
         from_version: Option<String>,
         installed_version: Option<String>,
         finished_at: OffsetDateTime,
     ) -> Self {
         Self {
+            txid,
             result,
             from_version,
             installed_version,
@@ -192,9 +198,10 @@ pub async fn run_update<R: ProcessRunner, C: Clock>(
     wait: LockWait,
     omarchy: Option<&str>,
     plugin_root: &Path,
+    txid: &Txid,
 ) -> UpdateOutcome {
     let finish = |result, from: Option<String>, installed: Option<String>| {
-        UpdateOutcome::new(result, from, installed, clock.now_utc())
+        UpdateOutcome::new(Some(txid.clone()), result, from, installed, clock.now_utc())
     };
     let _guard = match wait_for_exclusive(gate, wait).await {
         Ok(Some(guard)) => guard,
@@ -372,6 +379,10 @@ mod tests {
         })
     }
 
+    fn txid() -> Txid {
+        Txid::parse("0123456789abcdef0123456789abcdef").unwrap()
+    }
+
     async fn unit_run(runner: &ScriptedRunner, root: &Path) -> UpdateOutcome {
         run_update(
             runner,
@@ -380,6 +391,7 @@ mod tests {
             QUICK_WAIT,
             Some("/usr/bin/omarchy"),
             root,
+            &txid(),
         )
         .await
     }
@@ -407,7 +419,7 @@ mod tests {
             let outcome = unit_run(&runner, root.path()).await;
             assert_eq!(
                 outcome_json(&outcome),
-                "{\"result\":\"updated\",\"fromVersion\":\"10.6.1\",\"installedVersion\":\"10.6.2\",\"restartRequired\":true,\"finishedAt\":\"2026-09-22T16:40:05Z\"}",
+                "{\"txid\":\"0123456789abcdef0123456789abcdef\",\"result\":\"updated\",\"fromVersion\":\"10.6.1\",\"installedVersion\":\"10.6.2\",\"restartRequired\":true,\"finishedAt\":\"2026-09-22T16:40:05Z\"}",
                 "{label}"
             );
         }
@@ -438,7 +450,7 @@ mod tests {
             let outcome = unit_run(&runner, root.path()).await;
             assert_eq!(
                 outcome_json(&outcome),
-                format!("{{\"result\":\"{expected}\",\"fromVersion\":\"10.6.1\",\"installedVersion\":\"10.6.1\",\"restartRequired\":false,\"finishedAt\":\"2026-09-22T16:40:05Z\"}}")
+                format!("{{\"txid\":\"0123456789abcdef0123456789abcdef\",\"result\":\"{expected}\",\"fromVersion\":\"10.6.1\",\"installedVersion\":\"10.6.1\",\"restartRequired\":false,\"finishedAt\":\"2026-09-22T16:40:05Z\"}}")
             );
         }
     }
@@ -451,7 +463,7 @@ mod tests {
         let outcome = unit_run(&runner, root.path()).await;
         assert_eq!(
             outcome_json(&outcome),
-            "{\"result\":\"failed\",\"fromVersion\":\"10.6.1\",\"installedVersion\":null,\"restartRequired\":false,\"finishedAt\":\"2026-09-22T16:40:05Z\"}"
+            "{\"txid\":\"0123456789abcdef0123456789abcdef\",\"result\":\"failed\",\"fromVersion\":\"10.6.1\",\"installedVersion\":null,\"restartRequired\":false,\"finishedAt\":\"2026-09-22T16:40:05Z\"}"
         );
     }
 
@@ -486,6 +498,7 @@ mod tests {
             },
             Some("/usr/bin/omarchy"),
             root.path(),
+            &txid(),
         )
         .await;
         release.join().unwrap();
@@ -520,7 +533,7 @@ mod tests {
         let outcome = unit_run(&runner, root.path()).await;
         assert_eq!(
             outcome_json(&outcome),
-            "{\"result\":\"failed\",\"fromVersion\":null,\"installedVersion\":null,\"restartRequired\":false,\"finishedAt\":\"2026-09-22T16:40:05Z\"}"
+            "{\"txid\":\"0123456789abcdef0123456789abcdef\",\"result\":\"failed\",\"fromVersion\":null,\"installedVersion\":null,\"restartRequired\":false,\"finishedAt\":\"2026-09-22T16:40:05Z\"}"
         );
 
         let root = plugin_root("10.6.1");
@@ -531,6 +544,7 @@ mod tests {
             QUICK_WAIT,
             None,
             root.path(),
+            &txid(),
         )
         .await;
         assert_eq!(outcome.result, UpdateResult::Failed);
