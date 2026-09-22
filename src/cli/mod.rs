@@ -44,7 +44,7 @@ pub fn help_text(topic: Option<HelpTopic>) -> String {
             out.push_str("  agent-bar login <provider>\n");
             out.push_str("  agent-bar config show\n");
             out.push_str("  agent-bar config apply stdin|file <path>|json <value>\n");
-            out.push_str("  agent-bar update [check]\n");
+            out.push_str("  agent-bar update [check|apply]\n");
             out.push_str("  agent-bar uninstall [purge]\n");
             out.push_str("  agent-bar reset claude <reset-id>\n");
             out.push_str("  agent-bar help [<command>]\n");
@@ -75,7 +75,9 @@ pub fn help_text(topic: Option<HelpTopic>) -> String {
         Some(HelpTopic::Update) => format!(
             "update — print usage; no interactive flow\n\
              update check — report whether a newer release exists (read-only)\n\
-             Install a reported update yourself: '{UPDATE_COMMAND}'.\n"
+             update apply — install the latest release through the Omarchy\n\
+             plugin manager after confirmation; the shell restart stays yours\n\
+             From a terminal you can also run '{UPDATE_COMMAND}'.\n"
         ),
         Some(HelpTopic::Uninstall) => {
             "uninstall — remove the plugin (keeps settings and backups)\n\
@@ -106,6 +108,7 @@ pub fn dispatch(command: Command) -> Result<(), CliFailure> {
         }
         Command::Update(UpdateCommand::Interactive) => dispatch_update_interactive(),
         Command::Update(UpdateCommand::Check) => dispatch_update_check(),
+        Command::Update(UpdateCommand::Apply) => dispatch_update_apply(),
         Command::Config(config) => dispatch_config(config),
         Command::Login(provider) => dispatch_login(provider),
         Command::Status(opts) => dispatch_status(opts),
@@ -304,16 +307,21 @@ fn dispatch_update_check() -> Result<(), CliFailure> {
     Ok(())
 }
 
-/// The one command a user runs to install a reported release. `omarchy plugin
+/// The terminal fallback for installing a reported release. `omarchy plugin
 /// update` fast-forwards the tree but does not reload a running shell, so the
 /// restart is part of the command. `CoreMaintenance.js` shows the same text.
 pub const UPDATE_COMMAND: &str =
-    "GIT_PAGER=cat omarchy plugin update othavi0.agent-bar && omarchy-restart-shell";
+    "omarchy plugin update othavi0.agent-bar --yes && omarchy-restart-shell";
+
+fn dispatch_update_apply() -> Result<(), CliFailure> {
+    Err(CliFailure::internal("update apply is not implemented yet"))
+}
 
 fn dispatch_update_interactive() -> Result<(), CliFailure> {
     eprintln!("agent-bar update has no interactive flow.");
     eprintln!("Use 'agent-bar update check' to look for a new release.");
-    eprintln!("Install it yourself with '{UPDATE_COMMAND}'.");
+    eprintln!("Use 'agent-bar update apply' to install it after confirmation.");
+    eprintln!("From a terminal you can also run '{UPDATE_COMMAND}'.");
     Err(CliFailure {
         message: String::new(),
         exit_code: VALIDATION,

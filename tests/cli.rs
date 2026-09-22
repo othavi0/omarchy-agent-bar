@@ -189,6 +189,10 @@ fn login_config_update_uninstall_forms() {
         Command::Update(UpdateCommand::Check)
     );
     assert_eq!(
+        parse(words(&["update", "apply"])).unwrap(),
+        Command::Update(UpdateCommand::Apply)
+    );
+    assert_eq!(
         parse(words(&["uninstall"])).unwrap(),
         Command::Uninstall { purge: false }
     );
@@ -227,11 +231,10 @@ fn reset_rejects_missing_arguments_wrong_provider_and_extra_words() {
 }
 
 #[test]
-fn update_apply_and_update_run_are_grammar_errors() {
+fn update_run_and_update_apply_arguments_are_grammar_errors() {
     for extra in [
         words(&["update", "run"]),
         words(&["update", "run", "now"]),
-        words(&["update", "apply"]),
         words(&["update", "apply", "10.0.0"]),
         words(&["update", "apply", "extra", "words"]),
     ] {
@@ -411,6 +414,25 @@ fn binary_help_mentions_plugin_first_product() {
 }
 
 #[test]
+fn binary_help_names_both_update_subcommands() {
+    CargoBin::cargo_bin("agent-bar")
+        .unwrap()
+        .arg("help")
+        .assert()
+        .code(SUCCESS)
+        .stdout(predicates::str::contains(
+            "agent-bar update [check|apply]\n",
+        ));
+    CargoBin::cargo_bin("agent-bar")
+        .unwrap()
+        .args(["help", "update"])
+        .assert()
+        .code(SUCCESS)
+        .stdout(predicates::str::contains("update check"))
+        .stdout(predicates::str::contains("update apply"));
+}
+
+#[test]
 fn binary_interactive_update_rejects_non_tty() {
     let dir = tempdir().unwrap();
     let home = dir.path();
@@ -433,9 +455,9 @@ fn binary_interactive_update_rejects_non_tty() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains("update check")
-            && stderr.contains(
-                "GIT_PAGER=cat omarchy plugin update othavi0.agent-bar && omarchy-restart-shell"
-            ),
+            && stderr.contains("update apply")
+            && stderr
+                .contains("omarchy plugin update othavi0.agent-bar --yes && omarchy-restart-shell"),
         "stderr={stderr}"
     );
 }
