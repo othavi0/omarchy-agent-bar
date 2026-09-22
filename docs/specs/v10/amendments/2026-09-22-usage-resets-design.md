@@ -117,22 +117,25 @@ UsageReset
 
 `agent-bar reset claude <reset-id>` claims one Claude reset.
 
-- `CLI-030`: The grammar accepts only `reset claude <reset-id>`. Any other
+These rules are numbered from `CLI-032` because `CLI-030` and `CLI-031` were
+already assigned in `03-cli-and-json-contract.md`.
+
+- `CLI-032`: The grammar accepts only `reset claude <reset-id>`. Any other
   provider is a grammar error (`CLI-007`). A reset id that fails
   `JSON-022E`, or that names no claim program (`codex-credits`), exits with
   `VALIDATION` before any filesystem or network access.
-- `CLI-031`: The command reads the same credentials file as collection and
+- `CLI-033`: The command reads the same credentials file as collection and
   applies the same expiry precheck. It reads the organization uuid from
   `$HOME/.claude.json` at `oauthAccount.organizationUuid` and accepts only
   36 hex digits and hyphens. A missing file, a missing key, or any other
   value returns `unavailable` before any request, because signing in again
   does not create the key. The uuid, the token, and the request body never
   reach logs, cache, or stdout.
-- `CLI-032`: The command fetches usage first, with the collection headers,
-  and claims only a reset that the fresh response lists as `claimable`. An
-  id that the fresh response does not list, or lists as not claimable,
-  returns `unavailable` without a POST.
-- `CLI-033`: The claim is one `POST` to
+- `CLI-034`: The command fetches usage first, with the collection headers
+  and the collection retry policy, and claims only a reset that the fresh
+  response lists as `claimable`. An id that the fresh response does not
+  list, or lists as not claimable, returns `unavailable` without a POST.
+- `CLI-035`: The claim is one `POST` to
   `https://api.anthropic.com/api/organizations/<uuid>/reset_rate_limits`
   with `Content-Type: application/json`, the collection headers, and a body
   of `program` (`cedar_ember` or `juniper_tide`), `grant_id` for
@@ -142,7 +145,7 @@ UsageReset
   returns `unavailable` without a POST. The POST follows
   the GET discipline: HTTPS only, no redirects, body size cap, provider
   timeout. The POST is never retried.
-- `CLI-034`: stdout is exactly one JSON object plus newline:
+- `CLI-036`: stdout is exactly one JSON object plus newline:
 
 ```json
 {
@@ -163,7 +166,7 @@ UsageReset
   `resetsLeft` and `cooldownUntil` are null when the response does not
   carry them. `clears` lists the window ids the response reports as
   cleared, mapped as in collection.
-- `CLI-035`: The command does not touch the cache. The popup forces a
+- `CLI-037`: The command does not touch the cache. The popup forces a
   refresh of the provider after any result.
 
 ### Popup

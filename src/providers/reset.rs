@@ -25,7 +25,7 @@ use crate::support::{Clock, FileSystem};
 const RESET_CLAIM_URL_PREFIX: &str = "https://api.anthropic.com/api/organizations/";
 const RESET_CLAIM_URL_SUFFIX: &str = "/reset_rate_limits";
 
-/// Typed `agent-bar reset claude <id>` outcome (CLI-034 vocabulary). Every
+/// Typed `agent-bar reset claude <id>` outcome (CLI-036 vocabulary). Every
 /// value exits `0`; these are data, not process failures.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResetResult {
@@ -204,7 +204,7 @@ impl<'a> ClaimTarget<'a> {
 
 /// Fetches fresh usage, claims `reset_id` only when that fresh response lists
 /// it as claimable, and reports one typed [`ResetResult`]. Never retries the
-/// POST. Never panics: every failure is data, per CLI-034.
+/// POST. Never panics: every failure is data, per CLI-036.
 pub async fn claim_claude_reset(ctx: &ResetContext<'_>, reset_id: &str) -> ResetReport {
     let Some(target) = ClaimTarget::parse(reset_id) else {
         return ResetReport::simple(ResetResult::Unavailable);

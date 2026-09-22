@@ -378,10 +378,10 @@ amendment landed.
   value returns `unavailable` before any request, because signing in again
   does not create the key. The uuid, the token, and the request body never
   reach logs, cache, or stdout.
-- `CLI-034`: The command fetches usage first, with the collection headers,
-  and claims only a reset that the fresh response lists as `claimable`. An
-  id that the fresh response does not list, or lists as not claimable,
-  returns `unavailable` without a POST.
+- `CLI-034`: The command fetches usage first, with the collection headers
+  and the collection retry policy, and claims only a reset that the fresh
+  response lists as `claimable`. An id that the fresh response does not
+  list, or lists as not claimable, returns `unavailable` without a POST.
 - `CLI-035`: The claim is one `POST` to
   `https://api.anthropic.com/api/organizations/<uuid>/reset_rate_limits`
   with `Content-Type: application/json`, the collection headers, and a body
