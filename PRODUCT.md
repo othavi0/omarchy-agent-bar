@@ -29,9 +29,9 @@ Success means:
 - every visible value comes from normalized provider data;
 - all monitors share one state and polling source;
 - stale and partial failures remain understandable;
-- Settings changes are recoverable; update is a read-only check with the
-  install command shown for the user to run, and uninstall is an explicit,
-  confirmed action delegated to the Omarchy plugin manager;
+- Settings changes are recoverable; update and uninstall are explicit,
+  confirmed actions delegated to the Omarchy plugin manager, and the update
+  runs in a transient user unit that reports through a state file;
 - pointer, keyboard, focus, scrolling, themes, and absence of Agent
   Bar-authored motion work as native Quattro behavior;
 - the plugin never leaks credentials or raw provider output.

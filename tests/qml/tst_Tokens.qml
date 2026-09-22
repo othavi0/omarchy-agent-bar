@@ -39,7 +39,8 @@ TestCase {
       "components/SettingsFooter.qml",
       "components/SectionHeader.qml",
       "components/ConfirmDialog.qml",
-      "components/ResetsSection.qml"
+      "components/ResetsSection.qml",
+      "components/RestartBanner.qml"
     ]
   }
 
