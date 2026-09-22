@@ -63,7 +63,7 @@ function createService(serviceUrl, parent, testCase) {
       processMock("settingsWriteProcess", "settingsWriteOut", "settingsWriteErr"),
       processMock("maintenanceCheckProcess", "maintenanceCheckOut", "maintenanceCheckErr"),
       processMock("maintenanceHandoffProcess", "maintenanceHandoffOut", "maintenanceHandoffErr"),
-      processMock("updateApplyProcess", "updateApplyOut", "updateApplyErr"),
+      processMock("updateProcess", "updateOut", "updateErr"),
       processMock("resetProcess", "resetOut", "resetErr"),
       ""
     ].join("\n")
@@ -82,7 +82,7 @@ function createService(serviceUrl, parent, testCase) {
   service.settingsTimeoutMs = 50
   service.maintenanceCheckTimeoutMs = 50
   service.maintenanceHandoffTimeoutMs = 50
-  service.updateApplyTimeoutMs = 50
+  service.updateTimeoutMs = 50
   service.collectionDelayMs = 10000
   service.applyVersionProbeResult({ ok: true, exitCode: 0, stdout: "10.3.17\n", stderr: "", timedOut: false })
   return service

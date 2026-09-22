@@ -706,13 +706,22 @@ TestCase {
     compare(s.resetUi.outcome.result, "provider_error")
   }
 
-  function updateApplyDoc(result, installed) {
+  readonly property string startedDoc:
+      '{"schemaVersion":1,"operation":"update","result":"started","unit":"agent-bar-update-7.service"}\n'
+  readonly property string runningDoc:
+      '{"schemaVersion":1,"operation":"update","status":"running","startedAt":"2026-09-22T12:00:00Z","targetVersion":"10.3.18"}\n'
+  readonly property string noneDoc: '{"schemaVersion":1,"operation":"update","status":"none"}\n'
+
+  function finishedDoc(result, installed) {
     return JSON.stringify({
       schemaVersion: 1,
       operation: "update",
+      status: "finished",
       result: result,
+      fromVersion: "10.3.17",
       installedVersion: installed,
-      restartRequired: result === "updated"
+      restartRequired: result === "updated",
+      finishedAt: "2026-09-22T12:01:00Z"
     }) + "\n"
   }
 
@@ -734,6 +743,15 @@ TestCase {
     return s
   }
 
+  function runUpdateToStatus(stdout) {
+    var s = startUpdate()
+    finishLane(s, "update", 0, startedDoc)
+    s.pollUpdateStatus()
+    compare(JSON.stringify(s.lanes.update.process.command), '["/nonexistent","update","status"]')
+    finishLane(s, "update", 0, stdout)
+    return s
+  }
+
   function test_update_confirm_dialog_opens_and_closes() {
     var s = serviceWithUpdateOffer()
     s.openUpdateConfirm()
@@ -742,23 +760,23 @@ TestCase {
     compare(s.maintenanceUi.updateConfirmOpen, false)
     compare(s.maintenanceUi.phase, "update_available")
     compare(s.confirmUpdate(), false)
-    compare(s.lanes.updateApply.busy, false)
+    compare(s.lanes.update.busy, false)
   }
 
   function test_update_confirm_runs_the_apply_lane_with_argv_and_stdin() {
     var s = startUpdate()
     compare(s.maintenanceUi.phase, "updating")
     compare(s.maintenanceUi.updateConfirmOpen, false)
-    compare(s.maintenanceUi.message, "Updating\u2026 this takes a few seconds.")
+    compare(s.maintenanceUi.message, "Updating… this takes a few seconds.")
     compare(s.maintenanceState.blocked, false)
     compare(s.pollEnabled, true)
-    compare(s.lanes.updateApply.busy, true)
+    compare(s.lanes.update.busy, true)
     compare(s.lanes.maintenanceHandoff.busy, false)
-    compare(JSON.stringify(s.lanes.updateApply.process.command),
+    compare(JSON.stringify(s.lanes.update.process.command),
             '["/nonexistent","update","apply"]')
-    compare(s.lanes.updateApply.process.written,
+    compare(s.lanes.update.process.written,
             '{"schemaVersion":1,"operation":"update","confirmed":true,"targetVersion":"10.3.18"}\n')
-    compare(s.lanes.updateApply.process.stdinEnabled, false)
+    compare(s.lanes.update.process.stdinEnabled, false)
   }
 
   function test_update_starts_beside_a_busy_status_lane() {
@@ -768,18 +786,50 @@ TestCase {
     s.openUpdateConfirm()
     verify(s.confirmUpdate())
     compare(s.maintenanceState.blocked, false)
-    compare(s.lanes.updateApply.busy, true)
+    compare(s.lanes.update.busy, true)
     finishLane(s, "status", 0, validEnvelope())
     compare(s.refresh("claude"), "ok")
     compare(s.lanes.status.busy, true)
   }
 
-  function test_updated_sets_restart_pending_and_keeps_polling() {
+  function test_started_polls_update_status_every_two_seconds_until_finished() {
     var s = startUpdate()
+    s.updateTimeoutMs = 5000
+    finishLane(s, "update", 0, startedDoc)
+    compare(s.maintenanceUi.phase, "updating")
+    compare(s.updateRunning, true)
+    compare(s.lanes.update.busy, false)
+    compare(s.updatePollIntervalMs, 2000)
+    s.updatePollIntervalMs = 20
+    tryVerify(function () { return s.lanes.update.busy }, 1000)
+    compare(JSON.stringify(s.lanes.update.process.command), '["/nonexistent","update","status"]')
+    compare(s.lanes.update.process.stdinEnabled, false)
+    finishLane(s, "update", 0, runningDoc)
+    compare(s.maintenanceUi.phase, "updating")
     compare(s.restartPending, false)
-    finishLane(s, "updateApply", 0, updateApplyDoc("updated", "10.3.18"))
+    tryVerify(function () { return s.lanes.update.busy }, 1000)
+    finishLane(s, "update", 0, finishedDoc("updated", "10.3.18"))
     compare(s.maintenanceUi.phase, "restart_required")
     compare(s.maintenanceUi.message, "10.3.18 installed. Restart the shell to load it.")
+    compare(s.restartPending, true)
+    compare(s.pendingVersion, "10.3.18")
+    compare(s.updateRunning, false)
+    wait(100)
+    compare(s.lanes.update.busy, false, "polling stops after the result")
+  }
+
+  function test_already_running_polls_like_started() {
+    var s = startUpdate()
+    finishLane(s, "update", 0, '{"result":"already_running"}\n')
+    compare(s.maintenanceUi.phase, "updating")
+    compare(s.updateRunning, true)
+    s.pollUpdateStatus()
+    compare(JSON.stringify(s.lanes.update.process.command), '["/nonexistent","update","status"]')
+  }
+
+  function test_updated_sets_restart_pending_and_keeps_polling() {
+    var s = runUpdateToStatus(finishedDoc("updated", "10.3.18"))
+    compare(s.maintenanceUi.phase, "restart_required")
     compare(s.maintenanceUi.installedVersion, "10.3.17")
     compare(s.restartPending, true)
     compare(s.pendingVersion, "10.3.18")
@@ -788,24 +838,17 @@ TestCase {
     compare(s.refresh("claude"), "ok")
     compare(s.lanes.status.busy, true)
     compare(s.lanes.maintenanceHandoff.busy, false)
-    var before = s.restartShellRequestCount
-    s.restartShell()
-    compare(s.restartShellRequestCount, before + 1)
-    compare(JSON.stringify(s.lastRestartShellArgv), '["omarchy-restart-shell"]')
   }
 
-  function test_up_to_date_result_resumes_polling() {
-    var s = startUpdate()
-    finishLane(s, "updateApply", 0, updateApplyDoc("up_to_date", "10.3.17"))
+  function test_up_to_date_result_returns_to_up_to_date() {
+    var s = runUpdateToStatus(finishedDoc("up_to_date", "10.3.17"))
     compare(s.maintenanceUi.phase, "up_to_date")
     compare(s.maintenanceUi.message, "Agent Bar is up to date.")
-    compare(s.maintenanceState.blocked, false)
-    compare(s.pollEnabled, true)
-    s.kickStatus()
-    compare(s.lanes.status.busy, true)
+    compare(s.restartPending, false)
+    compare(s.updateRunning, false)
   }
 
-  function test_each_failure_result_renders_its_line_and_unblocks() {
+  function test_each_failure_result_renders_its_line() {
     var table = [
       ["local_changes", "The plugin folder has local changes. Run git status in ~/.config/omarchy/plugins/othavi0.agent-bar."],
       ["fetch_failed", "Could not reach GitHub. Try again."],
@@ -814,45 +857,57 @@ TestCase {
       ["failed", "The update did not finish. You are still on 10.3.17."]
     ]
     for (var i = 0; i < table.length; i++) {
-      var s = startUpdate()
-      finishLane(s, "updateApply", 0, updateApplyDoc(table[i][0], "10.3.17"))
+      var s = runUpdateToStatus(finishedDoc(table[i][0], "10.3.17"))
       compare(s.maintenanceUi.phase, "update_failed", table[i][0])
       compare(s.maintenanceUi.message, table[i][1])
       compare(s.maintenanceUi.targetVersion, "10.3.18")
       compare(s.maintenanceUi.updateCommand,
               "omarchy plugin update othavi0.agent-bar --yes && omarchy-restart-shell")
-      compare(s.maintenanceState.blocked, false)
-      compare(s.pollEnabled, true)
+      compare(s.restartPending, false)
+      compare(s.updateRunning, false)
       cleanup()
     }
   }
 
-  function test_nonzero_exit_and_unparsable_stdout_render_as_failed() {
+  function test_a_refused_or_unreadable_apply_renders_as_failed() {
     var s = startUpdate()
-    finishLane(s, "updateApply", 2, updateApplyDoc("updated", "10.3.18"))
+    finishLane(s, "update", 2, startedDoc)
     compare(s.maintenanceUi.phase, "update_failed")
     compare(s.maintenanceUi.message, "The update did not finish. You are still on 10.3.17.")
-    compare(s.maintenanceState.blocked, false)
+    compare(s.updateRunning, false)
     cleanup()
     s = startUpdate()
-    finishLane(s, "updateApply", 0, "Updating plugin...\n")
+    finishLane(s, "update", 0, "Updating plugin...\n")
     compare(s.maintenanceUi.message, "The update did not finish. You are still on 10.3.17.")
+    compare(s.updateRunning, false)
   }
 
   function test_update_lane_timeout_renders_as_failed() {
     var s = startUpdate()
     tryVerify(function () { return s.maintenanceUi.phase === "update_failed" }, 2000)
     compare(s.maintenanceUi.message, "The update did not finish. You are still on 10.3.17.")
-    compare(s.maintenanceState.blocked, false)
-    compare(s.pollEnabled, true)
+    compare(s.updateRunning, false)
   }
 
-  function test_update_deadline_is_150_seconds() {
+  function test_no_result_within_the_poll_window_renders_as_failed() {
+    var s = startUpdate()
+    compare(s.updatePollWindowMs, 180000)
+    s.updatePollWindowMs = 150
+    s.updatePollIntervalMs = 20
+    finishLane(s, "update", 0, startedDoc)
+    tryVerify(function () { return s.lanes.update.busy }, 1000)
+    finishLane(s, "update", 0, runningDoc)
+    tryVerify(function () { return s.maintenanceUi.phase === "update_failed" }, 2000)
+    compare(s.maintenanceUi.message, "The update did not finish. You are still on 10.3.17.")
+    compare(s.updateRunning, false)
+  }
+
+  function test_update_lane_deadline_is_30_seconds() {
     var xhr = new XMLHttpRequest()
     xhr.open("GET", serviceUrl, false)
     xhr.send()
     var src = String(xhr.responseText)
-    verify(src.indexOf("property int updateApplyTimeoutMs: 150000") >= 0)
+    verify(src.indexOf("property int updateTimeoutMs: 30000") >= 0)
   }
 
   function test_closing_and_reopening_during_the_update_keeps_the_phase() {
@@ -868,7 +923,9 @@ TestCase {
     s.openSettings("mon-b")
     compare(s.popupOwner.view, "settings")
     compare(s.maintenanceUi.phase, "updating")
-    finishLane(s, "updateApply", 0, updateApplyDoc("updated", "10.3.18"))
+    finishLane(s, "update", 0, startedDoc)
+    s.pollUpdateStatus()
+    finishLane(s, "update", 0, finishedDoc("updated", "10.3.18"))
     compare(s.updateRunning, false)
     s.dismissPopup()
     s.openSettings("mon-a")

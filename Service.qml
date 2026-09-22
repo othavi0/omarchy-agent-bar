@@ -27,7 +27,9 @@ Item {
   property int settingsTimeoutMs: 15000
   property int maintenanceCheckTimeoutMs: 30000
   property int maintenanceHandoffTimeoutMs: 120000
-  property int updateApplyTimeoutMs: 150000
+  property int updateTimeoutMs: 30000
+  property int updatePollIntervalMs: 2000
+  property int updatePollWindowMs: 180000
   property int pollIntervalMs: Core.pollIntervalMs(appliedSettings)
   property int collectionDelayMs: 0
 
@@ -53,7 +55,7 @@ Item {
   property string restartPendingVersion: ""
   readonly property bool restartPending: restartPendingVersion.length > 0
   readonly property string pendingVersion: restartPendingVersion
-  readonly property bool updateRunning: updateApplyLane.busy
+  readonly property bool updateRunning: updateLane.busy || updatePollWindow.running
   property string pendingMaintenancePayload: ""
   property int resetTimeoutMs: 45000
   property var resetUi: Core.resetUiIdle()
@@ -70,7 +72,7 @@ Item {
     settingsWrite: settingsWriteLane,
     maintenanceCheck: maintenanceCheckLane,
     maintenanceHandoff: maintenanceHandoffLane,
-    updateApply: updateApplyLane,
+    update: updateLane,
     reset: resetLane
   })
   readonly property int stalledLaneCount:
@@ -81,7 +83,7 @@ Item {
       + (settingsWriteLane.stalled ? 1 : 0)
       + (maintenanceCheckLane.stalled ? 1 : 0)
       + (maintenanceHandoffLane.stalled ? 1 : 0)
-      + (updateApplyLane.stalled ? 1 : 0)
+      + (updateLane.stalled ? 1 : 0)
       + (resetLane.stalled ? 1 : 0)
   readonly property string runtimeHealth: Core.runtimeHealth(stalledLaneCount)
 
@@ -383,21 +385,46 @@ Item {
       return false
     var argv = Maintenance.updateApplyArgv(resolvedHelperPath())
     var target = String(maintenanceUi.targetVersion || "")
-    if (!argv || !target.length || !updateApplyLane.ready) {
-      maintenanceUi = Maintenance.maintenanceUiFromUpdateApply(
-        maintenanceUi, Maintenance.updateApplyOutcomeFromLane(null))
+    if (!argv || !target.length || !updateLane.ready) {
+      finishUpdate(Maintenance.failedUpdateOutcome())
       return false
     }
     maintenanceUi = Maintenance.maintenanceUiUpdating(maintenanceUi)
-    return updateApplyLane.start(argv, JSON.stringify(Maintenance.updateConfirmation(target)))
+    return updateLane.start(argv, JSON.stringify(Maintenance.updateConfirmation(target)), "apply")
   }
 
-  function applyUpdateApplyDone(outcome) {
-    noteLaneSettled(outcome)
-    var result = Maintenance.updateApplyOutcomeFromLane(outcome)
-    maintenanceUi = Maintenance.maintenanceUiFromUpdateApply(maintenanceUi, result)
-    if (result.restartRequired)
+  function beginUpdatePoll() {
+    updatePollTimer.restart()
+    updatePollWindow.restart()
+  }
+
+  function pollUpdateStatus() {
+    var argv = Maintenance.updateStatusArgv(resolvedHelperPath())
+    if (!argv || !updateLane.ready)
+      return
+    updateLane.start(argv, "", "status")
+  }
+
+  function finishUpdate(outcome) {
+    updatePollTimer.stop()
+    updatePollWindow.stop()
+    maintenanceUi = Maintenance.maintenanceUiFromUpdateResult(maintenanceUi, outcome)
+    if (outcome.restartRequired)
       restartPendingVersion = maintenanceUi.targetVersion || "Agent Bar"
+  }
+
+  function applyUpdateLaneResult(outcome) {
+    noteLaneSettled(outcome)
+    if (outcome.context === "apply") {
+      if (Maintenance.updateStartFromLane(outcome) === "failed")
+        finishUpdate(Maintenance.failedUpdateOutcome())
+      else
+        beginUpdatePoll()
+      return
+    }
+    var status = Maintenance.updateStatusFromLane(outcome)
+    if (status.status === "finished")
+      finishUpdate(status.outcome)
   }
 
   function openUninstallConfirm() {
@@ -818,12 +845,12 @@ Item {
   }
 
   HelperLane {
-    id: updateApplyLane
-    process: updateApplyProcess
-    stdoutSource: updateApplyOut
-    stderrSource: updateApplyErr
-    timeoutMs: root.updateApplyTimeoutMs
-    onSettled: function (outcome) { root.applyUpdateApplyDone(outcome) }
+    id: updateLane
+    process: updateProcess
+    stdoutSource: updateOut
+    stderrSource: updateErr
+    timeoutMs: root.updateTimeoutMs
+    onSettled: function (outcome) { root.applyUpdateLaneResult(outcome) }
   }
 
   Process {
@@ -875,9 +902,9 @@ Item {
   }
 
   Process {
-    id: updateApplyProcess
-    stdout: StdioCollector { id: updateApplyOut; waitForEnd: true }
-    stderr: StdioCollector { id: updateApplyErr; waitForEnd: true }
+    id: updateProcess
+    stdout: StdioCollector { id: updateOut; waitForEnd: true }
+    stderr: StdioCollector { id: updateErr; waitForEnd: true }
   }
 
   Timer {
@@ -896,6 +923,22 @@ Item {
         return
       root.kickStatus()
     }
+  }
+
+  Timer {
+    id: updatePollTimer
+    interval: root.updatePollIntervalMs
+    repeat: true
+    running: false
+    onTriggered: root.pollUpdateStatus()
+  }
+
+  Timer {
+    id: updatePollWindow
+    interval: root.updatePollWindowMs
+    repeat: false
+    running: false
+    onTriggered: root.finishUpdate(Maintenance.failedUpdateOutcome())
   }
 
   Timer {
@@ -927,6 +970,8 @@ Item {
   Component.onDestruction: {
     collectionDelay.stop()
     pollTimer.stop()
+    updatePollTimer.stop()
+    updatePollWindow.stop()
     nowTimer.stop()
   }
 }

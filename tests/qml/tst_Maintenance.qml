@@ -53,48 +53,71 @@ TestCase {
             "omarchy plugin update othavi0.agent-bar --yes && omarchy-restart-shell")
   }
 
-  function test_update_apply_argv_and_confirmation() {
+  function test_update_apply_and_status_argv_and_confirmation() {
     compare(Core.updateApplyArgv("/p/bin/agent-bar").join(" "), "/p/bin/agent-bar update apply")
     compare(Core.updateApplyArgv(""), null)
+    compare(Core.updateStatusArgv("/p/bin/agent-bar").join(" "), "/p/bin/agent-bar update status")
+    compare(Core.updateStatusArgv(""), null)
     compare(JSON.stringify(Core.updateConfirmation("10.6.2")),
             '{"schemaVersion":1,"operation":"update","confirmed":true,"targetVersion":"10.6.2"}')
   }
 
-  function applyDoc(result, installed) {
+  function lane(stdout, exitCode, timedOut) {
+    return { stdout: stdout, exitCode: exitCode === undefined ? 0 : exitCode, timedOut: !!timedOut }
+  }
+
+  function finishedDoc(result, installed, restartRequired) {
     return JSON.stringify({
       schemaVersion: 1,
       operation: "update",
+      status: "finished",
       result: result,
+      fromVersion: "10.6.1",
       installedVersion: installed,
-      restartRequired: result === "updated"
+      restartRequired: restartRequired === undefined ? result === "updated" : restartRequired,
+      finishedAt: "2026-09-22T12:00:00Z"
     }) + "\n"
   }
 
-  function test_parse_update_apply_outcome_closed_set() {
-    var ok = Core.parseUpdateApplyOutcome(applyDoc("updated", "10.6.2"))
-    compare(ok.result, "updated")
-    compare(ok.installedVersion, "10.6.2")
-    compare(ok.restartRequired, true)
+  function test_update_start_reads_started_and_already_running() {
+    compare(Core.updateStartFromLane(lane('{"schemaVersion":1,"operation":"update","result":"started","unit":"agent-bar-update-1.service"}\n')), "started")
+    compare(Core.updateStartFromLane(lane('{"result":"already_running"}\n')), "already_running")
+    compare(Core.updateStartFromLane(lane('{"result":"started"}', 4)), "failed")
+    compare(Core.updateStartFromLane(lane("", 1, true)), "failed")
+    compare(Core.updateStartFromLane(lane("Starting unit\n")), "failed")
+    compare(Core.updateStartFromLane(lane('{"schemaVersion":2,"operation":"update","result":"started"}')), "failed")
+    compare(Core.updateStartFromLane(lane('{"schemaVersion":1,"operation":"uninstall","result":"started"}')), "failed")
+    compare(Core.updateStartFromLane(lane('{"result":"updated"}')), "failed")
+    compare(Core.updateStartFromLane(null), "failed")
+  }
+
+  function test_update_status_reads_each_status() {
+    compare(Core.updateStatusFromLane(lane('{"schemaVersion":1,"operation":"update","status":"none"}\n')).status, "none")
+    var running = Core.updateStatusFromLane(lane('{"schemaVersion":1,"operation":"update","status":"running","startedAt":"2026-09-22T12:00:00Z","targetVersion":"10.6.2"}'))
+    compare(running.status, "running")
+    compare(running.targetVersion, "10.6.2")
+    var done = Core.updateStatusFromLane(lane(finishedDoc("updated", "10.6.2")))
+    compare(done.status, "finished")
+    compare(JSON.stringify(done.outcome), '{"result":"updated","installedVersion":"10.6.2","restartRequired":true}')
     var kinds = ["up_to_date", "local_changes", "fetch_failed", "validation_failed", "timed_out", "failed"]
-    for (var i = 0; i < kinds.length; i++)
-      compare(Core.parseUpdateApplyOutcome(applyDoc(kinds[i], "10.6.1")).result, kinds[i])
-    compare(Core.parseUpdateApplyOutcome(applyDoc("exploded", "10.6.1")).result, "failed")
-    compare(Core.parseUpdateApplyOutcome("").result, "failed")
-    compare(Core.parseUpdateApplyOutcome("not json").result, "failed")
-    compare(Core.parseUpdateApplyOutcome(JSON.stringify({ schemaVersion: 2, operation: "update", result: "updated" })).result, "failed")
-    compare(Core.parseUpdateApplyOutcome(JSON.stringify({ schemaVersion: 1, operation: "uninstall", result: "updated" })).result, "failed")
-    compare(Core.parseUpdateApplyOutcome("").restartRequired, false)
+    for (var i = 0; i < kinds.length; i++) {
+      var o = Core.updateStatusFromLane(lane(finishedDoc(kinds[i], "10.6.1"))).outcome
+      compare(o.result, kinds[i])
+      compare(o.restartRequired, false)
+    }
+    compare(Core.updateStatusFromLane(lane(finishedDoc("exploded", "10.6.1"))).outcome.result, "failed")
+    compare(Core.updateStatusFromLane(lane(finishedDoc("failed", "10.6.2", true))).outcome.restartRequired, true)
+    compare(Core.updateStatusFromLane(lane("")).status, "unreadable")
+    compare(Core.updateStatusFromLane(lane("not json")).status, "unreadable")
+    compare(Core.updateStatusFromLane(lane('{"status":"none"}', 3)).status, "unreadable")
+    compare(Core.updateStatusFromLane(lane("", 1, true)).status, "unreadable")
+    compare(Core.updateStatusFromLane(lane('{"schemaVersion":1,"operation":"update","status":"paused"}')).status, "unreadable")
+    compare(Core.updateStatusFromLane(lane('{"schemaVersion":2,"operation":"update","status":"none"}')).status, "unreadable")
   }
 
-  function test_update_apply_outcome_from_lane_maps_failures() {
-    compare(Core.updateApplyOutcomeFromLane({ exitCode: 0, timedOut: false, stdout: applyDoc("updated", "10.6.2") }).result, "updated")
-    compare(Core.updateApplyOutcomeFromLane({ exitCode: 3, timedOut: false, stdout: applyDoc("updated", "10.6.2") }).result, "failed")
-    compare(Core.updateApplyOutcomeFromLane({ exitCode: 1, timedOut: true, stdout: "" }).result, "failed")
-  }
-
-  function test_update_apply_message_table() {
+  function test_update_result_message_table() {
     function msg(result, installed) {
-      return Core.updateApplyMessage({ result: result, installedVersion: installed || "", restartRequired: result === "updated" }, "10.6.1")
+      return Core.updateResultMessage({ result: result, installedVersion: installed || "", restartRequired: result === "updated" }, "10.6.1")
     }
     compare(msg("updated", "10.6.2"), "10.6.2 installed. Restart the shell to load it.")
     compare(msg("up_to_date"), "Agent Bar is up to date.")
@@ -129,13 +152,17 @@ TestCase {
     compare(closed.phase, "update_available")
   }
 
+  function outcome(result, installed) {
+    return Core.updateStatusFromLane(lane(finishedDoc(result, installed))).outcome
+  }
+
   function test_update_transitions_to_restart_required() {
     var ui = Core.maintenanceUiUpdating(Core.maintenanceUiOpenUpdateConfirm(availableUi()))
     compare(ui.phase, "updating")
     compare(ui.updateConfirmOpen, false)
     compare(ui.message, "Updating\u2026 this takes a few seconds.")
     compare(ui.updateCommand, "omarchy plugin update othavi0.agent-bar --yes && omarchy-restart-shell")
-    var done = Core.maintenanceUiFromUpdateApply(ui, Core.parseUpdateApplyOutcome(applyDoc("updated", "10.4.0")))
+    var done = Core.maintenanceUiFromUpdateResult(ui, outcome("updated", "10.4.0"))
     compare(done.phase, "restart_required")
     compare(done.installedVersion, "10.3.1")
     compare(done.targetVersion, "10.4.0")
@@ -145,7 +172,7 @@ TestCase {
 
   function test_update_transitions_to_up_to_date() {
     var ui = Core.maintenanceUiUpdating(availableUi())
-    var done = Core.maintenanceUiFromUpdateApply(ui, Core.parseUpdateApplyOutcome(applyDoc("up_to_date", "10.3.1")))
+    var done = Core.maintenanceUiFromUpdateResult(ui, outcome("up_to_date", "10.3.1"))
     compare(done.phase, "up_to_date")
     compare(done.message, "Agent Bar is up to date.")
     compare(done.targetVersion, "")
@@ -155,14 +182,14 @@ TestCase {
 
   function test_update_failure_keeps_target_and_fallback() {
     var ui = Core.maintenanceUiUpdating(availableUi())
-    var done = Core.maintenanceUiFromUpdateApply(ui, Core.parseUpdateApplyOutcome(applyDoc("fetch_failed", "10.3.1")))
+    var done = Core.maintenanceUiFromUpdateResult(ui, outcome("fetch_failed", "10.3.1"))
     compare(done.phase, "update_failed")
     compare(done.message, "Could not reach GitHub. Try again.")
     compare(done.targetVersion, "10.4.0")
     compare(done.releaseNotesUrl, "https://github.com/othavi0/omarchy-agent-bar/releases/tag/v10.4.0")
     compare(done.updateCommand, "omarchy plugin update othavi0.agent-bar --yes && omarchy-restart-shell")
     compare(Core.maintenanceUiOpenUpdateConfirm(done).updateConfirmOpen, true)
-    var failed = Core.maintenanceUiFromUpdateApply(ui, Core.parseUpdateApplyOutcome("garbage"))
+    var failed = Core.maintenanceUiFromUpdateResult(ui, Core.failedUpdateOutcome())
     compare(failed.message, "The update did not finish. You are still on 10.3.1.")
   }
 

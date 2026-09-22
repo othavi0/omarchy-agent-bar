@@ -266,7 +266,7 @@ TestCase {
     verify(src.indexOf("id: settingsWriteProcess") >= 0)
     verify(src.indexOf("id: maintenanceCheckProcess") >= 0)
     verify(src.indexOf("id: maintenanceHandoffProcess") >= 0)
-    verify(src.indexOf("id: updateApplyProcess") >= 0)
+    verify(src.indexOf("id: updateProcess") >= 0)
     verify(src.indexOf("id: pollTimer") >= 0)
     verify(src.indexOf('target: "othavi0.agent-bar"') >= 0)
   }
@@ -283,8 +283,8 @@ TestCase {
     verify(src.indexOf("id: settingsWriteLane") >= 0)
     verify(src.indexOf("id: maintenanceCheckLane") >= 0)
     verify(src.indexOf("id: maintenanceHandoffLane") >= 0)
-    verify(src.indexOf("id: updateApplyLane") >= 0)
-    verify(src.indexOf("process: updateApplyProcess") >= 0)
+    verify(src.indexOf("id: updateLane") >= 0)
+    verify(src.indexOf("process: updateProcess") >= 0)
     verify(src.indexOf("Component.onDestruction") >= 0)
   }
 

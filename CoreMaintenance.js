@@ -68,7 +68,13 @@ function updateConfirmModel(targetVersion) {
   }
 }
 
-var UPDATE_APPLY_MESSAGES = {
+function updateStatusArgv(helperPath) {
+  if (!helperPath || !String(helperPath).length)
+    return null
+  return [String(helperPath), "update", "status"]
+}
+
+var UPDATE_RESULT_MESSAGES = {
   updated: function (v) { return v + " installed. Restart the shell to load it." },
   up_to_date: function (v) { return "Agent Bar is up to date." },
   local_changes: function (v) {
@@ -83,40 +89,64 @@ var UPDATE_APPLY_MESSAGES = {
   failed: function (v) { return "The update did not finish. You are still on " + v + "." }
 }
 
-function failedUpdateApplyOutcome() {
+function failedUpdateOutcome() {
   return { result: "failed", installedVersion: "", restartRequired: false }
 }
 
-function parseUpdateApplyOutcome(stdout) {
+// The helper prints the full envelope; a document without it is still read,
+// but one that names another schema or operation is not ours.
+function updateDocFromLane(lane) {
+  if (!lane || lane.timedOut || lane.exitCode !== 0)
+    return null
   var doc = null
   try {
-    doc = JSON.parse(String(stdout || "").trim())
+    doc = JSON.parse(String(lane.stdout || "").trim())
   } catch (e) {
-    return failedUpdateApplyOutcome()
+    return null
   }
-  if (!doc || doc.schemaVersion !== 1 || doc.operation !== "update")
-    return failedUpdateApplyOutcome()
+  if (!doc || typeof doc !== "object")
+    return null
+  if (doc.schemaVersion !== undefined && doc.schemaVersion !== 1)
+    return null
+  if (doc.operation !== undefined && doc.operation !== "update")
+    return null
+  return doc
+}
+
+function updateStartFromLane(lane) {
+  var doc = updateDocFromLane(lane)
+  if (doc && (doc.result === "started" || doc.result === "already_running"))
+    return doc.result
+  return "failed"
+}
+
+function updateStatusFromLane(lane) {
+  var doc = updateDocFromLane(lane)
+  if (!doc)
+    return { status: "unreadable" }
+  if (doc.status === "none")
+    return { status: "none" }
+  if (doc.status === "running")
+    return { status: "running", targetVersion: doc.targetVersion ? String(doc.targetVersion) : "" }
+  if (doc.status !== "finished")
+    return { status: "unreadable" }
   var result = String(doc.result || "")
-  if (!UPDATE_APPLY_MESSAGES.hasOwnProperty(result))
-    return failedUpdateApplyOutcome()
   return {
-    result: result,
-    installedVersion: doc.installedVersion ? String(doc.installedVersion) : "",
-    restartRequired: result === "updated"
+    status: "finished",
+    outcome: {
+      result: UPDATE_RESULT_MESSAGES.hasOwnProperty(result) ? result : "failed",
+      installedVersion: doc.installedVersion ? String(doc.installedVersion) : "",
+      restartRequired: doc.restartRequired === true
+    }
   }
 }
 
-function updateApplyOutcomeFromLane(lane) {
-  if (!lane || lane.timedOut || lane.exitCode !== 0)
-    return failedUpdateApplyOutcome()
-  return parseUpdateApplyOutcome(lane.stdout)
-}
-
-function updateApplyMessage(outcome, installedVersion) {
+function updateResultMessage(outcome, installedVersion) {
   var version = outcome.installedVersion && outcome.installedVersion.length
       ? outcome.installedVersion
       : String(installedVersion || "")
-  return UPDATE_APPLY_MESSAGES[outcome.result](version)
+  var result = outcome.restartRequired ? "updated" : outcome.result
+  return UPDATE_RESULT_MESSAGES[result](version)
 }
 
 function uninstallArgv(helperPath, purge) {
@@ -242,11 +272,11 @@ function maintenanceUiUpdating(ui) {
   return next
 }
 
-function maintenanceUiFromUpdateApply(ui, outcome) {
+function maintenanceUiFromUpdateResult(ui, outcome) {
   var next = cloneMaintenanceUi(ui)
   next.updateConfirmOpen = false
-  next.message = updateApplyMessage(outcome, next.installedVersion)
-  if (outcome.result === "updated") {
+  next.message = updateResultMessage(outcome, next.installedVersion)
+  if (outcome.restartRequired) {
     next.phase = "restart_required"
     if (outcome.installedVersion.length)
       next.targetVersion = outcome.installedVersion
