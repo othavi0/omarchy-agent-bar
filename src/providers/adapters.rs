@@ -212,7 +212,7 @@ async fn grok_monthly_fallback(
                 source,
                 plan,
                 last_success_at,
-                rate_limit_resets_available,
+                resets,
                 ..
             },
         ) => ProviderResult::Ready {
@@ -222,7 +222,7 @@ async fn grok_monthly_fallback(
             plan: plan.or(monthly_plan),
             windows,
             last_success_at,
-            rate_limit_resets_available,
+            resets,
         },
         (_, credits) => credits,
     }

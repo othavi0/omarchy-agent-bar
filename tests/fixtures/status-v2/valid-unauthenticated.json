@@ -23,7 +23,8 @@
         "kind": "login",
         "label": "Sign in",
         "target": null
-      }
+      },
+      "resets": []
     }
   ]
 }

@@ -23,7 +23,8 @@
         "kind": "view_installation",
         "label": "Install guide",
         "target": "https://x.ai/cli"
-      }
+      },
+      "resets": []
     }
   ]
 }

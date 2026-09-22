@@ -34,7 +34,8 @@
       ],
       "lastSuccessAt": "2026-07-26T18:40:00Z",
       "error": null,
-      "action": null
+      "action": null,
+      "resets": []
     },
     {
       "id": "codex",
@@ -52,7 +53,8 @@
         "kind": "view_installation",
         "label": "Install guide",
         "target": "https://developers.openai.com/codex"
-      }
+      },
+      "resets": []
     }
   ]
 }

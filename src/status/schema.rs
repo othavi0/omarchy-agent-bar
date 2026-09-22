@@ -12,6 +12,10 @@ use time::format_description::well_known::Rfc3339;
 use time::{OffsetDateTime, UtcOffset};
 
 use crate::cli::{CacheMode, ProviderId, SERIALIZATION};
+use crate::support::redact::strip_ansi_and_controls;
+
+const RESET_LABEL_MAX_CHARS: usize = 64;
+const RESET_GRANT_ID_MAX_CHARS: usize = 48;
 
 const SCHEMA_VERSION: u32 = 2;
 const PERCENT_SUM_TOLERANCE: f64 = 0.01;
@@ -276,6 +280,132 @@ impl UsageWindow {
     }
 }
 
+/// One banked usage reset a provider makes available (JSON-022D).
+///
+/// `id` is `"cedar-ember:<grant id>"`, the literal `"juniper-tide"`, or the
+/// literal `"codex-credits"`; the grant-id suffix is validated per JSON-022E.
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageReset {
+    id: String,
+    label: String,
+    available: u32,
+    total: Option<u32>,
+    clears: Vec<String>,
+    #[serde(with = "time::serde::rfc3339::option")]
+    expires_at: Option<OffsetDateTime>,
+    #[serde(with = "time::serde::rfc3339::option")]
+    refills_at: Option<OffsetDateTime>,
+    #[serde(with = "time::serde::rfc3339::option")]
+    cooldown_until: Option<OffsetDateTime>,
+    claimable: bool,
+}
+
+impl UsageReset {
+    #[allow(clippy::too_many_arguments)]
+    pub fn try_new(
+        id: impl Into<String>,
+        label: impl Into<String>,
+        available: u32,
+        total: Option<u32>,
+        clears: Vec<String>,
+        expires_at: Option<OffsetDateTime>,
+        refills_at: Option<OffsetDateTime>,
+        cooldown_until: Option<OffsetDateTime>,
+        claimable: bool,
+    ) -> Result<Self, SchemaError> {
+        let id = id.into();
+        validate_reset_id(&id)?;
+        let label = sanitize_reset_label(&label.into());
+        if label.is_empty() {
+            return Err(SchemaError::new("reset label must be non-empty"));
+        }
+        for ts in [expires_at, refills_at, cooldown_until]
+            .into_iter()
+            .flatten()
+        {
+            require_utc(ts, "resets[].timestamp")?;
+        }
+        Ok(Self {
+            id,
+            label,
+            available,
+            total,
+            clears,
+            expires_at,
+            refills_at,
+            cooldown_until,
+            claimable,
+        })
+    }
+
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    pub fn label(&self) -> &str {
+        &self.label
+    }
+
+    pub fn available(&self) -> u32 {
+        self.available
+    }
+
+    pub fn total(&self) -> Option<u32> {
+        self.total
+    }
+
+    pub fn clears(&self) -> &[String] {
+        &self.clears
+    }
+
+    pub fn expires_at(&self) -> Option<OffsetDateTime> {
+        self.expires_at
+    }
+
+    pub fn refills_at(&self) -> Option<OffsetDateTime> {
+        self.refills_at
+    }
+
+    pub fn cooldown_until(&self) -> Option<OffsetDateTime> {
+        self.cooldown_until
+    }
+
+    pub fn claimable(&self) -> bool {
+        self.claimable
+    }
+}
+
+/// JSON-022E id shape: `"cedar-ember:<grant id>"`, `"juniper-tide"`, or
+/// `"codex-credits"`, with the grant-id suffix limited to
+/// `[a-z0-9-]{1,48}`.
+pub fn validate_reset_id(id: &str) -> Result<(), SchemaError> {
+    if id == "juniper-tide" || id == "codex-credits" {
+        return Ok(());
+    }
+    if let Some(grant_id) = id.strip_prefix("cedar-ember:") {
+        let valid = !grant_id.is_empty()
+            && grant_id.chars().count() <= RESET_GRANT_ID_MAX_CHARS
+            && grant_id
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+        if valid {
+            return Ok(());
+        }
+    }
+    Err(SchemaError::new(format!("invalid usage reset id '{id}'")))
+}
+
+/// Sanitizes a dynamic reset label the same way as other external strings:
+/// ANSI/control-stripped plain text, capped at [`RESET_LABEL_MAX_CHARS`].
+fn sanitize_reset_label(raw: &str) -> String {
+    strip_ansi_and_controls(raw)
+        .trim()
+        .chars()
+        .take(RESET_LABEL_MAX_CHARS)
+        .collect()
+}
+
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderStatus {
@@ -289,8 +419,10 @@ pub struct ProviderStatus {
     last_success_at: Option<OffsetDateTime>,
     error: Option<ProviderError>,
     action: Option<ProviderAction>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    rate_limit_resets_available: Option<u32>,
+    /// Always serialized (JSON-022D); `#[serde(default)]` lets a cache row
+    /// written before this field existed deserialize instead of quarantining.
+    #[serde(default)]
+    resets: Vec<UsageReset>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -354,12 +486,12 @@ impl ProviderStatus {
         self.plan.as_ref()
     }
 
-    pub fn rate_limit_resets_available(&self) -> Option<u32> {
-        self.rate_limit_resets_available
+    pub fn resets(&self) -> &[UsageReset] {
+        &self.resets
     }
 
-    pub(crate) fn with_rate_limit_resets_available(mut self, value: Option<u32>) -> Self {
-        self.rate_limit_resets_available = value;
+    pub(crate) fn with_resets(mut self, value: Vec<UsageReset>) -> Self {
+        self.resets = value;
         self
     }
 
@@ -377,9 +509,7 @@ impl ProviderStatus {
                     self.windows.clone(),
                     last,
                 )
-                .map(|status| {
-                    status.with_rate_limit_resets_available(self.rate_limit_resets_available)
-                })
+                .map(|status| status.with_resets(self.resets.clone()))
             }
             _ => Ok(self.clone()),
         }
@@ -403,7 +533,7 @@ impl ProviderStatus {
             error,
             ProviderAction::retry("Retry"),
         )
-        .map(|status| status.with_rate_limit_resets_available(self.rate_limit_resets_available))
+        .map(|status| status.with_resets(self.resets.clone()))
     }
 
     pub fn is_temporary_failure(&self) -> bool {
@@ -436,7 +566,7 @@ impl ProviderStatus {
             last_success_at: Some(last_success_at),
             error: None,
             action: None,
-            rate_limit_resets_available: None,
+            resets: Vec::new(),
         })
     }
 
@@ -464,7 +594,7 @@ impl ProviderStatus {
             last_success_at: Some(last_success_at),
             error: Some(error),
             action: Some(action),
-            rate_limit_resets_available: None,
+            resets: Vec::new(),
         })
     }
 
@@ -489,7 +619,7 @@ impl ProviderStatus {
             last_success_at: None,
             error: Some(error),
             action: Some(action),
-            rate_limit_resets_available: None,
+            resets: Vec::new(),
         })
     }
 
@@ -517,7 +647,7 @@ impl ProviderStatus {
             last_success_at: None,
             error: Some(error),
             action: Some(action),
-            rate_limit_resets_available: None,
+            resets: Vec::new(),
         })
     }
 
@@ -558,7 +688,7 @@ impl ProviderStatus {
             last_success_at: None,
             error: Some(error),
             action: Some(action),
-            rate_limit_resets_available: None,
+            resets: Vec::new(),
         })
     }
 
@@ -655,7 +785,7 @@ fn failure_state(
         last_success_at: None,
         error: Some(error),
         action: Some(action),
-        rate_limit_resets_available: None,
+        resets: Vec::new(),
     })
 }
 
@@ -825,7 +955,7 @@ pub enum ProviderResult {
         plan: Option<Plan>,
         windows: Vec<UsageWindow>,
         last_success_at: OffsetDateTime,
-        rate_limit_resets_available: Option<u32>,
+        resets: Vec<UsageReset>,
     },
     CliMissing {
         id: ProviderId,
@@ -958,6 +1088,66 @@ mod tests {
     fn usage_window_rejects_non_utc_reset() {
         let local = datetime!(2026-07-26 22:00:00 +01:00:00);
         assert!(UsageWindow::try_new("s", "S", 50.0, 50.0, Some(local)).is_err());
+    }
+
+    #[test]
+    fn usage_reset_accepts_the_three_known_id_shapes() {
+        for id in ["juniper-tide", "codex-credits", "cedar-ember:opus55-launch"] {
+            assert!(
+                UsageReset::try_new(id, "Label", 1, None, vec![], None, None, None, true).is_ok(),
+                "{id}"
+            );
+        }
+    }
+
+    #[test]
+    fn usage_reset_rejects_malformed_ids() {
+        for id in [
+            "",
+            "cedar-ember:",
+            "cedar-ember:Has-Upper",
+            "cedar-ember:has space",
+            "cedar-ember:has_underscore",
+            "unknown-program:x",
+            &format!("cedar-ember:{}", "a".repeat(49)),
+        ] {
+            assert!(
+                UsageReset::try_new(id, "Label", 1, None, vec![], None, None, None, true).is_err(),
+                "{id}"
+            );
+        }
+    }
+
+    #[test]
+    fn usage_reset_rejects_empty_label_and_non_utc_timestamps() {
+        assert!(
+            UsageReset::try_new("juniper-tide", "", 1, None, vec![], None, None, None, true)
+                .is_err()
+        );
+        let local = datetime!(2026-07-26 22:00:00 +01:00:00);
+        assert!(UsageReset::try_new(
+            "juniper-tide",
+            "Weekly reset",
+            1,
+            None,
+            vec![],
+            Some(local),
+            None,
+            None,
+            true
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn usage_reset_label_is_sanitized_and_capped() {
+        let raw = format!("\u{1b}[31m{}\u{07}", "x".repeat(100));
+        let reset =
+            UsageReset::try_new("juniper-tide", raw, 1, None, vec![], None, None, None, true)
+                .unwrap();
+        assert_eq!(reset.label().chars().count(), RESET_LABEL_MAX_CHARS);
+        assert!(!reset.label().contains('\u{1b}'));
+        assert!(!reset.label().contains('\u{07}'));
     }
 
     #[test]
@@ -1267,19 +1457,40 @@ mod tests {
     }
 
     #[test]
-    fn provider_status_serializes_reset_count_only_when_present() {
-        let base = serde_json::json!({
+    fn provider_status_always_serializes_resets_array() {
+        let claude_reset = UsageReset::try_new(
+            "cedar-ember:opus55-launch-promax-20260921",
+            "Claude Opus 5.5 launch",
+            1,
+            Some(1),
+            vec!["session".into(), "weekly".into()],
+            Some(datetime!(2026-10-22 16:00:00 UTC)),
+            None,
+            None,
+            true,
+        )
+        .unwrap();
+        let with = ready_claude().with_resets(vec![claude_reset]);
+        let text = serde_json::to_string(&with).expect("serialize");
+        assert!(text.contains("\"resets\":[{"));
+        assert!(text.contains("\"id\":\"cedar-ember:opus55-launch-promax-20260921\""));
+
+        let without = ready_claude();
+        let text = serde_json::to_string(&without).expect("serialize");
+        assert!(text.contains("\"resets\":[]"));
+    }
+
+    /// A cache row written before `resets` existed must still deserialize
+    /// (JSON-022D landed additive, not a schema break).
+    #[test]
+    fn provider_status_without_resets_field_loads_as_empty() {
+        let old_cache_row = serde_json::json!({
             "id": "codex", "name": "Codex", "state": "ready", "source": "live",
             "plan": null, "windows": [],
             "lastSuccessAt": "2026-08-07T12:00:00Z", "error": null, "action": null
         });
-        let mut with = base.clone();
-        with["rateLimitResetsAvailable"] = serde_json::json!(2);
-        let with: ProviderStatus = serde_json::from_value(with).expect("row with resets");
-        let text = serde_json::to_string(&with).expect("serialize");
-        assert!(text.contains("\"rateLimitResetsAvailable\":2"));
-        let without: ProviderStatus = serde_json::from_value(base).expect("row without resets");
-        let text = serde_json::to_string(&without).expect("serialize");
-        assert!(!text.contains("rateLimitResetsAvailable"));
+        let status: ProviderStatus =
+            serde_json::from_value(old_cache_row).expect("old row without resets must load");
+        assert!(status.resets().is_empty());
     }
 }

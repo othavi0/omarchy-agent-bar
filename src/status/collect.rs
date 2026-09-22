@@ -9,9 +9,9 @@ pub fn provider_status_from_result(result: ProviderResult) -> Result<ProviderSta
             plan,
             windows,
             last_success_at,
-            rate_limit_resets_available,
+            resets,
         } => ProviderStatus::ready(id, name, source, plan, windows, last_success_at)
-            .map(|status| status.with_rate_limit_resets_available(rate_limit_resets_available)),
+            .map(|status| status.with_resets(resets)),
         ProviderResult::CliMissing {
             id,
             name,
@@ -73,7 +73,7 @@ pub fn provider_status_from_result(result: ProviderResult) -> Result<ProviderSta
 mod tests {
     use super::*;
     use crate::cli::ProviderId;
-    use crate::status::schema::{DataSource, ProviderState, UsageWindow};
+    use crate::status::schema::{DataSource, ProviderState, UsageReset, UsageWindow};
     use time::macros::datetime;
 
     #[test]
@@ -85,10 +85,34 @@ mod tests {
             plan: None,
             windows: vec![UsageWindow::try_new("session", "Session", 10.0, 90.0, None).unwrap()],
             last_success_at: datetime!(2026-07-26 18:42:00 UTC),
-            rate_limit_resets_available: None,
+            resets: Vec::new(),
         })
         .unwrap();
         assert_eq!(ready.state(), ProviderState::Ready);
+
+        let with_reset = provider_status_from_result(ProviderResult::Ready {
+            id: ProviderId::Codex,
+            name: "Codex".into(),
+            source: DataSource::Live,
+            plan: None,
+            windows: vec![],
+            last_success_at: datetime!(2026-07-26 18:42:00 UTC),
+            resets: vec![UsageReset::try_new(
+                "codex-credits",
+                "Rate-limit resets",
+                2,
+                None,
+                vec![],
+                None,
+                None,
+                None,
+                false,
+            )
+            .unwrap()],
+        })
+        .unwrap();
+        assert_eq!(with_reset.resets().len(), 1);
+        assert_eq!(with_reset.resets()[0].id(), "codex-credits");
 
         let missing = provider_status_from_result(ProviderResult::CliMissing {
             id: ProviderId::Grok,

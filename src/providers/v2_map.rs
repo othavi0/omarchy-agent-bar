@@ -4,7 +4,7 @@ use time::format_description::well_known::Rfc3339;
 use time::{OffsetDateTime, UtcOffset};
 
 use crate::cli::ProviderId;
-use crate::status::schema::{DataSource, Plan, ProviderResult, UsageWindow};
+use crate::status::schema::{DataSource, Plan, ProviderResult, UsageReset, UsageWindow};
 use crate::support::redact::strip_ansi_and_controls;
 
 use super::catalog::{ANTIGRAVITY, CLAUDE, CODEX, GROK};
@@ -156,7 +156,7 @@ pub fn grok_from_billing_json(
         plan,
         windows,
         last_success_at: now,
-        rate_limit_resets_available: None,
+        resets: Vec::new(),
     }
 }
 
@@ -239,8 +239,10 @@ struct CodexRateLimitsDoc {
     individual_limit: Option<CodexIndividualLimitRaw>,
     #[serde(default, rename = "extraBuckets")]
     extra_buckets: Vec<CodexExtraBucketRaw>,
-    #[serde(default, rename = "rateLimitResetsAvailable")]
-    rate_limit_resets_available: Option<u32>,
+    /// Internal wire key from [`crate::providers::codex_app_server::
+    /// normalize_to_rate_limits_json`], not part of the public status schema.
+    #[serde(default, rename = "codexCreditsAvailable")]
+    reset_credits_available: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -329,6 +331,25 @@ pub fn codex_from_rate_limits_json(bytes: &[u8], now: OffsetDateTime) -> Provide
 
     let _ = doc.credits;
 
+    // JSON-022F: never claimable here — the popup's `reset claude` command
+    // only ever claims Claude resets, so Codex resets are display-only.
+    let resets = match doc.reset_credits_available.filter(|&n| n > 0) {
+        Some(n) => UsageReset::try_new(
+            "codex-credits",
+            "Rate-limit resets",
+            n,
+            None,
+            Vec::new(),
+            None,
+            None,
+            None,
+            false,
+        )
+        .map(|r| vec![r])
+        .unwrap_or_default(),
+        None => Vec::new(),
+    };
+
     ProviderResult::Ready {
         id: ProviderId::Codex,
         name: CODEX.display_name.to_owned(),
@@ -339,7 +360,7 @@ pub fn codex_from_rate_limits_json(bytes: &[u8], now: OffsetDateTime) -> Provide
         }),
         windows,
         last_success_at: now,
-        rate_limit_resets_available: doc.rate_limit_resets_available,
+        resets,
     }
 }
 
@@ -573,7 +594,7 @@ pub fn claude_from_usage_json(
         plan,
         windows,
         last_success_at: now,
-        rate_limit_resets_available: None,
+        resets: Vec::new(),
     }
 }
 
@@ -651,10 +672,13 @@ pub(crate) fn format_plan_label(raw: &str) -> String {
         .join(" ")
 }
 
+/// `"credits"` is deliberately absent from this list: JSON-022C/D name a
+/// quota-reset count `codex-credits`, which is data, not money, and
+/// `JSON-022B` continues to ban actual monetary fields below.
 #[cfg(test)]
 pub fn assert_no_money(result: &ProviderResult) {
     let text = format!("{result:?}");
-    for banned in ["spend", "credits", "balance", "currency", "usd", "BRL"] {
+    for banned in ["spend", "balance", "currency", "usd", "BRL"] {
         assert!(
             !text.to_ascii_lowercase().contains(banned),
             "domain result leaked monetary field '{banned}': {text}"
@@ -796,7 +820,7 @@ pub fn antigravity_from_usage_json(stdout: &str, now: OffsetDateTime) -> Provide
             .chain(third_party_session)
             .collect(),
         last_success_at: now,
-        rate_limit_resets_available: None,
+        resets: Vec::new(),
     }
 }
 
@@ -993,7 +1017,7 @@ mod tests {
             "individualLimit": {"remainingPercent": 40.0, "resetsAt": 1791000000},
             "extraBuckets": [{"limitId": "premium",
                 "primary": {"usedPercent": 10.0, "windowDurationMins": 10080, "resetsAt": 0}}],
-            "rateLimitResetsAvailable": 2
+            "codexCreditsAvailable": 2
         });
         let bytes = serde_json::to_vec(&json).expect("fixture json");
         let result = codex_from_rate_limits_json(&bytes, datetime!(2026-08-07 12:00:00 UTC));
@@ -1002,7 +1026,7 @@ mod tests {
             ProviderResult::Ready {
                 windows,
                 plan,
-                rate_limit_resets_available,
+                resets,
                 ..
             } => {
                 let ids: Vec<&str> = windows.iter().map(|w| w.id()).collect();
@@ -1010,9 +1034,27 @@ mod tests {
                 assert_eq!(windows[1].label(), "Premium (7d)");
                 assert_eq!(windows[2].label(), "Workspace limit");
                 assert!((windows[2].remaining_percent() - 40.0).abs() < 0.01);
-                assert_eq!(rate_limit_resets_available, Some(2));
+                assert_eq!(resets.len(), 1);
+                assert_eq!(resets[0].id(), "codex-credits");
+                assert_eq!(resets[0].label(), "Rate-limit resets");
+                assert_eq!(resets[0].available(), 2);
+                assert!(!resets[0].claimable());
                 assert_eq!(plan.as_ref().map(|p| p.label.as_str()), Some("Plus"));
             }
+            other => panic!("expected ready, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn codex_zero_reset_credits_produces_no_reset_entry() {
+        let json = serde_json::json!({
+            "primary": {"usedPercent": 10.0, "windowDurationMins": 300, "resetsAt": 0},
+            "codexCreditsAvailable": 0
+        });
+        let bytes = serde_json::to_vec(&json).expect("fixture json");
+        let result = codex_from_rate_limits_json(&bytes, datetime!(2026-08-07 12:00:00 UTC));
+        match result {
+            ProviderResult::Ready { resets, .. } => assert!(resets.is_empty()),
             other => panic!("expected ready, got {other:?}"),
         }
     }

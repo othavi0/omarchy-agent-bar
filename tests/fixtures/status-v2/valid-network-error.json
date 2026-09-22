@@ -23,7 +23,8 @@
         "kind": "retry",
         "label": "Retry",
         "target": null
-      }
+      },
+      "resets": []
     }
   ]
 }
