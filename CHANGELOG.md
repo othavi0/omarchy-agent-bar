@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [10.6.3] - 2026-09-22
+
+### Changed
+
+- fix(qml): poll the update for the unit limit
+- fix(qml): restart returns the About tab to idle
+- fix(qml): require the update envelope
+- docs(update): document txid, lock wait, 240 s limit
+- fix(update): judge a killed run by the tree
+- fix(update): tie state files to the run txid
+- fix(update): claim the run marker atomically
+- test(qml): scan the restart banner component
+- fix(qml): a status read is not a running update
+- feat(qml): show a restart banner in the popup
+- fix(qml): show Check for updates after failure
+- feat(qml): read the update result at startup
+- feat(qml): poll a detached update run
+- refactor(qml): keep update out of the handoff
+- docs(update): document the detached update run
+- feat(update): report runs through update status
+- feat(update): launch update run in a user unit
+- feat(update): add update run unit body
+- feat(process): kill the whole group on timeout
+- docs(spec): amend detached update run
+- docs(spec): reinstate UX-042 and UX-043 for apply
+- feat(qml): offer update apply in the About tab
+- feat(qml): run update apply on its own lane
+- feat(qml): model update apply outcomes
+- docs: document update apply
+- feat(plugin): run update apply in the foreground
+- feat(cli): confirm update apply
+- feat(cli): parse update apply
+- docs(spec): amend update apply in the popup
+
 ## [10.6.2] - 2026-09-22
 
 ### Changed

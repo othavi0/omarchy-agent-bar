@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
   "pluginId": "othavi0.agent-bar",
-  "version": "10.6.2",
+  "version": "10.6.3",
   "target": "x86_64-unknown-linux-gnu",
   "omarchyContract": 1,
   "minimumQuickshellVersion": "0.3.0",
-  "sourceCommit": "3b4fe0ca6818bddfd1acd6275929d22247a31879",
-  "buildRun": "https://github.com/othavi0/omarchy-agent-bar/actions/runs/35769529823",
+  "sourceCommit": "c7be4dba84e4a2c9b1709a8a4ff8acb3b8be3356",
+  "buildRun": "https://github.com/othavi0/omarchy-agent-bar/actions/runs/35780184682",
   "files": [
     {
       "path": "BarWidget.qml",
@@ -16,8 +16,8 @@
     },
     {
       "path": "CoreMaintenance.js",
-      "sha256": "889d42e2e702e71e64654555ddde0081fe53b5011cff7393a1cc7ebdc8e55468",
-      "size": 5516,
+      "sha256": "9ed423fa6fc62800729fdbd4ca38de7da65b219d46f9724b508ce8e34e918066",
+      "size": 10759,
       "mode": "0644"
     },
     {
@@ -52,14 +52,14 @@
     },
     {
       "path": "MaintenanceView.qml",
-      "sha256": "1685947f2dd2ef26bbe6a7b57c5fdeb09df8bea52f55e581f653c32a8d937096",
-      "size": 7194,
+      "sha256": "3c422af04207939b0598fd9adc27beb64b2aec322ff461e3e2b2429d9345f22e",
+      "size": 11160,
       "mode": "0644"
     },
     {
       "path": "Popup.qml",
-      "sha256": "d3405de96848a0c1bb3d55c4573e8bc068731e0ed774b468545f9c92607cfdd2",
-      "size": 15086,
+      "sha256": "a61c3f9de1ff7451868081a93b4e79db40f193163317383c6cf9aa946d5a1a6d",
+      "size": 15875,
       "mode": "0644"
     },
     {
@@ -76,14 +76,14 @@
     },
     {
       "path": "README.md",
-      "sha256": "b0e4c46c948380fd52edd2d55f27957f79b004ef459c9c4dc80114411c3ac2dc",
-      "size": 3956,
+      "sha256": "953bf9f884e3eb6e88233b3c164bcb00d2c92f2b7cef6c590a7acde2322dcd60",
+      "size": 3890,
       "mode": "0644"
     },
     {
       "path": "Service.qml",
-      "sha256": "bb2bd9c94eb21c48cf74c96b041ca5a31a3ed6e5a8de1f322ff895e6d1dd9cf4",
-      "size": 26002,
+      "sha256": "81345f6e260fd40558fd13370c87203e9e9aacadad200a535502dce29106ffda",
+      "size": 29514,
       "mode": "0644"
     },
     {
@@ -94,8 +94,8 @@
     },
     {
       "path": "bin/agent-bar",
-      "sha256": "5179af3c48c3d4a035ba6b6038c88ff6fbc737393d721153243341e02ab51dac",
-      "size": 2957048,
+      "sha256": "0a6ab4c3efa6be0b1135d211e4eaab217fa66eb7ddbaa64170e72402028c087a",
+      "size": 3029744,
       "mode": "0755"
     },
     {
@@ -138,6 +138,12 @@
       "path": "components/ResetsSection.qml",
       "sha256": "c3aa1a700d9eb45de7ca21f495db21edc532bcb52ed60c03fa247213460de6bc",
       "size": 3768,
+      "mode": "0644"
+    },
+    {
+      "path": "components/RestartBanner.qml",
+      "sha256": "e540dc8c4b03b926baff586d1f512f2009c0be4f14843dfcf41d7b70f9a366bc",
+      "size": 1618,
       "mode": "0644"
     },
     {
@@ -196,7 +202,7 @@
     },
     {
       "path": "manifest.json",
-      "sha256": "2da0376fd7dfcc4d7cb012f5944ac6c62eb20846f1a770eeb0b5e3745dc8eaef",
+      "sha256": "ec9bc17830847fd77159966194060625cce493129baffb1eed58d24e1ef71794",
       "size": 627,
       "mode": "0644"
     },
