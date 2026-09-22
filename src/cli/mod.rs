@@ -77,6 +77,7 @@ pub fn help_text(topic: Option<HelpTopic>) -> String {
              update check — report whether a newer release exists (read-only)\n\
              update apply — install the latest release through the Omarchy\n\
              plugin manager after confirmation; the shell restart stays yours\n\
+             update run — the body of the unit update apply starts\n\
              From a terminal you can also run '{UPDATE_COMMAND}'.\n"
         ),
         Some(HelpTopic::Uninstall) => {
@@ -109,6 +110,7 @@ pub fn dispatch(command: Command) -> Result<(), CliFailure> {
         Command::Update(UpdateCommand::Interactive) => dispatch_update_interactive(),
         Command::Update(UpdateCommand::Check) => dispatch_update_check(),
         Command::Update(UpdateCommand::Apply) => dispatch_update_apply(),
+        Command::Update(UpdateCommand::Run) => dispatch_update_run(),
         Command::Config(config) => dispatch_config(config),
         Command::Login(provider) => dispatch_login(provider),
         Command::Status(opts) => dispatch_status(opts),
@@ -410,6 +412,44 @@ fn dispatch_update_apply() -> Result<(), CliFailure> {
         .to_stdout_json()
         .map_err(|e| CliFailure::internal(e.to_string()))?;
     print!("{line}");
+    Ok(())
+}
+
+/// The body of the `agent-bar-update-<txid>` unit (CLI-029C). Every outcome,
+/// including a missing `omarchy`, lands in `update-result.json`; only a
+/// failure to publish that file is a process failure.
+fn dispatch_update_run() -> Result<(), CliFailure> {
+    use crate::plugin::update_apply::{run_update, LockWait};
+    use crate::plugin::update_state::UpdateStateFiles;
+    use crate::plugin::{resolve_absolute_executable, PluginPaths};
+    use crate::providers::TokioProcessRunner;
+    use crate::support::maintenance_gate::MaintenanceGate;
+    use crate::support::SystemClock;
+
+    let home = std::env::var_os("HOME")
+        .ok_or_else(|| CliFailure::plugin("HOME is required for update run".to_string()))?;
+    let xdg_state = std::env::var_os("XDG_STATE_HOME").map(PathBuf::from);
+    let paths = PluginPaths::production(PathBuf::from(home), xdg_state);
+    let gate = MaintenanceGate::open(&paths.maintenance_lock)
+        .map_err(|e| CliFailure::plugin(format!("open maintenance lock: {e}")))?;
+    let omarchy = resolve_absolute_executable("omarchy").ok();
+
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|err| CliFailure::internal(err.to_string()))?;
+    let outcome = runtime.block_on(run_update(
+        &TokioProcessRunner,
+        &SystemClock,
+        &gate,
+        LockWait::RUN,
+        omarchy.as_deref(),
+        &paths.plugin_root,
+    ));
+    UpdateStateFiles::in_state_dir(&paths.xdg_state)
+        .finish(&outcome)
+        .map_err(|e| CliFailure::plugin(format!("write update result: {e}")))?;
+    eprintln!("agent-bar: update run: {}", outcome.result.as_str());
     Ok(())
 }
 

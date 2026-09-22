@@ -97,6 +97,8 @@ pub enum UpdateCommand {
     Interactive,
     Check,
     Apply,
+    /// The transient unit body that `update apply` starts (CLI-029C).
+    Run,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

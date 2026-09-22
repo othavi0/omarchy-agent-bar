@@ -3,6 +3,7 @@ pub mod maintenance;
 pub mod omarchy;
 pub mod paths;
 pub mod update_apply;
+pub mod update_state;
 
 pub use bundle::{
     BundleBuilder, BundleError, BundleFileEntry, BundleReceipt, BundleValidator,

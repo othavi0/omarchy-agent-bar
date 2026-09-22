@@ -193,6 +193,10 @@ fn login_config_update_uninstall_forms() {
         Command::Update(UpdateCommand::Apply)
     );
     assert_eq!(
+        parse(words(&["update", "run"])).unwrap(),
+        Command::Update(UpdateCommand::Run)
+    );
+    assert_eq!(
         parse(words(&["uninstall"])).unwrap(),
         Command::Uninstall { purge: false }
     );
@@ -231,9 +235,8 @@ fn reset_rejects_missing_arguments_wrong_provider_and_extra_words() {
 }
 
 #[test]
-fn update_run_and_update_apply_arguments_are_grammar_errors() {
+fn update_subcommand_arguments_are_grammar_errors() {
     for extra in [
-        words(&["update", "run"]),
         words(&["update", "run", "now"]),
         words(&["update", "apply", "10.0.0"]),
         words(&["update", "apply", "extra", "words"]),
@@ -603,6 +606,75 @@ fn binary_update_apply_without_omarchy_is_a_plugin_error() {
     let output = run_update_apply(&home, &empty_path);
     assert_eq!(output.status.code(), Some(PLUGIN));
     assert!(output.stdout.is_empty());
+}
+
+fn run_update_unit(home: &Path, path: &Path) -> std::process::Output {
+    StdCommand::new(assert_cmd::cargo::cargo_bin("agent-bar"))
+        .args(["update", "run"])
+        .env("HOME", home)
+        .env("XDG_STATE_HOME", home.join("state"))
+        .env("PATH", path)
+        .stdin(std::process::Stdio::null())
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn binary_update_run_publishes_the_result_file_and_drops_the_marker() {
+    let dir = tempdir().unwrap();
+    let home = update_apply_home(dir.path(), "10.6.1");
+    let state = home.join("state/agent-bar");
+    std::fs::create_dir_all(&state).unwrap();
+    std::fs::write(state.join("update-running.json"), "{}").unwrap();
+    let path_dir = dir.path().join("pathbin");
+    write_executable(
+        &path_dir.join("omarchy"),
+        r#"#!/bin/bash
+echo 'Updated othavi0.agent-bar.'
+echo 'omarchy-shell: IPC timed out' >&2
+printf '{"schemaVersion":1,"version":"10.6.2"}' > "$HOME/.config/omarchy/plugins/othavi0.agent-bar/bundle.json"
+exit 1
+"#,
+    );
+    let output = run_update_unit(&home, &path_dir);
+    assert_eq!(output.status.code(), Some(SUCCESS));
+    assert!(output.stdout.is_empty());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr),
+        "agent-bar: update run: updated\n"
+    );
+    let result: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(state.join("update-result.json")).unwrap()).unwrap();
+    assert_eq!(result["schemaVersion"], 1);
+    assert_eq!(result["operation"], "update");
+    assert_eq!(result["result"], "updated");
+    assert_eq!(result["fromVersion"], "10.6.1");
+    assert_eq!(result["installedVersion"], "10.6.2");
+    assert_eq!(result["restartRequired"], true);
+    assert!(result["finishedAt"]
+        .as_str()
+        .is_some_and(|t| t.ends_with('Z')));
+    assert!(!state.join("update-running.json").exists());
+}
+
+#[test]
+fn binary_update_run_without_omarchy_still_publishes_failed() {
+    let dir = tempdir().unwrap();
+    let home = update_apply_home(dir.path(), "10.6.1");
+    let empty_path = dir.path().join("empty-path");
+    std::fs::create_dir_all(&empty_path).unwrap();
+    let output = run_update_unit(&home, &empty_path);
+    assert_eq!(output.status.code(), Some(SUCCESS));
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr),
+        "agent-bar: update run: failed\n"
+    );
+    let result: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(home.join("state/agent-bar/update-result.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(result["result"], "failed");
+    assert_eq!(result["installedVersion"], "10.6.1");
 }
 
 #[test]
