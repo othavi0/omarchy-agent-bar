@@ -27,6 +27,7 @@ Item {
   property int settingsTimeoutMs: 15000
   property int maintenanceCheckTimeoutMs: 30000
   property int maintenanceHandoffTimeoutMs: 120000
+  property int updateApplyTimeoutMs: 150000
   property int pollIntervalMs: Core.pollIntervalMs(appliedSettings)
   property int collectionDelayMs: 0
 
@@ -65,6 +66,7 @@ Item {
     settingsWrite: settingsWriteLane,
     maintenanceCheck: maintenanceCheckLane,
     maintenanceHandoff: maintenanceHandoffLane,
+    updateApply: updateApplyLane,
     reset: resetLane
   })
   readonly property int stalledLaneCount:
@@ -75,6 +77,7 @@ Item {
       + (settingsWriteLane.stalled ? 1 : 0)
       + (maintenanceCheckLane.stalled ? 1 : 0)
       + (maintenanceHandoffLane.stalled ? 1 : 0)
+      + (updateApplyLane.stalled ? 1 : 0)
       + (resetLane.stalled ? 1 : 0)
   readonly property string runtimeHealth: Core.runtimeHealth(stalledLaneCount)
 
@@ -181,8 +184,14 @@ Item {
   }
 
   function openSettings(owner) {
-    if (maintenanceState.blocked)
+    // An update in flight or awaiting its restart keeps the About tab
+    // reachable; the settings read stays off because the helper on disk may
+    // already be the new version.
+    if (maintenanceState.blocked) {
+      if (Maintenance.maintenanceUiHoldsUpdate(maintenanceUi))
+        requestPopup(owner, selectedProviderId || null, "settings")
       return
+    }
     requestPopup(owner, selectedProviderId || null, "settings")
     if (!settingsState || settingsState.phase === "closed") {
       settingsGeneration++
@@ -358,6 +367,50 @@ Item {
       outcome.exitCode,
       helperVersion || manifestVersion
     )
+  }
+
+  function openUpdateConfirm() {
+    if (maintenanceState.blocked)
+      return
+    maintenanceUi = Maintenance.maintenanceUiOpenUpdateConfirm(maintenanceUi)
+  }
+
+  function closeUpdateConfirm() {
+    maintenanceUi = Maintenance.maintenanceUiCloseUpdateConfirm(maintenanceUi)
+  }
+
+  function confirmUpdate() {
+    if (!maintenanceUi || !maintenanceUi.updateConfirmOpen || maintenanceState.blocked)
+      return false
+    var intention = Maintenance.maintenanceIntention("update", maintenanceUi)
+    if (!intention || !resolvedHelperPath().length) {
+      maintenanceUi = Maintenance.maintenanceUiFromUpdateApply(
+        maintenanceUi, Maintenance.updateApplyOutcomeFromLane(null))
+      return false
+    }
+    pendingMaintenanceIntention = intention
+    pendingMaintenancePayload = JSON.stringify(intention.payload)
+    maintenanceUi = Maintenance.maintenanceUiUpdating(maintenanceUi)
+    beginMaintenanceHandoff()
+    return true
+  }
+
+  function applyUpdateApplyDone(outcome) {
+    noteLaneSettled(outcome)
+    pendingMaintenanceIntention = null
+    pendingMaintenancePayload = ""
+    var result = Maintenance.updateApplyOutcomeFromLane(outcome)
+    maintenanceUi = Maintenance.maintenanceUiFromUpdateApply(maintenanceUi, result)
+    // The QML running now cannot read the new helper's envelopes, so nothing
+    // polls again until restartShell() replaces both.
+    if (result.result === "updated") {
+      maintenanceState = Maintenance.maintenanceRestartPending()
+      return
+    }
+    maintenanceState = Maintenance.maintenanceIdle()
+    pollEnabled = true
+    if (versionReady)
+      pollTimer.restart()
   }
 
   function openUninstallConfirm() {
@@ -673,17 +726,19 @@ Item {
         || maintenanceCheckLane.busy || resetLane.busy
     if (!Maintenance.maintenanceCanDetach(maintenanceState, anyLaneBusy))
       return
-    if (!maintenanceHandoffLane.ready)
+    var intention = pendingMaintenanceIntention
+    if (!intention)
       return
     var helper = resolvedHelperPath()
-    var intention = pendingMaintenanceIntention
-    var argv = Maintenance.uninstallArgv(helper, intention.purge)
+    var lane = intention.kind === "update" ? updateApplyLane : maintenanceHandoffLane
+    if (!lane.ready)
+      return
+    var argv = intention.kind === "update"
+        ? Maintenance.updateApplyArgv(helper)
+        : Maintenance.uninstallArgv(helper, intention.purge)
     if (!argv)
       return
-    var confirmation = intention && intention.kind === "uninstall"
-        ? pendingMaintenancePayload
-        : ""
-    maintenanceHandoffLane.start(argv, confirmation)
+    lane.start(argv, pendingMaintenancePayload)
   }
 
   function applyMaintenanceHandoffDone(outcome) {
@@ -783,6 +838,15 @@ Item {
     onSettled: function (outcome) { root.applyMaintenanceHandoffDone(outcome) }
   }
 
+  HelperLane {
+    id: updateApplyLane
+    process: updateApplyProcess
+    stdoutSource: updateApplyOut
+    stderrSource: updateApplyErr
+    timeoutMs: root.updateApplyTimeoutMs
+    onSettled: function (outcome) { root.applyUpdateApplyDone(outcome) }
+  }
+
   Process {
     id: versionProbe
     stdout: StdioCollector { id: versionOut; waitForEnd: true }
@@ -829,6 +893,12 @@ Item {
     id: maintenanceHandoffProcess
     stdout: StdioCollector { id: maintenanceHandoffOut; waitForEnd: true }
     stderr: StdioCollector { id: maintenanceHandoffErr; waitForEnd: true }
+  }
+
+  Process {
+    id: updateApplyProcess
+    stdout: StdioCollector { id: updateApplyOut; waitForEnd: true }
+    stderr: StdioCollector { id: updateApplyErr; waitForEnd: true }
   }
 
   Timer {
