@@ -200,11 +200,7 @@ fn login_config_update_uninstall_forms() {
 
 #[test]
 fn reset_claude_accepts_each_known_id_shape() {
-    for id in [
-        "juniper-tide",
-        "codex-credits",
-        "cedar-ember:opus55-launch-promax-20260921",
-    ] {
+    for id in ["juniper-tide", "cedar-ember:opus55-launch-promax-20260921"] {
         assert_eq!(
             parse(words(&["reset", "claude", id])).unwrap(),
             Command::Reset {
@@ -378,6 +374,25 @@ fn binary_reset_rejects_a_malformed_id_before_any_io() {
     CargoBin::cargo_bin("agent-bar")
         .unwrap()
         .args(["reset", "claude", "Not A Valid Id!"])
+        .assert()
+        .code(VALIDATION)
+        .stdout("");
+}
+
+#[test]
+fn binary_reset_rejects_an_id_without_a_claim_program_before_any_io() {
+    assert_eq!(
+        parse(words(&["reset", "claude", "codex-credits"])).unwrap(),
+        Command::Reset {
+            reset_id: "codex-credits".to_owned()
+        }
+    );
+    let dir = tempdir().unwrap();
+    CargoBin::cargo_bin("agent-bar")
+        .unwrap()
+        .args(["reset", "claude", "codex-credits"])
+        .env("HOME", dir.path())
+        .env("PATH", dir.path())
         .assert()
         .code(VALIDATION)
         .stdout("");

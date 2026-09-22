@@ -119,7 +119,8 @@ UsageReset
 
 - `CLI-030`: The grammar accepts only `reset claude <reset-id>`. Any other
   provider is a grammar error (`CLI-007`). A reset id that fails
-  `JSON-022E` exits with `VALIDATION`.
+  `JSON-022E`, or that names no claim program (`codex-credits`), exits with
+  `VALIDATION` before any filesystem or network access.
 - `CLI-031`: The command reads the same credentials file as collection and
   applies the same expiry precheck. It reads the organization uuid from
   `$HOME/.claude.json` at `oauthAccount.organizationUuid` and accepts only

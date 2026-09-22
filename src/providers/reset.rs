@@ -175,23 +175,41 @@ fn organization_uuid(fs: &dyn FileSystem, home: &Path) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// `program`/`grant_id` for the POST body, derived from the validated id
-/// shape (JSON-022E): `"cedar-ember:<grant id>"` or the literal
-/// `"juniper-tide"`. Any other shape (e.g. `"codex-credits"`, which this
-/// command never claims) has no program.
-fn program_and_grant(reset_id: &str) -> Option<(&'static str, Option<String>)> {
-    if reset_id == "juniper-tide" {
-        return Some(("juniper_tide", None));
+/// The claim program a validated reset id (JSON-022E) names:
+/// `"cedar-ember:<grant id>"` or the literal `"juniper-tide"`. Any other id
+/// (e.g. `"codex-credits"`) has no claim program.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClaimTarget<'a> {
+    CedarEmber { grant_id: &'a str },
+    JuniperTide,
+}
+
+impl<'a> ClaimTarget<'a> {
+    pub fn parse(reset_id: &'a str) -> Option<Self> {
+        if reset_id == "juniper-tide" {
+            return Some(Self::JuniperTide);
+        }
+        reset_id
+            .strip_prefix("cedar-ember:")
+            .map(|grant_id| Self::CedarEmber { grant_id })
     }
-    reset_id
-        .strip_prefix("cedar-ember:")
-        .map(|grant_id| ("cedar_ember", Some(grant_id.to_owned())))
+
+    fn program(self) -> &'static str {
+        match self {
+            Self::CedarEmber { .. } => "cedar_ember",
+            Self::JuniperTide => "juniper_tide",
+        }
+    }
 }
 
 /// Fetches fresh usage, claims `reset_id` only when that fresh response lists
 /// it as claimable, and reports one typed [`ResetResult`]. Never retries the
 /// POST. Never panics: every failure is data, per CLI-034.
 pub async fn claim_claude_reset(ctx: &ResetContext<'_>, reset_id: &str) -> ResetReport {
+    let Some(target) = ClaimTarget::parse(reset_id) else {
+        return ResetReport::simple(ResetResult::Unavailable);
+    };
+
     let discovery = discover(&CLAUDE, ctx.env).unwrap_or(Discovery {
         collection: CollectionAvailability::Missing,
         login: LoginAvailability::Missing,
@@ -244,9 +262,6 @@ pub async fn claim_claude_reset(ctx: &ResetContext<'_>, reset_id: &str) -> Reset
     if !target_claimable {
         return ResetReport::simple(ResetResult::Unavailable);
     }
-    let Some((program, grant_id)) = program_and_grant(reset_id) else {
-        return ResetReport::simple(ResetResult::Unavailable);
-    };
 
     let request_id = request_id_for(
         reset_id,
@@ -257,10 +272,13 @@ pub async fn claim_claude_reset(ctx: &ResetContext<'_>, reset_id: &str) -> Reset
     let mut body = serde_json::Map::new();
     body.insert(
         "program".to_owned(),
-        serde_json::Value::String(program.to_owned()),
+        serde_json::Value::String(target.program().to_owned()),
     );
-    if let Some(grant_id) = grant_id {
-        body.insert("grant_id".to_owned(), serde_json::Value::String(grant_id));
+    if let ClaimTarget::CedarEmber { grant_id } = target {
+        body.insert(
+            "grant_id".to_owned(),
+            serde_json::Value::String(grant_id.to_owned()),
+        );
     }
     body.insert(
         "request_id".to_owned(),
@@ -487,6 +505,25 @@ mod tests {
             http.last_url.lock().unwrap().as_deref(),
             Some("https://api.anthropic.com/api/organizations/0f8e6a52-3c1d-4b7a-9e2f-5d4c3b2a1908/reset_rate_limits")
         );
+    }
+
+    #[tokio::test]
+    async fn id_without_a_claim_program_is_unavailable_without_http() {
+        let fs = creds_and_org_fs();
+        let env = test_env();
+        let clock = FixedClock(datetime!(2026-09-22 18:00:00 UTC));
+        let process = version_process("2.1.280");
+        let http = scripted_http(ok(CLAIMABLE_USAGE_BODY), ok(br#"{"result":"reset"}"#));
+        let ctx = ResetContext {
+            env: &env,
+            clock: &clock,
+            fs: &fs,
+            process: &process,
+            http: &http,
+        };
+        let report = claim_claude_reset(&ctx, "codex-credits").await;
+        assert_eq!(report.result, ResetResult::Unavailable);
+        assert!(http.last_url.lock().unwrap().is_none());
     }
 
     #[tokio::test]
@@ -819,16 +856,16 @@ mod tests {
     }
 
     #[test]
-    fn program_and_grant_maps_known_shapes() {
+    fn claim_target_maps_known_shapes() {
         assert_eq!(
-            program_and_grant("cedar-ember:g1"),
-            Some(("cedar_ember", Some("g1".to_owned())))
+            ClaimTarget::parse("cedar-ember:g1"),
+            Some(ClaimTarget::CedarEmber { grant_id: "g1" })
         );
         assert_eq!(
-            program_and_grant("juniper-tide"),
-            Some(("juniper_tide", None))
+            ClaimTarget::parse("juniper-tide"),
+            Some(ClaimTarget::JuniperTide)
         );
-        assert_eq!(program_and_grant("codex-credits"), None);
+        assert_eq!(ClaimTarget::parse("codex-credits"), None);
     }
 
     #[test]

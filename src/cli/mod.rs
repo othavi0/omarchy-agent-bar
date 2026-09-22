@@ -422,18 +422,23 @@ struct ResetStdout<'a> {
     clears: &'a [String],
 }
 
-/// `reset claude <reset-id>` (CLI-032..037). The reset id's shape is
-/// validated here, at exit VALIDATION, before any network I/O; grammar
-/// already rejected a non-Claude provider.
+/// `reset claude <reset-id>` (CLI-032..037). The reset id's shape and its
+/// claim program are validated here, at exit VALIDATION, before any
+/// filesystem or network I/O; grammar already rejected a non-Claude provider.
 fn dispatch_reset(reset_id: String) -> Result<(), CliFailure> {
     use crate::providers::catalog::ExecutionEnvironment;
     use crate::providers::http::ReqwestHttpClient;
     use crate::providers::process::TokioProcessRunner;
-    use crate::providers::{claim_claude_reset, ResetContext};
+    use crate::providers::{claim_claude_reset, ClaimTarget, ResetContext};
     use crate::status::schema::validate_reset_id;
     use crate::support::{RealFileSystem, SystemClock};
 
     validate_reset_id(&reset_id).map_err(|err| CliFailure::validation(err.message().to_owned()))?;
+    if ClaimTarget::parse(&reset_id).is_none() {
+        return Err(CliFailure::validation(format!(
+            "usage reset '{reset_id}' cannot be claimed"
+        )));
+    }
 
     let env = ExecutionEnvironment::from_process();
     let http = ReqwestHttpClient::new(std::time::Duration::from_secs(10))

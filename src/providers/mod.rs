@@ -25,4 +25,4 @@ pub use catalog::{
 pub use process::{
     run_process, ProcessError, ProcessOutput, ProcessRunner, ProcessSpec, TokioProcessRunner,
 };
-pub use reset::{claim_claude_reset, ResetContext, ResetReport, ResetResult};
+pub use reset::{claim_claude_reset, ClaimTarget, ResetContext, ResetReport, ResetResult};
