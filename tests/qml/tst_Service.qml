@@ -56,6 +56,7 @@ TestCase {
           remainingPercent: 90,
           resetsAt: null
         }],
+        resets: [],
         lastSuccessAt: "2026-07-26T18:42:00Z",
         error: null,
         action: null

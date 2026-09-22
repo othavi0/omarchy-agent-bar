@@ -360,6 +360,7 @@ TestCase {
       "components/HeaderTag.qml",
       "components/ProviderChip.qml",
       "components/ProviderHeader.qml",
+      "components/ResetsSection.qml",
       "components/SettingsProviderRow.qml",
       "components/SettingsFooter.qml",
       "components/SectionHeader.qml",
@@ -429,6 +430,79 @@ TestCase {
 
   // #83: a deferred rebuild can run after the popup was destroyed, where an
   // unguarded root.rebuildFocusTargets() throws on every open/close cycle.
+  function test_reset_argv_is_typed_array() {
+    compare(JSON.stringify(Service.resetArgv("/bin/agent-bar", "claude", "juniper-tide")),
+            JSON.stringify(["/bin/agent-bar", "reset", "claude", "juniper-tide"]))
+  }
+
+  function test_parse_reset_outcome_accepts_the_documented_shape() {
+    var stdout = JSON.stringify({
+      schemaVersion: 1,
+      operation: "reset",
+      provider: "claude",
+      resetId: "cedar-ember:opus55-launch-promax-20260921",
+      result: "reset",
+      resetsLeft: 0,
+      cooldownUntil: null,
+      clears: ["session", "weekly"]
+    })
+    var parsed = Service.parseResetOutcome(stdout)
+    verify(parsed.ok)
+    compare(parsed.outcome.result, "reset")
+    compare(parsed.outcome.resetsLeft, 0)
+    compare(JSON.stringify(parsed.outcome.clears), JSON.stringify(["session", "weekly"]))
+  }
+
+  function test_parse_reset_outcome_rejects_unknown_result_and_garbage() {
+    verify(!Service.parseResetOutcome("not json").ok)
+    verify(!Service.parseResetOutcome("").ok)
+    verify(!Service.parseResetOutcome(JSON.stringify({
+      schemaVersion: 1, operation: "reset", provider: "claude", resetId: "x",
+      result: "explodes", resetsLeft: null, cooldownUntil: null, clears: []
+    })).ok)
+  }
+
+  function test_validate_provider_requires_resets_array() {
+    var base = { id: "claude", name: "Claude", state: "ready", windows: [], action: null }
+    verify(Service.validateProvider(base) !== null)
+    var withEmpty = { id: "claude", name: "Claude", state: "ready", windows: [],
+                       resets: [], action: null }
+    compare(Service.validateProvider(withEmpty), null)
+    var withMalformed = { id: "claude", name: "Claude", state: "ready", windows: [],
+                           resets: [{ id: "x", label: "X", available: -1, total: null,
+                                      clears: [], expiresAt: null, refillsAt: null,
+                                      cooldownUntil: null, claimable: true }],
+                           action: null }
+    verify(Service.validateProvider(withMalformed) !== null)
+  }
+
+  function test_resets_section_hidden_when_empty_and_wired_to_signal() {
+    var src = read("components/ResetsSection.qml")
+    verify(src.indexOf("visible: root.rows.length > 0") >= 0)
+    verify(src.indexOf("signal useResetClicked()") >= 0)
+    verify(src.indexOf("Text.PlainText") >= 0)
+    var view = read("ProviderView.qml")
+    verify(view.indexOf("signal resetRequested(string providerId, string resetId)") >= 0)
+    verify(view.indexOf("ResetsSection {") >= 0)
+    verify(view.indexOf("onUseResetClicked:") >= 0)
+  }
+
+  function test_service_owns_a_dedicated_reset_lane() {
+    var src = read("Service.qml")
+    verify(src.indexOf("id: resetLane") >= 0)
+    verify(src.indexOf("id: resetProcess") >= 0)
+    verify(src.indexOf("function useReset") >= 0 || src.indexOf("function confirmReset") >= 0)
+    verify(src.indexOf("function requestReset(providerId, resetId)") >= 0)
+  }
+
+  function test_reset_confirm_dialog_is_single_confirm_no_arming() {
+    var src = read("Popup.qml")
+    verify(src.indexOf("id: resetConfirmDialog") >= 0)
+    verify(src.indexOf('title: "Use reset?"') < 0)
+    verify(src.indexOf("root.resetConfirmModel.title") >= 0)
+    verify(src.indexOf("root.agentService.confirmReset()") >= 0)
+  }
+
   function test_deferred_focus_rebuild_survives_popup_destruction() {
     var src = read("Popup.qml")
     verify(src.indexOf("Qt.callLater(root.rebuildFocusTargets)") < 0)

@@ -63,6 +63,7 @@ function createService(serviceUrl, parent, testCase) {
       processMock("settingsWriteProcess", "settingsWriteOut", "settingsWriteErr"),
       processMock("maintenanceCheckProcess", "maintenanceCheckOut", "maintenanceCheckErr"),
       processMock("maintenanceHandoffProcess", "maintenanceHandoffOut", "maintenanceHandoffErr"),
+      processMock("resetProcess", "resetOut", "resetErr"),
       ""
     ].join("\n")
     source = source.slice(0, processStart) + processMocks + source.slice(processEnd)
