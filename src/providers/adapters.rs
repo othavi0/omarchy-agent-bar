@@ -555,13 +555,13 @@ pub(crate) async fn probe_claude_version(
     Some(format!("{major}.{minor}.{patch}"))
 }
 
-struct ClaudeCredentials {
-    token: String,
-    plan: Option<Plan>,
-    expires_at_ms: Option<i64>,
+pub(crate) struct ClaudeCredentials {
+    pub(crate) token: String,
+    pub(crate) plan: Option<Plan>,
+    pub(crate) expires_at_ms: Option<i64>,
 }
 
-fn parse_claude_credentials(bytes: &[u8]) -> Option<ClaudeCredentials> {
+pub(crate) fn parse_claude_credentials(bytes: &[u8]) -> Option<ClaudeCredentials> {
     let value: serde_json::Value = serde_json::from_slice(bytes).ok()?;
     let oauth = value.get("claudeAiOauth")?;
     let token = oauth.get("accessToken")?.as_str()?.to_owned();

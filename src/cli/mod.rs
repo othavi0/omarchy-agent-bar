@@ -46,6 +46,7 @@ pub fn help_text(topic: Option<HelpTopic>) -> String {
             out.push_str("  agent-bar config apply stdin|file <path>|json <value>\n");
             out.push_str("  agent-bar update [check]\n");
             out.push_str("  agent-bar uninstall [purge]\n");
+            out.push_str("  agent-bar reset claude <reset-id>\n");
             out.push_str("  agent-bar help [<command>]\n");
             out.push_str("  agent-bar version\n");
             out.push('\n');
@@ -82,6 +83,10 @@ pub fn help_text(topic: Option<HelpTopic>) -> String {
              Both forms require confirmation.\n"
                 .to_owned()
         }
+        Some(HelpTopic::Reset) => "reset claude <reset-id> — claim one banked Claude usage reset\n\
+             Fetches fresh usage, claims the reset only if it is still\n\
+             claimable, and prints one JSON result line. Never retried.\n"
+            .to_owned(),
         Some(HelpTopic::Help) => "help [<command>] — show general or topic help\n".to_owned(),
         Some(HelpTopic::Version) => {
             "version — print the helper semantic version and exit\n".to_owned()
@@ -105,6 +110,7 @@ pub fn dispatch(command: Command) -> Result<(), CliFailure> {
         Command::Login(provider) => dispatch_login(provider),
         Command::Status(opts) => dispatch_status(opts),
         Command::Uninstall { purge } => dispatch_uninstall(purge),
+        Command::Reset { reset_id } => dispatch_reset(reset_id),
     }
 }
 
@@ -400,6 +406,68 @@ fn dispatch_login(provider: ProviderId) -> Result<(), CliFailure> {
             exit_code: outcome.exit_code,
         })
     }
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ResetStdout<'a> {
+    schema_version: u32,
+    operation: &'static str,
+    provider: &'static str,
+    reset_id: &'a str,
+    result: &'static str,
+    resets_left: Option<u32>,
+    #[serde(with = "time::serde::rfc3339::option")]
+    cooldown_until: Option<time::OffsetDateTime>,
+    clears: &'a [String],
+}
+
+/// `reset claude <reset-id>` (CLI-032..037). The reset id's shape is
+/// validated here, at exit VALIDATION, before any network I/O; grammar
+/// already rejected a non-Claude provider.
+fn dispatch_reset(reset_id: String) -> Result<(), CliFailure> {
+    use crate::providers::catalog::ExecutionEnvironment;
+    use crate::providers::http::ReqwestHttpClient;
+    use crate::providers::process::TokioProcessRunner;
+    use crate::providers::{claim_claude_reset, ResetContext};
+    use crate::status::schema::validate_reset_id;
+    use crate::support::{RealFileSystem, SystemClock};
+
+    validate_reset_id(&reset_id).map_err(|err| CliFailure::validation(err.message().to_owned()))?;
+
+    let env = ExecutionEnvironment::from_process();
+    let http = ReqwestHttpClient::new(std::time::Duration::from_secs(10))
+        .map_err(|err| CliFailure::internal(err.to_string()))?;
+    let process = TokioProcessRunner;
+    let fs = RealFileSystem;
+    let clock = SystemClock;
+    let ctx = ResetContext {
+        env: &env,
+        clock: &clock,
+        fs: &fs,
+        process: &process,
+        http: &http,
+    };
+
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|err| CliFailure::internal(err.to_string()))?;
+    let report = runtime.block_on(claim_claude_reset(&ctx, &reset_id));
+
+    let doc = ResetStdout {
+        schema_version: 1,
+        operation: "reset",
+        provider: "claude",
+        reset_id: &reset_id,
+        result: report.result.as_str(),
+        resets_left: report.resets_left,
+        cooldown_until: report.cooldown_until,
+        clears: &report.clears,
+    };
+    let json = serde_json::to_string(&doc).map_err(|err| CliFailure::internal(err.to_string()))?;
+    println!("{json}");
+    Ok(())
 }
 
 fn dispatch_config(command: ConfigCommand) -> Result<(), CliFailure> {

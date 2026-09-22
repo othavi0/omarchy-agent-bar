@@ -53,6 +53,7 @@ fn parse_tokens(tokens: &[String]) -> Result<Command, CliFailure> {
         "config" => parse_config(&tokens[1..]),
         "update" => parse_update(&tokens[1..]),
         "uninstall" => parse_uninstall(&tokens[1..]),
+        "reset" => parse_reset(&tokens[1..]),
         "help" => parse_help(&tokens[1..]),
         "version" => {
             if tokens.len() != 1 {
@@ -222,6 +223,37 @@ fn parse_uninstall(tokens: &[String]) -> Result<Command, CliFailure> {
         [other, ..] => Err(CliFailure::grammar(format!(
             "unknown argument '{other}' for uninstall"
         ))),
+    }
+}
+
+/// `reset claude <reset-id>` (CLI-032). Any provider other than `claude` is
+/// a grammar error like any other unsupported value; the reset id's own
+/// shape is validated later, at dispatch, so a malformed id exits
+/// VALIDATION rather than GRAMMAR.
+fn parse_reset(tokens: &[String]) -> Result<Command, CliFailure> {
+    match tokens {
+        [] => Err(CliFailure::grammar(
+            "reset requires a provider and a reset id",
+        )),
+        [provider] if provider == "claude" => {
+            Err(CliFailure::grammar("reset claude requires a reset id"))
+        }
+        [provider, reset_id] if provider == "claude" => {
+            if reset_id.starts_with('-') {
+                return Err(CliFailure::grammar(format!(
+                    "unsupported flag '{reset_id}'"
+                )));
+            }
+            Ok(Command::Reset {
+                reset_id: reset_id.clone(),
+            })
+        }
+        [provider, ..] if provider != "claude" => Err(CliFailure::grammar(format!(
+            "unsupported provider '{provider}' for reset"
+        ))),
+        _ => Err(CliFailure::grammar(
+            "unexpected arguments after reset claude <reset-id>",
+        )),
     }
 }
 

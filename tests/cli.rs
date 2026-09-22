@@ -199,6 +199,38 @@ fn login_config_update_uninstall_forms() {
 }
 
 #[test]
+fn reset_claude_accepts_each_known_id_shape() {
+    for id in [
+        "juniper-tide",
+        "codex-credits",
+        "cedar-ember:opus55-launch-promax-20260921",
+    ] {
+        assert_eq!(
+            parse(words(&["reset", "claude", id])).unwrap(),
+            Command::Reset {
+                reset_id: id.to_owned()
+            },
+            "{id}"
+        );
+    }
+}
+
+#[test]
+fn reset_rejects_missing_arguments_wrong_provider_and_extra_words() {
+    for extra in [
+        words(&["reset"]),
+        words(&["reset", "claude"]),
+        words(&["reset", "codex", "codex-credits"]),
+        words(&["reset", "grok", "weekly"]),
+        words(&["reset", "claude", "juniper-tide", "extra"]),
+        words(&["reset", "claude", "--flag"]),
+    ] {
+        let err = parse(extra.clone()).unwrap_err();
+        assert_eq!(err.exit_code, GRAMMAR, "{extra:?}");
+    }
+}
+
+#[test]
 fn update_apply_and_update_run_are_grammar_errors() {
     for extra in [
         words(&["update", "run"]),
@@ -336,6 +368,18 @@ fn binary_grammar_errors_exit_2() {
         .args(["setup", "plugins-dir", "/tmp/x"])
         .assert()
         .code(GRAMMAR)
+        .stdout("");
+}
+
+#[test]
+fn binary_reset_rejects_a_malformed_id_before_any_io() {
+    // Validation fails before any filesystem or network access, so this is
+    // deterministic regardless of the machine's real Claude credentials.
+    CargoBin::cargo_bin("agent-bar")
+        .unwrap()
+        .args(["reset", "claude", "Not A Valid Id!"])
+        .assert()
+        .code(VALIDATION)
         .stdout("");
 }
 

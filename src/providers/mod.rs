@@ -4,6 +4,7 @@ pub mod catalog;
 pub mod codex_app_server;
 pub mod http;
 pub mod process;
+pub mod reset;
 mod retry;
 pub mod v2_map;
 
@@ -24,3 +25,4 @@ pub use catalog::{
 pub use process::{
     run_process, ProcessError, ProcessOutput, ProcessRunner, ProcessSpec, TokioProcessRunner,
 };
+pub use reset::{claim_claude_reset, ResetContext, ResetReport, ResetResult};
