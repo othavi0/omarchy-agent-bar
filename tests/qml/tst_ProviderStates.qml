@@ -680,6 +680,8 @@ TestCase {
             "Network error. Try again.")
     compare(Core.resetOutcomeText({ result: "provider_error" }, "hh:mm"),
             "Claude did not accept the reset.")
+    compare(Core.resetOutcomeText({ result: "unconfirmed" }, "hh:mm"),
+            "Could not confirm the reset. Refreshing.")
     compare(Core.resetOutcomeText(null, "hh:mm"), "")
     var cooldownMs = Date.parse("2026-09-22T18:30:00Z")
     compare(Core.resetOutcomeText({ result: "cooldown", cooldownUntil: "2026-09-22T18:30:00Z" }, "hh:mm"),

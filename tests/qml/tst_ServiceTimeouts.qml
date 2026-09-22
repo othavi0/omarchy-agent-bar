@@ -671,4 +671,39 @@ TestCase {
     s.closePopup("monitor-a")
     compare(s.resetUi.outcome, null)
   }
+
+  function test_the_reset_deadline_outlasts_the_helper_serial_budget() {
+    var s = createService()
+    compare(s.lanes.reset.timeoutMs, 45000,
+            "version probe, GET, and POST at 10 s each plus startup")
+  }
+
+  function test_a_timed_out_claim_reads_as_unconfirmed_and_refreshes() {
+    var s = createService()
+    s.resetTimeoutMs = 50
+    s.beginCollection()
+    finishLane(s, "status", 0, Harness.claudeResetEnvelope())
+    s.requestReset("claude", Harness.CLAUDE_RESET_ID)
+    var statusRun = s.lanes.status.runId
+    s.confirmReset()
+
+    tryVerify(function () { return s.resetUi.outcome !== null }, 500)
+    compare(s.resetUi.outcome.result, "unconfirmed")
+    compare(View.resetOutcomeText(s.resetUi.outcome, "hh:mm"),
+            "Could not confirm the reset. Refreshing.")
+    compare(s.lanes.status.runId, statusRun + 1)
+    compare(s.resetBusy, true, "the killed claim holds the lane until it exits")
+  }
+
+  function test_a_claim_that_exits_without_output_reads_as_unconfirmed() {
+    var s = startClaimWithPopupOpen()
+    finishLane(s, "reset", 1, "", "connection reset")
+    compare(s.resetUi.outcome.result, "unconfirmed")
+  }
+
+  function test_a_claim_with_unreadable_output_reads_as_rejected() {
+    var s = startClaimWithPopupOpen()
+    finishLane(s, "reset", 1, "{not-json")
+    compare(s.resetUi.outcome.result, "provider_error")
+  }
 }

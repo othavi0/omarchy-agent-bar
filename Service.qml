@@ -50,7 +50,7 @@ Item {
   property string lastViewInstallationUrl: ""
   property var pendingMaintenanceIntention: null
   property string pendingMaintenancePayload: ""
-  property int resetTimeoutMs: 30000
+  property int resetTimeoutMs: 45000
   property var resetUi: Core.resetUiIdle()
   readonly property bool resetBusy: !resetLane.ready
   // UX-073: the refresh a settled claim fires must not erase that claim's
@@ -437,11 +437,7 @@ Item {
     noteLaneSettled(outcome)
     tryMaintenanceDetach()
     var target = outcome.context
-    var parsed = Core.parseResetOutcome(outcome.stdout)
-    var normalized = parsed.ok
-        ? parsed.outcome
-        : { result: "provider_error", resetsLeft: null, cooldownUntil: null, clears: [] }
-    resetUi = Core.resetUiSettled(target, normalized)
+    resetUi = Core.resetUiSettled(target, Core.resetOutcomeFromLane(outcome))
     if (target && target.providerId && !maintenanceState.blocked) {
       resetRefreshQueued = true
       refreshProvider(target.providerId, true)

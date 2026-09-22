@@ -782,7 +782,8 @@ var RESET_OUTCOME_TEXT = {
   "unavailable": "Reset not available right now.",
   "unauthenticated": "Sign in to Claude again.",
   "network_error": "Network error. Try again.",
-  "provider_error": "Claude did not accept the reset."
+  "provider_error": "Claude did not accept the reset.",
+  "unconfirmed": "Could not confirm the reset. Refreshing."
 }
 
 function resetOutcomeText(outcome, localeShortFormat) {

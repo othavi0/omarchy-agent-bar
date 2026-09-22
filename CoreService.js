@@ -301,6 +301,19 @@ function parseResetOutcome(stdout) {
   }
 }
 
+function unreadResetOutcome(result) {
+  return { result: result, resetsLeft: null, cooldownUntil: null, clears: [] }
+}
+
+// A killed or silent claim may still have been applied upstream, so it reads
+// as unconfirmed rather than rejected; only unreadable output is a rejection.
+function resetOutcomeFromLane(outcome) {
+  if (!outcome || outcome.timedOut || !String(outcome.stdout || "").trim().length)
+    return unreadResetOutcome("unconfirmed")
+  var parsed = parseResetOutcome(outcome.stdout)
+  return parsed.ok ? parsed.outcome : unreadResetOutcome("provider_error")
+}
+
 function resetUiIdle() {
   return { confirmOpen: false, providerId: "", resetId: "", outcome: null }
 }
