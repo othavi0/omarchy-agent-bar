@@ -138,7 +138,8 @@ application, an AUR product, or a cargo-binstall product.
    [2026-09-10 Settings tabs and rail state](amendments/2026-09-10-settings-tabs-and-rail-state-design.md),
    [2026-09-14 update execution removed](amendments/2026-09-14-remove-update-execution-design.md),
    [2026-09-15 v9 migration removed](amendments/2026-09-15-remove-v9-migration-design.md),
-   [2026-09-15 live Quickshell probe](amendments/2026-09-15-live-quickshell-probe-design.md).
+   [2026-09-15 live Quickshell probe](amendments/2026-09-15-live-quickshell-probe-design.md),
+   [2026-09-22 banked usage resets](amendments/2026-09-22-usage-resets-design.md).
 
    [2026-09-15 Codex app-server only](amendments/2026-09-15-codex-app-server-only-design.md).
 
