@@ -387,10 +387,13 @@ enum UpdateLaunch {
 /// run to a transient unit. It returns before anything writes the plugin
 /// tree, so a shell reload of the plugin cannot cut the run short.
 fn dispatch_update_apply() -> Result<(), CliFailure> {
+    use crate::plugin::update_apply::read_tree_version;
     use crate::plugin::update_state::{
         Begin, Txid, UpdateDocument, UpdateRunning, UpdateStateFiles, UPDATE_RUN_WINDOW,
     };
-    use crate::plugin::{resolve_absolute_executable, CommandRunner, ProcessCommandRunner};
+    use crate::plugin::{
+        resolve_absolute_executable, CommandRunner, PluginPaths, ProcessCommandRunner,
+    };
     use crate::support::{Clock, SystemClock};
 
     let is_tty = io::stdin().is_terminal();
@@ -421,11 +424,14 @@ fn dispatch_update_apply() -> Result<(), CliFailure> {
     let clock = SystemClock;
     let now = Clock::now_utc(&clock);
     let txid = Txid::from_seed(format!("update:{now}:{}", std::process::id()).as_bytes());
+    let from_version =
+        read_tree_version(&PluginPaths::production(home.clone(), None).plugin_root).ok();
     let files = UpdateStateFiles::in_state_dir(&state_home.join("agent-bar"));
     let marker = UpdateRunning {
         txid: txid.clone(),
         started_at: now,
         target_version,
+        from_version,
     };
     let print = |launch: UpdateLaunch| -> Result<(), CliFailure> {
         let line = UpdateDocument::new(launch)

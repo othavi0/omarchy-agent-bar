@@ -621,7 +621,7 @@ fn binary_update_apply_starts_the_run_unit_and_writes_the_marker() {
             "--collect".to_owned(),
             "--no-block".to_owned(),
             format!("--unit={unit}"),
-            "--property=RuntimeMaxSec=180".to_owned(),
+            "--property=RuntimeMaxSec=240".to_owned(),
             format!("--setenv=HOME={}", fx.home.display()),
             format!(
                 "--setenv=XDG_STATE_HOME={}",
@@ -642,6 +642,7 @@ fn binary_update_apply_starts_the_run_unit_and_writes_the_marker() {
     assert_eq!(marker["operation"], "update");
     assert_eq!(marker["txid"], txid.as_str());
     assert_eq!(marker["targetVersion"], "10.7.0");
+    assert_eq!(marker["fromVersion"], "10.6.1");
     let started = marker["startedAt"].as_str().unwrap();
     let started =
         time::OffsetDateTime::parse(started, &time::format_description::well_known::Rfc3339)
@@ -697,7 +698,7 @@ fn binary_update_apply_replaces_a_stale_marker() {
     let fx = launch_fixture(dir.path(), 0);
     write_marker(
         &fx.marker,
-        time::OffsetDateTime::now_utc() - time::Duration::seconds(181),
+        time::OffsetDateTime::now_utc() - time::Duration::seconds(241),
     );
     let output = run_update_apply(&fx.home, &fx.path_dir);
     assert_eq!(stdout_json(&output)["result"], "started");
@@ -881,6 +882,52 @@ fn binary_update_apply_takes_over_a_marker_whose_run_has_a_result() {
         serde_json::from_slice(&std::fs::read(&fx.marker).unwrap()).unwrap();
     assert_ne!(marker["txid"], TXID_A);
     assert!(!fx.marker.with_file_name("update-result.json").exists());
+}
+
+fn write_stale_marker(path: &Path, age: i64) {
+    let started = (time::OffsetDateTime::now_utc() - time::Duration::seconds(age))
+        .format(&time::format_description::well_known::Rfc3339)
+        .unwrap();
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(
+        path,
+        format!("{{\"schemaVersion\":1,\"operation\":\"update\",\"txid\":\"{TXID_A}\",\"startedAt\":\"{started}\",\"targetVersion\":\"10.7.0\",\"fromVersion\":\"10.6.1\"}}\n"),
+    )
+    .unwrap();
+}
+
+#[test]
+fn binary_update_status_keeps_a_marker_live_for_the_whole_unit_limit() {
+    let dir = tempdir().unwrap();
+    let fx = launch_fixture(dir.path(), 0);
+    write_stale_marker(&fx.marker, 200);
+    let running: serde_json::Value = serde_json::from_str(&update_status(&fx.home)).unwrap();
+    assert_eq!(running["status"], "running");
+}
+
+#[test]
+fn binary_update_status_judges_a_run_killed_by_its_unit_limit_by_the_tree() {
+    for (tree, expected) in [
+        ("10.7.0", "{\"fromVersion\":\"10.6.1\",\"installedVersion\":\"10.7.0\",\"restartRequired\":true,\"result\":\"updated\"}"),
+        ("10.6.1", "{\"fromVersion\":\"10.6.1\",\"installedVersion\":\"10.6.1\",\"restartRequired\":false,\"result\":\"failed\"}"),
+    ] {
+        let dir = tempdir().unwrap();
+        let home = update_apply_home(dir.path(), tree);
+        let marker = home.join("state/agent-bar/update-running.json");
+        write_stale_marker(&marker, 241);
+        let mut finished: serde_json::Value =
+            serde_json::from_str(&update_status(&home)).unwrap();
+        assert_eq!(finished["status"], "finished", "{tree}");
+        assert_eq!(finished["txid"], TXID_A, "{tree}");
+        let picked = serde_json::json!({
+            "result": finished["result"].take(),
+            "fromVersion": finished["fromVersion"].take(),
+            "installedVersion": finished["installedVersion"].take(),
+            "restartRequired": finished["restartRequired"].take(),
+        });
+        assert_eq!(picked.to_string(), expected, "{tree}");
+        assert!(!marker.exists());
+    }
 }
 
 fn update_status(home: &Path) -> String {

@@ -10,8 +10,9 @@ use crate::plugin::update_apply::{UpdateOutcome, UpdateResult};
 use crate::support::{replace_atomically_with, FileMutator, StdFileMutator};
 
 /// How long a running marker counts as live. It equals the unit's
-/// `RuntimeMaxSec`, after which systemd has stopped the run.
-pub const UPDATE_RUN_WINDOW: Duration = Duration::seconds(180);
+/// `RuntimeMaxSec`, after which systemd has stopped the run, and leaves a
+/// minute past the 60 s lock wait plus the 120 s plugin-manager budget.
+pub const UPDATE_RUN_WINDOW: Duration = Duration::seconds(240);
 
 /// Rounds of link-then-inspect before a launcher that keeps losing the race
 /// reports the slot as taken.
@@ -100,6 +101,9 @@ pub struct UpdateRunning {
     #[serde(with = "time::serde::rfc3339")]
     pub started_at: OffsetDateTime,
     pub target_version: Option<String>,
+    /// The tree version when `update apply` ran; `None` when `bundle.json`
+    /// was unreadable.
+    pub from_version: Option<String>,
 }
 
 impl UpdateRunning {
@@ -260,10 +264,8 @@ impl UpdateStateFiles {
                 });
             }
             if remove_if_unchanged(&self.running, &bytes)? {
-                return Ok(UpdateStatus::Finished(UpdateOutcome::new(
-                    marker.map(|m| m.txid),
-                    UpdateResult::Failed,
-                    None,
+                return Ok(UpdateStatus::Finished(abandoned_run(
+                    marker,
                     tree_version(),
                     now,
                 )));
@@ -292,6 +294,24 @@ impl UpdateStateFiles {
             None => Ok(()),
         }
     }
+}
+
+/// The outcome of a run whose unit ended without a result, most likely
+/// stopped by `RuntimeMaxSec`. As in `update run`, the tree decides: a tree
+/// that moved away from the marker's `fromVersion` was updated.
+fn abandoned_run(
+    marker: Option<UpdateRunning>,
+    tree: Option<String>,
+    now: OffsetDateTime,
+) -> UpdateOutcome {
+    let (txid, from) = marker.map_or((None, None), |m| (Some(m.txid), m.from_version));
+    let moved = matches!((&from, &tree), (Some(from), Some(tree)) if from != tree);
+    let result = if moved {
+        UpdateResult::Updated
+    } else {
+        UpdateResult::Failed
+    };
+    UpdateOutcome::new(txid, result, from, tree, now)
 }
 
 /// `Ok(None)` for a missing file and for one that is not a valid update
@@ -411,6 +431,7 @@ mod tests {
             txid: txid(TXID),
             started_at,
             target_version: Some("10.6.2".to_owned()),
+            from_version: Some("10.6.1".to_owned()),
         }
     }
 
@@ -439,7 +460,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let files = UpdateStateFiles::in_state_dir(dir.path());
         files.begin(&marker(NOW), NOW).unwrap();
-        let later = NOW + Duration::seconds(179);
+        let later = NOW + Duration::seconds(239);
         for _ in 0..2 {
             assert_eq!(
                 status_line(&files, later),
@@ -463,22 +484,36 @@ mod tests {
     }
 
     #[test]
-    fn status_reports_a_stale_or_unreadable_marker_once_as_failed() {
+    fn status_reports_a_stale_or_unreadable_marker_once_by_the_tree() {
         let dir = tempfile::tempdir().unwrap();
         let files = UpdateStateFiles::in_state_dir(dir.path());
-        for (stale, txid) in [
+        let stale = UpdateDocument::new(marker(NOW)).to_json_line().unwrap();
+        for (marker, tree, tail) in [
             (
-                UpdateDocument::new(marker(NOW)).to_json_line().unwrap(),
-                format!("\"{TXID}\""),
+                stale.as_str(),
+                "10.6.2",
+                format!("\"txid\":\"{TXID}\",\"result\":\"updated\",\"fromVersion\":\"10.6.1\",\"installedVersion\":\"10.6.2\",\"restartRequired\":true"),
             ),
-            ("{not json".to_owned(), "null".to_owned()),
+            (
+                stale.as_str(),
+                "10.6.1",
+                format!("\"txid\":\"{TXID}\",\"result\":\"failed\",\"fromVersion\":\"10.6.1\",\"installedVersion\":\"10.6.1\",\"restartRequired\":false"),
+            ),
+            (
+                "{not json",
+                "10.6.2",
+                "\"txid\":null,\"result\":\"failed\",\"fromVersion\":null,\"installedVersion\":\"10.6.2\",\"restartRequired\":false".to_owned(),
+            ),
         ] {
-            std::fs::write(&files.running, &stale).unwrap();
-            let checked_at = NOW + Duration::seconds(180);
+            std::fs::write(&files.running, marker).unwrap();
+            let checked_at = NOW + Duration::seconds(240);
+            let status = files
+                .read_status(checked_at, || Some(tree.to_owned()))
+                .unwrap();
             assert_eq!(
-                status_line(&files, checked_at),
-                format!("{{\"schemaVersion\":1,\"operation\":\"update\",\"status\":\"finished\",\"txid\":{txid},\"result\":\"failed\",\"fromVersion\":null,\"installedVersion\":\"10.6.2\",\"restartRequired\":false,\"finishedAt\":\"2026-09-22T16:43:05Z\"}}\n"),
-                "{stale}"
+                UpdateDocument::new(status).to_json_line().unwrap(),
+                format!("{{\"schemaVersion\":1,\"operation\":\"update\",\"status\":\"finished\",{tail},\"finishedAt\":\"2026-09-22T16:44:05Z\"}}\n"),
+                "{marker} {tree}"
             );
             assert_eq!(status_line(&files, checked_at), NONE);
             assert!(entries(dir.path()).is_empty());
@@ -493,7 +528,7 @@ mod tests {
         assert_eq!(files.begin(&marker(NOW), NOW).unwrap(), Begin::Started);
         assert_eq!(
             std::fs::read_to_string(&files.running).unwrap(),
-            "{\"schemaVersion\":1,\"operation\":\"update\",\"txid\":\"0123456789abcdef0123456789abcdef\",\"startedAt\":\"2026-09-22T16:40:05Z\",\"targetVersion\":\"10.6.2\"}\n"
+            "{\"schemaVersion\":1,\"operation\":\"update\",\"txid\":\"0123456789abcdef0123456789abcdef\",\"startedAt\":\"2026-09-22T16:40:05Z\",\"targetVersion\":\"10.6.2\",\"fromVersion\":\"10.6.1\"}\n"
         );
         assert_eq!(
             entries(&dir.path().join("agent-bar")),
@@ -505,7 +540,7 @@ mod tests {
     fn begin_refuses_while_a_live_marker_exists() {
         let dir = tempfile::tempdir().unwrap();
         let files = UpdateStateFiles::in_state_dir(dir.path());
-        let first = marker(NOW - Duration::seconds(179));
+        let first = marker(NOW - Duration::seconds(239));
         assert_eq!(
             files.begin(&first, first.started_at).unwrap(),
             Begin::Started
@@ -523,7 +558,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let files = UpdateStateFiles::in_state_dir(dir.path());
         for stale in [
-            UpdateDocument::new(marker(NOW - Duration::seconds(180)))
+            UpdateDocument::new(marker(NOW - Duration::seconds(240)))
                 .to_json_line()
                 .unwrap(),
             UpdateDocument::new(marker(NOW + Duration::seconds(5)))
