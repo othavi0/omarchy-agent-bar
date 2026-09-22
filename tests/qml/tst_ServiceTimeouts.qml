@@ -1005,6 +1005,28 @@ TestCase {
     compare(JSON.stringify(s.lastRestartShellArgv), '["omarchy-restart-shell"]')
     compare(s.restartPending, false)
     compare(s.pendingVersion, "")
+    compare(JSON.stringify(s.maintenanceUi), JSON.stringify({
+      phase: "idle",
+      installedVersion: "10.3.17",
+      targetVersion: "",
+      releaseNotesUrl: "",
+      updateCommand: "",
+      purgeSettings: false,
+      uninstallArmed: false,
+      message: "",
+      updateResult: "",
+      uninstallConfirmOpen: false,
+      updateConfirmOpen: false
+    }), "the About tab leaves restart_required with the banner")
+  }
+
+  function test_restart_shell_without_a_pending_update_keeps_the_phase() {
+    var s = runUpdateToStatus(finishedDoc("fetch_failed", "10.3.17"))
+    compare(s.maintenanceUi.phase, "update_failed")
+    s.restartShell()
+    compare(s.restartShellRequestCount, 1)
+    compare(s.maintenanceUi.phase, "update_failed")
+    compare(s.maintenanceUi.message, "Could not reach GitHub. Try again.")
   }
 
   function test_uninstall_is_refused_while_an_update_runs() {

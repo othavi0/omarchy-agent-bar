@@ -322,6 +322,8 @@ Item {
     lastRestartShellArgv = argv.slice()
     restartShellRequestCount++
     restartPendingVersion = ""
+    if (maintenanceUi && maintenanceUi.phase === "restart_required")
+      maintenanceUi = Maintenance.maintenanceUiIdle(helperVersion)
     if (testMode)
       return
     Quickshell.execDetached(argv)
