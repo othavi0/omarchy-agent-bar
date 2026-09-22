@@ -351,7 +351,7 @@ TestCase {
     s.requestReset("claude", Harness.CLAUDE_RESET_ID)
     compare(s.resetUi.confirmOpen, true)
     var provider = View.findProvider(s.snapshot, s.resetUi.providerId)
-    var rows = View.resetRows(provider, 0, "MM/dd/yyyy", "hh:mm")
+    var rows = View.resetRows(provider, "MM/dd/yyyy", "hh:mm")
     compare(rows[0].id, s.resetUi.resetId)
     var model = View.resetConfirmModel(provider, rows[0])
     compare(model.title, "Use reset?")
@@ -380,6 +380,22 @@ TestCase {
     finishLane(s, "status", 0, Harness.claudeResetEnvelope())
     s.requestReset("claude", Harness.CLAUDE_RESET_ID)
     s.closeResetConfirm()
+    compare(s.resetUi.confirmOpen, false)
+    s.confirmReset()
+    compare(s.lanes.reset.runId, 0)
+  }
+
+  function test_a_refresh_that_drops_the_target_closes_the_reset_confirm() {
+    var s = createService()
+    s.beginCollection()
+    finishLane(s, "status", 0, Harness.claudeResetEnvelope())
+    s.requestReset("claude", Harness.CLAUDE_RESET_ID)
+    s.kickStatus()
+    finishLane(s, "status", 0, Harness.claudeResetEnvelope())
+    compare(s.resetUi.confirmOpen, true, "a refresh that keeps the entry keeps the dialog")
+
+    s.kickStatus()
+    finishLane(s, "status", 0, Harness.claudeResetEnvelope([]))
     compare(s.resetUi.confirmOpen, false)
     s.confirmReset()
     compare(s.lanes.reset.runId, 0)

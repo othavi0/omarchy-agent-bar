@@ -474,14 +474,15 @@ TestCase {
     verify(Service.validateProvider(withMalformed) !== null)
   }
 
-  function test_resets_section_hidden_when_empty_and_wired_to_signal() {
+  function test_resets_section_visibility_is_owned_by_provider_view() {
     var src = read("components/ResetsSection.qml")
-    verify(src.indexOf("visible: root.rows.length > 0") >= 0)
+    verify(src.indexOf("\n  visible:") < 0, "the owner alone decides the section's visibility")
     verify(src.indexOf("signal useResetClicked()") >= 0)
     verify(src.indexOf("Text.PlainText") >= 0)
     var view = read("ProviderView.qml")
     verify(view.indexOf("signal resetRequested(string providerId, string resetId)") >= 0)
     verify(view.indexOf("ResetsSection {") >= 0)
+    verify(view.indexOf('visible: root.mode === "windows" && root.resetsSummary.visible') >= 0)
     verify(view.indexOf("onUseResetClicked:") >= 0)
   }
 

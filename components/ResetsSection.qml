@@ -3,9 +3,9 @@ import QtQuick.Layouts
 import qs.Commons
 import qs.Ui
 
-// UX-070/071: a titled section, hidden when there is nothing to reset. The
-// header carries the title, the sum of available resets, and a claim button
-// that only appears once a claimable entry exists.
+// UX-070/071: a titled section; ProviderView hides it when there is nothing
+// to reset. The header carries the title, the sum of available resets, and a
+// claim button that only appears once a claimable entry exists.
 Item {
   id: root
 
@@ -19,7 +19,6 @@ Item {
 
   signal useResetClicked()
 
-  visible: root.rows.length > 0
   width: parent ? parent.width : implicitWidth
   implicitHeight: col.implicitHeight
 

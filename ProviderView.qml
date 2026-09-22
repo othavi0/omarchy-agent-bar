@@ -34,7 +34,7 @@ Item {
   readonly property var header: Core.headerModel(provider, refreshing)
   readonly property string mode: Core.contentMode(provider)
   readonly property var windows: Core.windowLayout(provider, displayMetric, nowMs)
-  readonly property var resetRows: Core.resetRows(provider, nowMs,
+  readonly property var resetRows: Core.resetRows(provider,
       Qt.locale().dateFormat(Locale.ShortFormat), Qt.locale().timeFormat(Locale.ShortFormat))
   readonly property var resetsSummary: Core.resetsSummary(provider)
   readonly property string severity: Core.providerSeverity(provider)

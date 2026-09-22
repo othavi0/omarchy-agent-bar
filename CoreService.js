@@ -351,6 +351,26 @@ function resetUiOnClose(ui, laneOccupied) {
   return laneOccupied ? resetUiAwaiting(ui) : resetUiIdle()
 }
 
+function snapshotHasReset(snapshot, providerId, resetId) {
+  var providers = snapshot && Array.isArray(snapshot.providers) ? snapshot.providers : []
+  for (var i = 0; i < providers.length; i++) {
+    var p = providers[i]
+    if (!p || String(p.id) !== String(providerId) || !Array.isArray(p.resets))
+      continue
+    for (var j = 0; j < p.resets.length; j++) {
+      if (p.resets[j] && String(p.resets[j].id) === String(resetId))
+        return true
+    }
+  }
+  return false
+}
+
+function resetUiAfterSnapshot(ui, snapshot) {
+  if (ui && ui.confirmOpen && !snapshotHasReset(snapshot, ui.providerId, ui.resetId))
+    return resetUiIdle()
+  return ui
+}
+
 function resetUiClearOutcome(ui) {
   if (!ui || !ui.outcome)
     return ui || resetUiIdle()

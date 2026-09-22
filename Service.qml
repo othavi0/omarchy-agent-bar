@@ -558,6 +558,7 @@ Item {
       return
     }
     snapshot = parsed.envelope
+    resetUi = Core.resetUiAfterSnapshot(resetUi, snapshot)
     if (!keepsResetCaption)
       resetUi = Core.resetUiClearOutcome(resetUi)
     maybeFollowUpStatus()

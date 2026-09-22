@@ -700,7 +700,7 @@ function resetCountText(available, total) {
   return a + "/" + (isFinite(t) ? Math.max(0, Math.floor(t)) : 0)
 }
 
-function resetDateText(reset, nowMs, localeDateFormat, localeTimeFormat) {
+function resetDateText(reset, localeDateFormat, localeTimeFormat) {
   var dateFmt = String(localeDateFormat || "")
   var timeFmt = String(localeTimeFormat || "")
   if (reset.expiresAt) {
@@ -730,7 +730,7 @@ function resetCountAccessible(available, total) {
   return a + " of " + (isFinite(t) ? Math.max(0, Math.floor(t)) : 0)
 }
 
-function resetRows(provider, nowMs, localeDateFormat, localeTimeFormat) {
+function resetRows(provider, localeDateFormat, localeTimeFormat) {
   var resets = resetsOf(provider)
   var out = []
   for (var i = 0; i < resets.length; i++) {
@@ -738,7 +738,7 @@ function resetRows(provider, nowMs, localeDateFormat, localeTimeFormat) {
     var label = plainText(r.label || "")
     var clearsText = resetClearsText(provider, r.clears)
     var countText = resetCountText(r.available, r.total)
-    var dateText = resetDateText(r, nowMs, localeDateFormat, localeTimeFormat)
+    var dateText = resetDateText(r, localeDateFormat, localeTimeFormat)
     var accessibleParts = [label, resetCountAccessible(r.available, r.total)]
     if (dateText.length)
       accessibleParts.push(dateText)
