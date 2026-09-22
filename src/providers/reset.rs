@@ -18,6 +18,7 @@ use super::catalog::{
     discover, CollectionAvailability, Discovery, ExecutionEnvironment, LoginAvailability, CLAUDE,
 };
 use super::process::ProcessRunner;
+use super::retry::http_get_with_retry;
 use super::v2_map::{claude_from_usage_json, claude_reset_clears};
 use crate::status::schema::{ProviderResult, UsageReset};
 use crate::support::{Clock, FileSystem};
@@ -179,10 +180,14 @@ pub async fn claim_claude_reset(ctx: &ResetContext<'_>, reset_id: &str) -> Reset
     let request = ClaudeRequestHeaders::new(&creds, version.as_deref());
     let headers = request.pairs();
 
-    let usage = match ctx
-        .http
-        .get(CLAUDE_USAGE_URL, &headers, CLAUDE.max_output_bytes)
-        .await
+    let usage = match http_get_with_retry(
+        ctx.http,
+        &CLAUDE,
+        CLAUDE_USAGE_URL,
+        &headers,
+        CLAUDE.max_output_bytes,
+    )
+    .await
     {
         Ok(resp) if (200..300).contains(&resp.status) => resp,
         Ok(resp) if resp.status == 401 || resp.status == 403 => {
@@ -430,7 +435,10 @@ mod tests {
         let env = test_env();
         let clock = FixedClock(datetime!(2026-09-22 18:00:00 UTC));
         let process = version_process("2.1.280");
-        let http = scripted_http(Err(HttpError::Network("blip".into())), ok(b"{}"));
+        let http = scripted_http(
+            Err(HttpError::Network("blip".into())),
+            Err(HttpError::Network("blip again".into())),
+        );
         let ctx = ResetContext {
             env: &env,
             clock: &clock,
@@ -440,6 +448,42 @@ mod tests {
         };
         let report = claim_claude_reset(&ctx, "juniper-tide").await;
         assert_eq!(report.result, ResetResult::NetworkError);
+        assert!(http.last_body.lock().unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn usage_get_retries_one_network_error_and_post_runs_once() {
+        let fs = creds_and_org_fs();
+        let env = test_env();
+        let clock = FixedClock(datetime!(2026-09-22 18:00:00 UTC));
+        let process = version_process("2.1.280");
+        let unused = ok(br#"{"result":"reset"}"#);
+        let http = ScriptedHttpClient {
+            responses: Mutex::new(vec![
+                unused,
+                Err(HttpError::Network("post blip".into())),
+                ok(CLAIMABLE_USAGE_BODY),
+                Err(HttpError::Network("get blip".into())),
+            ]),
+            last_url: Mutex::new(None),
+            last_headers: Mutex::new(Vec::new()),
+            last_body: Mutex::new(None),
+        };
+        let ctx = ResetContext {
+            env: &env,
+            clock: &clock,
+            fs: &fs,
+            process: &process,
+            http: &http,
+        };
+        let report = claim_claude_reset(&ctx, "cedar-ember:g1").await;
+        assert_eq!(report.result, ResetResult::NetworkError);
+        assert!(http.last_body.lock().unwrap().is_some(), "the POST ran");
+        assert_eq!(
+            http.responses.lock().unwrap().len(),
+            1,
+            "GET retried once, POST attempted once"
+        );
     }
 
     #[tokio::test]
