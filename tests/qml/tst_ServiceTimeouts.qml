@@ -743,12 +743,12 @@ TestCase {
     return s
   }
 
-  function runUpdateToStatus(stdout) {
+  function runUpdateToStatus(stdout, exitCode) {
     var s = startUpdate()
     finishLane(s, "update", 0, startedDoc)
     s.pollUpdateStatus()
     compare(JSON.stringify(s.lanes.update.process.command), '["/nonexistent","update","status"]')
-    finishLane(s, "update", 0, stdout)
+    finishLane(s, "update", exitCode === undefined ? 0 : exitCode, stdout)
     return s
   }
 
@@ -820,7 +820,7 @@ TestCase {
 
   function test_already_running_polls_like_started() {
     var s = startUpdate()
-    finishLane(s, "update", 0, '{"result":"already_running"}\n')
+    finishLane(s, "update", 0, '{"schemaVersion":1,"operation":"update","result":"already_running"}\n')
     compare(s.maintenanceUi.phase, "updating")
     compare(s.updateRunning, true)
     s.pollUpdateStatus()
@@ -880,6 +880,24 @@ TestCase {
     finishLane(s, "update", 0, "Updating plugin...\n")
     compare(s.maintenanceUi.message, "The update did not finish. You are still on 10.3.17.")
     compare(s.updateRunning, false)
+  }
+
+  function test_none_or_unreadable_while_polling_fails_at_once() {
+    var replies = [
+      [0, noneDoc, "none"],
+      [0, '{"status":"running","targetVersion":"10.3.18"}\n', "no envelope"],
+      [0, "not json\n", "not json"],
+      [1, "", "helper failed"]
+    ]
+    for (var i = 0; i < replies.length; i++) {
+      var s = runUpdateToStatus(replies[i][1], replies[i][0])
+      compare(s.maintenanceUi.phase, "update_failed", replies[i][2])
+      compare(s.maintenanceUi.message, "The update did not finish. You are still on 10.3.17.", replies[i][2])
+      compare(s.maintenanceUi.updateResult, "failed", replies[i][2])
+      compare(s.updateRunning, false, replies[i][2])
+      compare(s.restartPending, false, replies[i][2])
+      cleanup()
+    }
   }
 
   function test_update_lane_timeout_renders_as_failed() {

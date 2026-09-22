@@ -83,7 +83,10 @@ TestCase {
 
   function test_update_start_reads_started_and_already_running() {
     compare(Core.updateStartFromLane(lane('{"schemaVersion":1,"operation":"update","result":"started","unit":"agent-bar-update-1.service"}\n')), "started")
-    compare(Core.updateStartFromLane(lane('{"result":"already_running"}\n')), "already_running")
+    compare(Core.updateStartFromLane(lane('{"schemaVersion":1,"operation":"update","result":"already_running"}\n')), "already_running")
+    compare(Core.updateStartFromLane(lane('{"result":"already_running"}\n')), "failed", "no envelope")
+    compare(Core.updateStartFromLane(lane('{"schemaVersion":1,"result":"started"}\n')), "failed", "no operation")
+    compare(Core.updateStartFromLane(lane('{"operation":"update","result":"started"}\n')), "failed", "no schemaVersion")
     compare(Core.updateStartFromLane(lane('{"result":"started"}', 4)), "failed")
     compare(Core.updateStartFromLane(lane("", 1, true)), "failed")
     compare(Core.updateStartFromLane(lane("Starting unit\n")), "failed")
@@ -115,6 +118,12 @@ TestCase {
     compare(Core.updateStatusFromLane(lane("", 1, true)).status, "unreadable")
     compare(Core.updateStatusFromLane(lane('{"schemaVersion":1,"operation":"update","status":"paused"}')).status, "unreadable")
     compare(Core.updateStatusFromLane(lane('{"schemaVersion":2,"operation":"update","status":"none"}')).status, "unreadable")
+    compare(Core.updateStatusFromLane(lane('{"status":"none"}\n')).status, "unreadable", "no envelope")
+    compare(Core.updateStatusFromLane(lane('{"schemaVersion":1,"status":"running","targetVersion":"10.6.2"}\n')).status, "unreadable", "no operation")
+    compare(Core.updateStatusFromLane(lane('{"operation":"update","status":"none"}\n')).status, "unreadable", "no schemaVersion")
+    compare(Core.updateStatusFromLane(lane('{"schemaVersion":"1","operation":"update","status":"none"}\n')).status, "unreadable", "string schemaVersion")
+    var withTxid = Core.updateStatusFromLane(lane('{"schemaVersion":1,"operation":"update","status":"finished","txid":"0123456789abcdef0123456789abcdef","result":"updated","fromVersion":"10.6.1","installedVersion":"10.6.2","restartRequired":true,"finishedAt":"2026-09-22T12:00:00Z"}\n'))
+    compare(JSON.stringify(withTxid), '{"status":"finished","outcome":{"result":"updated","installedVersion":"10.6.2","restartRequired":true}}')
   }
 
   function test_update_result_message_table() {

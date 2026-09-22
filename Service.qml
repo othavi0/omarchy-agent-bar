@@ -428,10 +428,15 @@ Item {
       finishUpdate(status.outcome)
       return
     }
-    if (status.status === "running" && !updatePollWindow.running) {
-      maintenanceUi = Maintenance.maintenanceUiUpdating(maintenanceUi, status.targetVersion)
-      beginUpdatePoll()
+    if (status.status === "running") {
+      if (!updatePollWindow.running) {
+        maintenanceUi = Maintenance.maintenanceUiUpdating(maintenanceUi, status.targetVersion)
+        beginUpdatePoll()
+      }
+      return
     }
+    if (updatePollWindow.running)
+      finishUpdate(Maintenance.failedUpdateOutcome())
   }
 
   function openUninstallConfirm() {

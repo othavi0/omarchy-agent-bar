@@ -100,8 +100,6 @@ function failedUpdateOutcome() {
   return { result: "failed", installedVersion: "", restartRequired: false }
 }
 
-// The helper prints the full envelope; a document without it is still read,
-// but one that names another schema or operation is not ours.
 function updateDocFromLane(lane) {
   if (!lane || lane.timedOut || lane.exitCode !== 0)
     return null
@@ -113,9 +111,7 @@ function updateDocFromLane(lane) {
   }
   if (!doc || typeof doc !== "object")
     return null
-  if (doc.schemaVersion !== undefined && doc.schemaVersion !== 1)
-    return null
-  if (doc.operation !== undefined && doc.operation !== "update")
+  if (doc.schemaVersion !== 1 || doc.operation !== "update")
     return null
   return doc
 }
