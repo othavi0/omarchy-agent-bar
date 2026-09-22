@@ -580,6 +580,23 @@ fn claude_cedar_ember_resets(raw: &ClaudeCedarEmberRaw) -> Vec<UsageReset> {
         .collect()
 }
 
+/// The raw `cedar_ember` grant id behind a sanitized reset grant id, read
+/// from the same usage payload collection maps. `None` when no grant or more
+/// than one grant sanitizes to `sanitized_id`: the claim must not guess.
+pub(crate) fn claude_cedar_ember_raw_grant_id(bytes: &[u8], sanitized_id: &str) -> Option<String> {
+    let doc: ClaudeUsageDoc = serde_json::from_slice(bytes).ok()?;
+    let raw: ClaudeCedarEmberRaw = serde_json::from_value(doc.cedar_ember?).ok()?;
+    let mut matches = raw
+        .grants
+        .into_iter()
+        .filter(|g| sanitize_bucket_id(&g.id) == sanitized_id);
+    let grant = matches.next()?;
+    if matches.next().is_some() {
+        return None;
+    }
+    Some(grant.id)
+}
+
 /// One `UsageReset` for the weekly `juniper_tide` reset, when eligible and
 /// either due now or scheduled.
 fn claude_juniper_tide_reset(raw: &ClaudeJuniperTideRaw) -> Option<UsageReset> {

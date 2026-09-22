@@ -136,7 +136,10 @@ UsageReset
   `https://api.anthropic.com/api/organizations/<uuid>/reset_rate_limits`
   with `Content-Type: application/json`, the collection headers, and a body
   of `program` (`cedar_ember` or `juniper_tide`), `grant_id` for
-  `cedar_ember`, and a fresh `request_id` in UUID form. The POST follows
+  `cedar_ember`, and a fresh `request_id` in UUID v4 form. `grant_id` is
+  the raw grant id from the fresh usage response whose sanitized form
+  matches the reset id; when more than one grant matches, the command
+  returns `unavailable` without a POST. The POST follows
   the GET discipline: HTTPS only, no redirects, body size cap, provider
   timeout. The POST is never retried.
 - `CLI-034`: stdout is exactly one JSON object plus newline:

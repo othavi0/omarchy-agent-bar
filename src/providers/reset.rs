@@ -18,7 +18,7 @@ use super::catalog::{
 };
 use super::process::ProcessRunner;
 use super::retry::http_get_with_retry;
-use super::v2_map::{claude_from_usage_json, claude_reset_clears};
+use super::v2_map::{claude_cedar_ember_raw_grant_id, claude_from_usage_json, claude_reset_clears};
 use crate::status::schema::{ProviderResult, UsageReset};
 use crate::support::{Clock, FileSystem};
 
@@ -180,7 +180,7 @@ fn organization_uuid(fs: &dyn FileSystem, home: &Path) -> Option<String> {
 /// (e.g. `"codex-credits"`) has no claim program.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClaimTarget<'a> {
-    CedarEmber { grant_id: &'a str },
+    CedarEmber { sanitized_id: &'a str },
     JuniperTide,
 }
 
@@ -191,7 +191,7 @@ impl<'a> ClaimTarget<'a> {
         }
         reset_id
             .strip_prefix("cedar-ember:")
-            .map(|grant_id| Self::CedarEmber { grant_id })
+            .map(|sanitized_id| Self::CedarEmber { sanitized_id })
     }
 
     fn program(self) -> &'static str {
@@ -262,6 +262,15 @@ pub async fn claim_claude_reset(ctx: &ResetContext<'_>, reset_id: &str) -> Reset
     if !target_claimable {
         return ResetReport::simple(ResetResult::Unavailable);
     }
+    let raw_grant_id = match target {
+        ClaimTarget::CedarEmber { sanitized_id } => {
+            match claude_cedar_ember_raw_grant_id(&usage.body, sanitized_id) {
+                Some(raw) => Some(raw),
+                None => return ResetReport::simple(ResetResult::Unavailable),
+            }
+        }
+        ClaimTarget::JuniperTide => None,
+    };
 
     let request_id = request_id_for(
         reset_id,
@@ -274,11 +283,8 @@ pub async fn claim_claude_reset(ctx: &ResetContext<'_>, reset_id: &str) -> Reset
         "program".to_owned(),
         serde_json::Value::String(target.program().to_owned()),
     );
-    if let ClaimTarget::CedarEmber { grant_id } = target {
-        body.insert(
-            "grant_id".to_owned(),
-            serde_json::Value::String(grant_id.to_owned()),
-        );
+    if let Some(grant_id) = raw_grant_id {
+        body.insert("grant_id".to_owned(), serde_json::Value::String(grant_id));
     }
     body.insert(
         "request_id".to_owned(),
@@ -682,6 +688,53 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn claim_posts_the_raw_grant_id_behind_the_sanitized_reset_id() {
+        let fs = creds_and_org_fs();
+        let env = test_env();
+        let clock = FixedClock(datetime!(2026-09-22 18:00:00 UTC));
+        let process = version_process("2.1.280");
+        let usage = br#"{"cedar_ember":{"eligible":true,"grants":[
+            {"id":"Opus55_Launch.PROMAX","label":"Grant","resets_left":1,"paused":false,"usable_now":true}
+        ]}}"#;
+        let http = scripted_http(ok(usage), ok(br#"{"result":"reset"}"#));
+        let ctx = ResetContext {
+            env: &env,
+            clock: &clock,
+            fs: &fs,
+            process: &process,
+            http: &http,
+        };
+        let report = claim_claude_reset(&ctx, "cedar-ember:opus55launchpromax").await;
+        assert_eq!(report.result, ResetResult::Reset);
+        let body = http.last_body.lock().unwrap().clone().unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(value["grant_id"], "Opus55_Launch.PROMAX");
+    }
+
+    #[tokio::test]
+    async fn colliding_sanitized_grant_ids_are_unavailable_without_post() {
+        let fs = creds_and_org_fs();
+        let env = test_env();
+        let clock = FixedClock(datetime!(2026-09-22 18:00:00 UTC));
+        let process = version_process("2.1.280");
+        let usage = br#"{"cedar_ember":{"eligible":true,"grants":[
+            {"id":"Opus55_Launch","label":"A","resets_left":1,"paused":false,"usable_now":true},
+            {"id":"opus55launch","label":"B","resets_left":1,"paused":false,"usable_now":true}
+        ]}}"#;
+        let http = scripted_http(ok(usage), ok(br#"{"result":"reset"}"#));
+        let ctx = ResetContext {
+            env: &env,
+            clock: &clock,
+            fs: &fs,
+            process: &process,
+            http: &http,
+        };
+        let report = claim_claude_reset(&ctx, "cedar-ember:opus55launch").await;
+        assert_eq!(report.result, ResetResult::Unavailable);
+        assert!(http.last_body.lock().unwrap().is_none());
+    }
+
+    #[tokio::test]
     async fn already_used_result_round_trips() {
         let fs = creds_and_org_fs();
         let env = test_env();
@@ -859,7 +912,7 @@ mod tests {
     fn claim_target_maps_known_shapes() {
         assert_eq!(
             ClaimTarget::parse("cedar-ember:g1"),
-            Some(ClaimTarget::CedarEmber { grant_id: "g1" })
+            Some(ClaimTarget::CedarEmber { sanitized_id: "g1" })
         );
         assert_eq!(
             ClaimTarget::parse("juniper-tide"),
