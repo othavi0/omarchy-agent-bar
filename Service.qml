@@ -50,6 +50,8 @@ Item {
   property string lastViewInstallationUrl: ""
   property var pendingMaintenanceIntention: null
   property string pendingMaintenancePayload: ""
+  property int resetTimeoutMs: 30000
+  property var resetUi: Core.resetUiIdle()
   readonly property var lanes: ({
     versionProbe: versionProbeLane,
     status: statusLane,
@@ -57,7 +59,8 @@ Item {
     settingsBootstrap: settingsBootstrapLane,
     settingsWrite: settingsWriteLane,
     maintenanceCheck: maintenanceCheckLane,
-    maintenanceHandoff: maintenanceHandoffLane
+    maintenanceHandoff: maintenanceHandoffLane,
+    reset: resetLane
   })
   readonly property int stalledLaneCount:
       (versionProbeLane.stalled ? 1 : 0)
@@ -67,6 +70,7 @@ Item {
       + (settingsWriteLane.stalled ? 1 : 0)
       + (maintenanceCheckLane.stalled ? 1 : 0)
       + (maintenanceHandoffLane.stalled ? 1 : 0)
+      + (resetLane.stalled ? 1 : 0)
   readonly property string runtimeHealth: Core.runtimeHealth(stalledLaneCount)
 
   property string helperVersion: ""
@@ -151,17 +155,23 @@ Item {
 
   function closePopup(owner) {
     popupOwner = Core.closePopup(popupOwner, owner)
-    if (!popupOwner && !Settings.settingsShouldRetainOnClose(settingsState)) {
-      settingsState = Settings.settingsClosed()
-      settingsDraft = null
+    if (!popupOwner) {
+      resetUi = Core.resetUiIdle()
+      if (!Settings.settingsShouldRetainOnClose(settingsState)) {
+        settingsState = Settings.settingsClosed()
+        settingsDraft = null
+      }
     }
   }
 
   function dismissPopup() {
     popupOwner = Core.dismissPopup(popupOwner)
-    if (!popupOwner && !Settings.settingsShouldRetainOnClose(settingsState)) {
-      settingsState = Settings.settingsClosed()
-      settingsDraft = null
+    if (!popupOwner) {
+      resetUi = Core.resetUiIdle()
+      if (!Settings.settingsShouldRetainOnClose(settingsState)) {
+        settingsState = Settings.settingsClosed()
+        settingsDraft = null
+      }
     }
   }
 
@@ -393,6 +403,45 @@ Item {
     Qt.openUrlExternally(target)
   }
 
+  function requestReset(providerId, resetId) {
+    if (maintenanceState.blocked)
+      return
+    if (!Core.isClosedProvider(providerId))
+      return
+    resetUi = Core.resetUiOpenConfirm(providerId, resetId)
+  }
+
+  function closeResetConfirm() {
+    resetUi = Core.resetUiIdle()
+  }
+
+  function confirmReset() {
+    if (maintenanceState.blocked)
+      return
+    if (!resetUi || !resetUi.confirmOpen)
+      return
+    if (!resetLane.ready)
+      return
+    var helper = resolvedHelperPath()
+    if (!helper.length)
+      return
+    resetUi = Core.resetUiBusy(resetUi)
+    resetLane.start(Core.resetArgv(helper, resetUi.providerId, resetUi.resetId))
+  }
+
+  function applyResetResult(outcome) {
+    noteLaneSettled(outcome)
+    tryMaintenanceDetach()
+    var targetProviderId = resetUi.providerId
+    var parsed = Core.parseResetOutcome(outcome.stdout)
+    var normalized = parsed.ok
+        ? parsed.outcome
+        : { result: "provider_error", resetsLeft: null, cooldownUntil: null, clears: [] }
+    resetUi = Core.resetUiSettled(resetUi, normalized)
+    if (targetProviderId.length)
+      refreshProvider(targetProviderId, true)
+  }
+
   function dispatchAction(providerId, action) {
     if (!action)
       return
@@ -501,6 +550,7 @@ Item {
       return
     }
     snapshot = parsed.envelope
+    resetUi = Core.resetUiClearOutcome(resetUi)
     maybeFollowUpStatus()
   }
 
@@ -610,7 +660,7 @@ Item {
   function tryMaintenanceDetach() {
     var anyLaneBusy = statusLane.busy || settingsReadLane.busy
         || settingsBootstrapLane.busy || settingsWriteLane.busy
-        || maintenanceCheckLane.busy
+        || maintenanceCheckLane.busy || resetLane.busy
     if (!Maintenance.maintenanceCanDetach(maintenanceState, anyLaneBusy))
       return
     if (!maintenanceHandoffLane.ready)
@@ -706,6 +756,15 @@ Item {
   }
 
   HelperLane {
+    id: resetLane
+    process: resetProcess
+    stdoutSource: resetOut
+    stderrSource: resetErr
+    timeoutMs: root.resetTimeoutMs
+    onSettled: function (outcome) { root.applyResetResult(outcome) }
+  }
+
+  HelperLane {
     id: maintenanceHandoffLane
     process: maintenanceHandoffProcess
     stdoutSource: maintenanceHandoffOut
@@ -748,6 +807,12 @@ Item {
     id: maintenanceCheckProcess
     stdout: StdioCollector { id: maintenanceCheckOut; waitForEnd: true }
     stderr: StdioCollector { id: maintenanceCheckErr; waitForEnd: true }
+  }
+
+  Process {
+    id: resetProcess
+    stdout: StdioCollector { id: resetOut; waitForEnd: true }
+    stderr: StdioCollector { id: resetErr; waitForEnd: true }
   }
 
   Process {

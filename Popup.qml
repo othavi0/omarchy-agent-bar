@@ -126,6 +126,35 @@ KeyboardPanel {
     })
   }
 
+  function onResetRequested(providerId, resetId) {
+    if (!agentService)
+      return
+    agentService.requestReset(providerId, resetId)
+  }
+
+  readonly property var resetUi: agentService ? agentService.resetUi : null
+
+  readonly property var resetConfirmRow: {
+    if (!resetUi || !resetUi.confirmOpen)
+      return null
+    var provider = Core.findProvider(agentService.snapshot, resetUi.providerId)
+    var rows = Core.resetRows(provider,
+        root.owner && root.owner.nowMs !== undefined ? root.owner.nowMs : Date.now(),
+        Qt.locale().dateFormat(Locale.ShortFormat))
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].id === resetUi.resetId)
+        return rows[i]
+    }
+    return { id: resetUi.resetId, label: "", clearsText: "", countText: "", dateText: "" }
+  }
+
+  readonly property var resetConfirmModel: {
+    if (!resetUi || !resetUi.confirmOpen)
+      return { title: "", message: "", confirmText: "Use reset" }
+    var provider = Core.findProvider(agentService.snapshot, resetUi.providerId)
+    return Core.resetConfirmModel(provider, resetConfirmRow)
+  }
+
   function providerIds() {
     var ids = []
     for (var i = 0; i < railProviders.length; i++) {
@@ -371,6 +400,19 @@ KeyboardPanel {
         }
       }
     }
+
+    ConfirmDialog {
+      id: resetConfirmDialog
+      opened: !!(root.resetUi && root.resetUi.confirmOpen)
+      title: root.resetConfirmModel.title
+      message: root.resetConfirmModel.message
+      confirmText: root.resetConfirmModel.confirmText
+      confirmEnabled: !(root.resetUi && root.resetUi.busy)
+      foreground: Color.foreground
+      fontFamily: Style.font.family
+      onCanceled: if (root.agentService) root.agentService.closeResetConfirm()
+      onConfirmed: if (root.agentService) root.agentService.confirmReset()
+    }
   }
 
   // Declared as properties (not default contentItem children): KeyboardPanel's
@@ -382,10 +424,21 @@ KeyboardPanel {
       provider: root.selectedProvider
       displayMetric: root.displayMetric
       refreshing: agentService ? !!agentService.refreshing : false
+      resetBusy: !!(root.resetUi && root.resetUi.busy
+          && root.selectedProvider
+          && String(root.resetUi.providerId) === String(root.selectedProvider.id))
+      resetOutcomeText: {
+        var ui = root.resetUi
+        var sel = root.selectedProvider
+        if (!ui || !ui.outcome || !sel || String(ui.providerId) !== String(sel.id))
+          return ""
+        return Core.resetOutcomeText(ui.outcome, Qt.locale().timeFormat(Locale.ShortFormat))
+      }
       foreground: Color.foreground
       fontFamily: Style.font.family
       onRefreshRequested: function (id) { root.onRefresh(id) }
       onActionRequested: function (id, kind, target) { root.onAction(id, kind, target) }
+      onResetRequested: function (id, resetId) { root.onResetRequested(id, resetId) }
     }
   }
 
