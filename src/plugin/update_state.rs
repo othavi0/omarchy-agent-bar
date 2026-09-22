@@ -1,5 +1,6 @@
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::{Deserialize, Serialize};
 use time::{Duration, OffsetDateTime};
@@ -10,6 +11,10 @@ use crate::support::{replace_atomically_with, FileMutator, StdFileMutator};
 /// How long a running marker counts as live. It equals the unit's
 /// `RuntimeMaxSec`, after which systemd has stopped the run.
 pub const UPDATE_RUN_WINDOW: Duration = Duration::seconds(180);
+
+/// Rounds of link-then-inspect before a launcher that keeps losing the race
+/// reports the slot as taken.
+const LINK_ATTEMPTS: usize = 3;
 
 /// Running marker written by `update apply` before it starts the unit.
 pub const UPDATE_RUNNING_FILE: &str = "update-running.json";
@@ -97,16 +102,21 @@ impl UpdateStateFiles {
         }
     }
 
-    /// Claim the update slot (CLI-029A). A live marker wins; a stale or
-    /// unreadable one and any unread result from an earlier run are cleared.
-    /// The marker appears by hard link, so two racing launchers cannot both
-    /// see `Started`.
+    /// Claim the update slot (CLI-029A). The marker appears by hard link,
+    /// which fails when any marker exists, so of two racing launchers only
+    /// one sees `Started`. A marker that is no longer live is taken over
+    /// only while it still holds the bytes this launcher judged; any unread
+    /// result from an earlier run is cleared once the slot is ours.
     pub fn begin(&self, marker: &UpdateRunning, now: OffsetDateTime) -> io::Result<Begin> {
-        if self.read_marker()?.is_some_and(|live| live.is_live(now)) {
-            return Ok(Begin::AlreadyRunning);
-        }
-        remove_if_present(&self.running)?;
-        remove_if_present(&self.result)?;
+        self.begin_racing(marker, now, || {})
+    }
+
+    fn begin_racing(
+        &self,
+        marker: &UpdateRunning,
+        now: OffsetDateTime,
+        mut before_write: impl FnMut(),
+    ) -> io::Result<Begin> {
         let line = UpdateDocument::new(marker)
             .to_json_line()
             .map_err(io::Error::other)?;
@@ -114,13 +124,41 @@ impl UpdateStateFiles {
             .running
             .with_file_name(format!(".update-running-{}.tmp", marker.txid));
         replace_atomically_with(&StdFileMutator, &staged, line.as_bytes(), 0o600)?;
-        let linked = std::fs::hard_link(&staged, &self.running);
+        let begun = self.link_marker(&staged, now, &mut before_write);
         remove_if_present(&staged)?;
-        match linked {
-            Ok(()) => Ok(Begin::Started),
-            Err(err) if err.kind() == io::ErrorKind::AlreadyExists => Ok(Begin::AlreadyRunning),
-            Err(err) => Err(err),
+        if begun? == Begin::AlreadyRunning {
+            return Ok(Begin::AlreadyRunning);
         }
+        remove_if_present(&self.result)?;
+        Ok(Begin::Started)
+    }
+
+    fn link_marker(
+        &self,
+        staged: &Path,
+        now: OffsetDateTime,
+        before_write: &mut impl FnMut(),
+    ) -> io::Result<Begin> {
+        for _ in 0..LINK_ATTEMPTS {
+            before_write();
+            match std::fs::hard_link(staged, &self.running) {
+                Ok(()) => return Ok(Begin::Started),
+                Err(err) if err.kind() == io::ErrorKind::AlreadyExists => {}
+                Err(err) => return Err(err),
+            }
+            let Some(existing) = read_bytes(&self.running)? else {
+                continue;
+            };
+            if self.is_live(&existing, now) {
+                return Ok(Begin::AlreadyRunning);
+            }
+            remove_if_unchanged(&self.running, &existing)?;
+        }
+        Ok(Begin::AlreadyRunning)
+    }
+
+    fn is_live(&self, marker: &[u8], now: OffsetDateTime) -> bool {
+        parse_document::<UpdateRunning>(marker).is_some_and(|doc| doc.body.is_live(now))
     }
 
     /// Drop the marker of a run whose unit never started.
@@ -205,24 +243,62 @@ fn parse_document<T: for<'de> Deserialize<'de>>(bytes: &[u8]) -> Option<UpdateDo
         .filter(|doc| doc.schema_version == 1 && doc.operation == "update")
 }
 
-/// Take `path` out of the shared directory and return its bytes. The rename
-/// makes the claim atomic, so two concurrent readers never both report it.
-fn claim(path: &Path) -> io::Result<Option<Vec<u8>>> {
-    let claimed = path.with_file_name(format!(
-        ".{}.{}.claimed",
+fn read_bytes(path: &Path) -> io::Result<Option<Vec<u8>>> {
+    match std::fs::read(path) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(err) => Err(err),
+    }
+}
+
+/// Move `path` to a name private to this call. The rename is atomic, so of
+/// several concurrent callers exactly one receives the file.
+fn take(path: &Path) -> io::Result<Option<PathBuf>> {
+    static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+    let taken = path.with_file_name(format!(
+        ".{}.{}-{}.taken",
         path.file_name()
             .map(|n| n.to_string_lossy())
             .unwrap_or_default(),
-        std::process::id()
+        std::process::id(),
+        SEQUENCE.fetch_add(1, Ordering::Relaxed)
     ));
-    match std::fs::rename(path, &claimed) {
-        Ok(()) => {}
-        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(None),
-        Err(err) => return Err(err),
+    match std::fs::rename(path, &taken) {
+        Ok(()) => Ok(Some(taken)),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(err) => Err(err),
     }
-    let bytes = std::fs::read(&claimed);
-    remove_if_present(&claimed)?;
+}
+
+/// Take `path` out of the shared directory and return its bytes, so two
+/// concurrent readers never both report it.
+fn claim(path: &Path) -> io::Result<Option<Vec<u8>>> {
+    let Some(taken) = take(path)? else {
+        return Ok(None);
+    };
+    let bytes = std::fs::read(&taken);
+    remove_if_present(&taken)?;
     bytes.map(Some)
+}
+
+/// Remove `path` only while it still holds `expected`. A file that changed
+/// after the caller read it belongs to another launcher and is put back.
+fn remove_if_unchanged(path: &Path, expected: &[u8]) -> io::Result<bool> {
+    let Some(taken) = take(path)? else {
+        return Ok(false);
+    };
+    let unchanged = std::fs::read(&taken).map(|bytes| bytes == expected);
+    if !matches!(unchanged, Ok(true)) {
+        match std::fs::hard_link(&taken, path) {
+            Err(err) if err.kind() != io::ErrorKind::AlreadyExists => {
+                let _ = remove_if_present(&taken);
+                return Err(err);
+            }
+            _ => {}
+        }
+    }
+    remove_if_present(&taken)?;
+    unchanged
 }
 
 fn remove_if_present(path: &Path) -> io::Result<()> {
@@ -386,6 +462,60 @@ mod tests {
                 .unwrap()
                 .contains("\"startedAt\":\"2026-09-22T16:40:05Z\""));
         }
+    }
+
+    fn other_marker() -> UpdateRunning {
+        UpdateRunning {
+            txid: "fedcba9876543210fedcba9876543210".to_owned(),
+            ..marker(NOW)
+        }
+    }
+
+    #[test]
+    fn a_launcher_that_writes_after_our_check_wins_alone() {
+        for existing in [
+            None,
+            Some(
+                UpdateDocument::new(marker(NOW - Duration::seconds(600)))
+                    .to_json_line()
+                    .unwrap(),
+            ),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let files = UpdateStateFiles::in_state_dir(dir.path());
+            if let Some(stale) = &existing {
+                std::fs::write(&files.running, stale).unwrap();
+            }
+            let mut rival = None;
+            let ours = files
+                .begin_racing(&marker(NOW), NOW, || {
+                    if rival.is_none() {
+                        rival = Some(files.begin(&other_marker(), NOW).unwrap());
+                    }
+                })
+                .unwrap();
+            assert_eq!(
+                (ours, rival),
+                (Begin::AlreadyRunning, Some(Begin::Started)),
+                "{existing:?}"
+            );
+            assert!(std::fs::read_to_string(&files.running)
+                .unwrap()
+                .contains("fedcba9876543210fedcba9876543210"));
+            assert_eq!(entries(dir.path()), ["update-running.json"]);
+        }
+    }
+
+    #[test]
+    fn a_marker_that_changed_after_it_was_read_is_put_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("update-running.json");
+        std::fs::write(&path, "fresh").unwrap();
+        assert!(!remove_if_unchanged(&path, b"stale").unwrap());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "fresh");
+        assert!(remove_if_unchanged(&path, b"fresh").unwrap());
+        assert!(!remove_if_unchanged(&path, b"fresh").unwrap());
+        assert!(entries(dir.path()).is_empty());
     }
 
     #[test]
