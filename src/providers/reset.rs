@@ -5,7 +5,6 @@
 //! API: one endpoint, one provider, run only after a fresh eligibility check.
 
 use std::path::Path;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Deserialize;
 use time::format_description::well_known::Rfc3339;
@@ -120,13 +119,17 @@ fn map_cleared(raw: &[String]) -> Vec<String> {
         .collect()
 }
 
-/// `sha2` over wall-clock nanoseconds, pid, and the reset id: an
-/// unpredictable-enough UUID-shaped request id without a new crate.
+/// `sha2` over clock nanoseconds, pid, and the reset id, stamped with the
+/// RFC 9562 version-4 and variant bits: a UUID v4 without a new crate.
 fn request_id_for(reset_id: &str, now_ns: i128, pid: u32) -> String {
     use sha2::{Digest, Sha256};
     let seed = format!("{now_ns}:{pid}:{reset_id}");
     let digest = Sha256::digest(seed.as_bytes());
-    let hex: String = digest.iter().take(16).map(|b| format!("{b:02x}")).collect();
+    let mut bytes = [0u8; 16];
+    bytes.copy_from_slice(&digest[..16]);
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
     format!(
         "{}-{}-{}-{}-{}",
         &hex[0..8],
@@ -235,11 +238,11 @@ pub async fn claim_claude_reset(ctx: &ResetContext<'_>, reset_id: &str) -> Reset
         return ResetReport::simple(ResetResult::Unavailable);
     };
 
-    let now_ns: i128 = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos() as i128)
-        .unwrap_or(0);
-    let request_id = request_id_for(reset_id, now_ns, std::process::id());
+    let request_id = request_id_for(
+        reset_id,
+        ctx.clock.now_utc().unix_timestamp_nanos(),
+        std::process::id(),
+    );
 
     let mut body = serde_json::Map::new();
     body.insert(
@@ -692,5 +695,14 @@ mod tests {
             groups.iter().map(|g| g.len()).collect::<Vec<_>>(),
             vec![8, 4, 4, 4, 12]
         );
+        for seed in 0..64 {
+            let id = request_id_for("juniper-tide", seed, 7);
+            let hex: Vec<char> = id.chars().filter(|c| *c != '-').collect();
+            assert_eq!(hex[12], '4', "version nibble: {id}");
+            assert!(
+                matches!(hex[16], '8' | '9' | 'a' | 'b'),
+                "variant nibble: {id}"
+            );
+        }
     }
 }
