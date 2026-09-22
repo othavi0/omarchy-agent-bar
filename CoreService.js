@@ -302,7 +302,7 @@ function parseResetOutcome(stdout) {
 }
 
 function resetUiIdle() {
-  return { confirmOpen: false, providerId: "", resetId: "", busy: false, outcome: null }
+  return { confirmOpen: false, providerId: "", resetId: "", outcome: null }
 }
 
 function resetUiOpenConfirm(providerId, resetId) {
@@ -310,29 +310,32 @@ function resetUiOpenConfirm(providerId, resetId) {
     confirmOpen: true,
     providerId: String(providerId || ""),
     resetId: String(resetId || ""),
-    busy: false,
     outcome: null
   }
 }
 
-function resetUiBusy(ui) {
+function resetUiAwaiting(ui) {
   return {
     confirmOpen: false,
     providerId: ui ? String(ui.providerId || "") : "",
     resetId: ui ? String(ui.resetId || "") : "",
-    busy: true,
     outcome: null
   }
 }
 
-function resetUiSettled(ui, outcome) {
+function resetUiSettled(target, outcome) {
   return {
     confirmOpen: false,
-    providerId: ui ? String(ui.providerId || "") : "",
-    resetId: ui ? String(ui.resetId || "") : "",
-    busy: false,
+    providerId: target ? String(target.providerId || "") : "",
+    resetId: target ? String(target.resetId || "") : "",
     outcome: outcome || null
   }
+}
+
+// A claim still in flight keeps its target across a popup close, so the
+// reopened popup shows it busy; only the caption and the dialog go away.
+function resetUiOnClose(ui, laneOccupied) {
+  return laneOccupied ? resetUiAwaiting(ui) : resetUiIdle()
 }
 
 function resetUiClearOutcome(ui) {

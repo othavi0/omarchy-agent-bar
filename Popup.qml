@@ -407,7 +407,6 @@ KeyboardPanel {
       title: root.resetConfirmModel.title
       message: root.resetConfirmModel.message
       confirmText: root.resetConfirmModel.confirmText
-      confirmEnabled: !(root.resetUi && root.resetUi.busy)
       foreground: Color.foreground
       fontFamily: Style.font.family
       onCanceled: if (root.agentService) root.agentService.closeResetConfirm()
@@ -424,8 +423,8 @@ KeyboardPanel {
       provider: root.selectedProvider
       displayMetric: root.displayMetric
       refreshing: agentService ? !!agentService.refreshing : false
-      resetBusy: !!(root.resetUi && root.resetUi.busy
-          && root.selectedProvider
+      resetBusy: !!(root.agentService && root.agentService.resetBusy
+          && root.resetUi && root.selectedProvider
           && String(root.resetUi.providerId) === String(root.selectedProvider.id))
       resetOutcomeText: {
         var ui = root.resetUi

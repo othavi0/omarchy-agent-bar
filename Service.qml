@@ -52,6 +52,7 @@ Item {
   property string pendingMaintenancePayload: ""
   property int resetTimeoutMs: 30000
   property var resetUi: Core.resetUiIdle()
+  readonly property bool resetBusy: !resetLane.ready
   readonly property var lanes: ({
     versionProbe: versionProbeLane,
     status: statusLane,
@@ -156,7 +157,7 @@ Item {
   function closePopup(owner) {
     popupOwner = Core.closePopup(popupOwner, owner)
     if (!popupOwner) {
-      resetUi = Core.resetUiIdle()
+      resetUi = Core.resetUiOnClose(resetUi, resetBusy)
       if (!Settings.settingsShouldRetainOnClose(settingsState)) {
         settingsState = Settings.settingsClosed()
         settingsDraft = null
@@ -167,7 +168,7 @@ Item {
   function dismissPopup() {
     popupOwner = Core.dismissPopup(popupOwner)
     if (!popupOwner) {
-      resetUi = Core.resetUiIdle()
+      resetUi = Core.resetUiOnClose(resetUi, resetBusy)
       if (!Settings.settingsShouldRetainOnClose(settingsState)) {
         settingsState = Settings.settingsClosed()
         settingsDraft = null
@@ -404,7 +405,7 @@ Item {
   }
 
   function requestReset(providerId, resetId) {
-    if (maintenanceState.blocked)
+    if (maintenanceState.blocked || resetBusy)
       return
     if (!Core.isClosedProvider(providerId))
       return
@@ -412,34 +413,33 @@ Item {
   }
 
   function closeResetConfirm() {
-    resetUi = Core.resetUiIdle()
+    resetUi = Core.resetUiOnClose(resetUi, resetBusy)
   }
 
   function confirmReset() {
-    if (maintenanceState.blocked)
-      return
     if (!resetUi || !resetUi.confirmOpen)
       return
-    if (!resetLane.ready)
-      return
     var helper = resolvedHelperPath()
-    if (!helper.length)
+    if (maintenanceState.blocked || !helper.length) {
+      resetUi = Core.resetUiIdle()
       return
-    resetUi = Core.resetUiBusy(resetUi)
-    resetLane.start(Core.resetArgv(helper, resetUi.providerId, resetUi.resetId))
+    }
+    var target = { providerId: resetUi.providerId, resetId: resetUi.resetId }
+    resetUi = Core.resetUiAwaiting(resetUi)
+    resetLane.start(Core.resetArgv(helper, target.providerId, target.resetId), "", target)
   }
 
   function applyResetResult(outcome) {
     noteLaneSettled(outcome)
     tryMaintenanceDetach()
-    var targetProviderId = resetUi.providerId
+    var target = outcome.context
     var parsed = Core.parseResetOutcome(outcome.stdout)
     var normalized = parsed.ok
         ? parsed.outcome
         : { result: "provider_error", resetsLeft: null, cooldownUntil: null, clears: [] }
-    resetUi = Core.resetUiSettled(resetUi, normalized)
-    if (targetProviderId.length)
-      refreshProvider(targetProviderId, true)
+    resetUi = Core.resetUiSettled(target, normalized)
+    if (target && target.providerId)
+      refreshProvider(target.providerId, true)
   }
 
   function dispatchAction(providerId, action) {
