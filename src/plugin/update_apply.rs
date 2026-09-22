@@ -124,35 +124,6 @@ impl UpdateOutcome {
     }
 }
 
-/// Exact `update apply` stdout document (CLI-029B).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UpdateApplyReport {
-    pub schema_version: u32,
-    pub operation: &'static str,
-    pub result: UpdateResult,
-    pub installed_version: String,
-    pub restart_required: bool,
-}
-
-impl UpdateApplyReport {
-    fn new(result: UpdateResult, installed_version: String) -> Self {
-        Self {
-            schema_version: 1,
-            operation: "update",
-            result,
-            installed_version,
-            restart_required: result == UpdateResult::Updated,
-        }
-    }
-
-    pub fn to_stdout_json(&self) -> Result<String, MaintenanceError> {
-        let mut line = serde_json::to_string(self)?;
-        line.push('\n');
-        Ok(line)
-    }
-}
-
 #[derive(Deserialize)]
 struct TreeReceipt {
     version: String,
@@ -180,21 +151,6 @@ fn update_spec(omarchy: &str) -> ProcessSpec {
         .with_quiet_terminal()
         .with_own_process_group()
         .with_timeout(UPDATE_RUN_TIMEOUT)
-}
-
-/// Run the Omarchy plugin manager once and classify what it did (CLI-029A).
-/// An unreadable tree version before the run is an error; every outcome of
-/// the run itself is a typed result.
-pub async fn apply_update<R: ProcessRunner>(
-    runner: &R,
-    omarchy: &str,
-    plugin_root: &Path,
-) -> Result<UpdateApplyReport, MaintenanceError> {
-    let before = read_tree_version(plugin_root)?;
-    let outcome = runner.run(&update_spec(omarchy)).await;
-    let after = read_tree_version(plugin_root).ok();
-    let result = classify(&outcome, &before, after.as_deref());
-    Ok(UpdateApplyReport::new(result, after.unwrap_or(before)))
 }
 
 /// How long `update run` keeps retrying the maintenance lock.
@@ -388,127 +344,6 @@ mod tests {
         })
     }
 
-    async fn run(runner: &ScriptedRunner, root: &Path) -> UpdateApplyReport {
-        apply_update(runner, "/usr/bin/omarchy", root)
-            .await
-            .unwrap()
-    }
-
-    #[tokio::test]
-    async fn changed_tree_version_is_updated_and_needs_a_restart() {
-        let root = plugin_root("10.6.2");
-        let runner = ScriptedRunner::new(exited(0, "Updated othavi0.agent-bar.\n", ""))
-            .installing(root.path(), "10.7.0");
-        let report = run(&runner, root.path()).await;
-        assert_eq!(
-            report.to_stdout_json().unwrap(),
-            "{\"schemaVersion\":1,\"operation\":\"update\",\"result\":\"updated\",\"installedVersion\":\"10.7.0\",\"restartRequired\":true}\n"
-        );
-    }
-
-    #[tokio::test]
-    async fn unchanged_tree_version_is_up_to_date() {
-        let root = plugin_root("10.6.2");
-        let runner = ScriptedRunner::new(exited(0, "othavi0.agent-bar is up to date.\n", ""));
-        let report = run(&runner, root.path()).await;
-        assert_eq!(
-            report.to_stdout_json().unwrap(),
-            "{\"schemaVersion\":1,\"operation\":\"update\",\"result\":\"up_to_date\",\"installedVersion\":\"10.6.2\",\"restartRequired\":false}\n"
-        );
-    }
-
-    #[tokio::test]
-    async fn documented_plugin_manager_failures_map_to_their_results() {
-        for (stderr, expected) in [
-            (
-                "omarchy-plugin-update: cannot fast-forward 'othavi0.agent-bar'; you have local changes in /home/u/.config/omarchy/plugins/othavi0.agent-bar\n",
-                UpdateResult::LocalChanges,
-            ),
-            (
-                "fatal: unable to access 'https://github.com/'\nomarchy-plugin-update: fetch failed for 'othavi0.agent-bar'\n",
-                UpdateResult::FetchFailed,
-            ),
-            (
-                "omarchy-plugin-update: update of 'othavi0.agent-bar' failed validation; rolled back\n",
-                UpdateResult::ValidationFailed,
-            ),
-            (
-                "omarchy-plugin-update: refusing to continue without confirmation; pass --yes\n",
-                UpdateResult::Failed,
-            ),
-        ] {
-            let root = plugin_root("10.6.2");
-            let runner = ScriptedRunner::new(exited(1, "", stderr));
-            let report = run(&runner, root.path()).await;
-            assert_eq!(report.result, expected, "{stderr}");
-            assert_eq!(report.installed_version, "10.6.2");
-            assert!(!report.restart_required);
-        }
-    }
-
-    #[tokio::test]
-    async fn timeout_is_timed_out_and_reports_the_tree_on_disk() {
-        let root = plugin_root("10.6.2");
-        let runner = ScriptedRunner::new(Ok(ProcessOutput {
-            exit_code: None,
-            stdout: String::new(),
-            stderr: String::new(),
-            timed_out: true,
-            stdout_truncated: false,
-            stderr_truncated: false,
-        }));
-        let report = run(&runner, root.path()).await;
-        assert_eq!(report.result, UpdateResult::TimedOut);
-        assert_eq!(report.installed_version, "10.6.2");
-        assert!(!report.restart_required);
-    }
-
-    #[tokio::test]
-    async fn spawn_failure_and_unreadable_tree_after_success_are_failed() {
-        let root = plugin_root("10.6.2");
-        let runner = ScriptedRunner::new(Err(ProcessError::Spawn("no such file".into())));
-        let report = run(&runner, root.path()).await;
-        assert_eq!(report.result, UpdateResult::Failed);
-        assert_eq!(report.installed_version, "10.6.2");
-
-        let root = plugin_root("10.6.2");
-        let runner = ScriptedRunner::new(exited(0, "Updated othavi0.agent-bar.\n", ""))
-            .installing(root.path(), "not-a-version");
-        let report = run(&runner, root.path()).await;
-        assert_eq!(report.result, UpdateResult::Failed);
-        assert_eq!(report.installed_version, "10.6.2");
-        assert!(!report.restart_required);
-    }
-
-    #[tokio::test]
-    async fn runs_the_plugin_manager_once_non_interactively() {
-        let root = plugin_root("10.6.2");
-        let runner = ScriptedRunner::new(exited(0, "", ""));
-        run(&runner, root.path()).await;
-        let specs = runner.specs();
-        assert_eq!(specs.len(), 1);
-        let spec = &specs[0];
-        assert_eq!(spec.program, PathBuf::from("/usr/bin/omarchy"));
-        assert_eq!(
-            spec.args,
-            ["plugin", "update", "othavi0.agent-bar", "--yes"]
-        );
-        assert!(spec
-            .env
-            .contains(&("GIT_TERMINAL_PROMPT".to_owned(), "0".to_owned())));
-        assert_eq!(spec.timeout, Duration::from_secs(120));
-    }
-
-    #[tokio::test]
-    async fn missing_tree_version_runs_nothing() {
-        let root = tempdir().unwrap();
-        let runner = ScriptedRunner::new(exited(0, "", ""));
-        assert!(apply_update(&runner, "/usr/bin/omarchy", root.path())
-            .await
-            .is_err());
-        assert!(runner.specs().is_empty());
-    }
-
     struct FixedClock;
 
     impl Clock for FixedClock {
@@ -606,6 +441,18 @@ mod tests {
                 format!("{{\"result\":\"{expected}\",\"fromVersion\":\"10.6.1\",\"installedVersion\":\"10.6.1\",\"restartRequired\":false,\"finishedAt\":\"2026-09-22T16:40:05Z\"}}")
             );
         }
+    }
+
+    #[tokio::test]
+    async fn run_with_an_unreadable_tree_after_exit_0_is_failed() {
+        let root = plugin_root("10.6.1");
+        let runner = ScriptedRunner::new(exited(0, "Updated othavi0.agent-bar.\n", ""))
+            .installing(root.path(), "not-a-version");
+        let outcome = unit_run(&runner, root.path()).await;
+        assert_eq!(
+            outcome_json(&outcome),
+            "{\"result\":\"failed\",\"fromVersion\":\"10.6.1\",\"installedVersion\":null,\"restartRequired\":false,\"finishedAt\":\"2026-09-22T16:40:05Z\"}"
+        );
     }
 
     #[tokio::test]

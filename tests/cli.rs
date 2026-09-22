@@ -537,75 +537,168 @@ fn run_update_apply(home: &Path, path: &Path) -> std::process::Output {
     child.wait_with_output().unwrap()
 }
 
-#[test]
-fn binary_update_apply_reports_one_json_line_and_hides_plugin_manager_output() {
-    let dir = tempdir().unwrap();
-    let home = update_apply_home(dir.path(), "10.6.2");
-    let path_dir = dir.path().join("pathbin");
-    let argv_file = dir.path().join("omarchy-argv.bin");
+struct LaunchFixture {
+    home: PathBuf,
+    path_dir: PathBuf,
+    systemd_argv: PathBuf,
+    marker: PathBuf,
+}
+
+fn launch_fixture(dir: &Path, systemd_run_exit: i32) -> LaunchFixture {
+    let home = update_apply_home(dir, "10.6.1");
+    let path_dir = dir.join("pathbin");
+    let systemd_argv = dir.join("systemd-run-argv.bin");
+    write_executable(&path_dir.join("omarchy"), "#!/bin/bash\nexit 99\n");
     write_executable(
-        &path_dir.join("omarchy"),
+        &path_dir.join("systemd-run"),
         &format!(
-            r#"#!/bin/bash
-: > "{argv}"
-for a in "$@"; do printf '%s\0' "$a" >> "{argv}"; done
-printf 'prompt=%s\n' "$GIT_TERMINAL_PROMPT" >> "{argv}.env"
-read -r -t 1 line && printf 'stdin-open\n' >> "{argv}.env"
-echo 'Updated othavi0.agent-bar.'
-echo 'raw plugin manager noise' >&2
-printf '{{"schemaVersion":1,"version":"10.7.0"}}' > "$HOME/.config/omarchy/plugins/othavi0.agent-bar/bundle.json"
-exit 0
-"#,
-            argv = argv_file.display()
+            "#!/bin/bash\n: > '{argv}'\nfor a in \"$@\"; do printf '%s\\0' \"$a\" >> '{argv}'; done\nexit {systemd_run_exit}\n",
+            argv = systemd_argv.display()
         ),
     );
-    let output = run_update_apply(&home, &path_dir);
-    assert_eq!(
-        output.status.code(),
-        Some(SUCCESS),
-        "stderr={}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert_eq!(
-        String::from_utf8_lossy(&output.stdout),
-        "{\"schemaVersion\":1,\"operation\":\"update\",\"result\":\"updated\",\"installedVersion\":\"10.7.0\",\"restartRequired\":true}\n"
-    );
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(!stderr.contains("noise"), "stderr={stderr}");
-    assert_eq!(
-        read_nul_argv(&argv_file),
-        ["plugin", "update", "othavi0.agent-bar", "--yes"]
-    );
-    let env = std::fs::read_to_string(dir.path().join("omarchy-argv.bin.env")).unwrap();
-    assert_eq!(env, "prompt=0\n");
+    LaunchFixture {
+        marker: home.join("state/agent-bar/update-running.json"),
+        home,
+        path_dir,
+        systemd_argv,
+    }
+}
+
+fn stdout_json(output: &std::process::Output) -> serde_json::Value {
+    serde_json::from_slice(&output.stdout).unwrap_or_else(|err| {
+        panic!(
+            "stdout {:?} is not JSON ({err}); stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        )
+    })
 }
 
 #[test]
-fn binary_update_apply_failure_results_still_exit_zero() {
+fn binary_update_apply_starts_the_run_unit_and_writes_the_marker() {
     let dir = tempdir().unwrap();
-    let home = update_apply_home(dir.path(), "10.6.2");
-    let path_dir = dir.path().join("pathbin");
-    write_executable(
-        &path_dir.join("omarchy"),
-        "#!/bin/bash\necho \"omarchy-plugin-update: cannot fast-forward 'othavi0.agent-bar'; you have local changes in x\" >&2\nexit 1\n",
+    let fx = launch_fixture(dir.path(), 0);
+    let output = run_update_apply(&fx.home, &fx.path_dir);
+    assert_eq!(output.status.code(), Some(SUCCESS));
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr),
+        "agent-bar: update apply: confirmed 10.7.0\n"
     );
-    let output = run_update_apply(&home, &path_dir);
+    let doc = stdout_json(&output);
+    let unit = doc["unit"].as_str().unwrap().to_owned();
+    let txid = unit.strip_prefix("agent-bar-update-").unwrap().to_owned();
+    assert_eq!(txid.len(), 32);
+    assert!(txid.bytes().all(|b| b.is_ascii_hexdigit()));
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        format!("{{\"schemaVersion\":1,\"operation\":\"update\",\"result\":\"started\",\"unit\":\"{unit}\"}}\n")
+    );
+
+    let helper = std::fs::canonicalize(assert_cmd::cargo::cargo_bin("agent-bar")).unwrap();
+    assert_eq!(
+        read_nul_argv(&fx.systemd_argv),
+        [
+            "--user".to_owned(),
+            "--collect".to_owned(),
+            "--no-block".to_owned(),
+            format!("--unit={unit}"),
+            "--property=RuntimeMaxSec=180".to_owned(),
+            format!("--setenv=HOME={}", fx.home.display()),
+            format!(
+                "--setenv=XDG_STATE_HOME={}",
+                fx.home.join("state").display()
+            ),
+            format!("--setenv=PATH={}", fx.path_dir.display()),
+            "--".to_owned(),
+            helper.display().to_string(),
+            "update".to_owned(),
+            "run".to_owned(),
+        ]
+    );
+
+    let marker: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&fx.marker).unwrap()).unwrap();
+    assert_eq!(marker["schemaVersion"], 1);
+    assert_eq!(marker["operation"], "update");
+    assert_eq!(marker["txid"], txid.as_str());
+    assert_eq!(marker["targetVersion"], "10.7.0");
+    let started = marker["startedAt"].as_str().unwrap();
+    let started =
+        time::OffsetDateTime::parse(started, &time::format_description::well_known::Rfc3339)
+            .unwrap();
+    assert!(
+        (time::OffsetDateTime::now_utc() - started)
+            .whole_seconds()
+            .abs()
+            < 60
+    );
+}
+
+fn write_marker(path: &Path, started_at: time::OffsetDateTime) -> String {
+    let started = started_at
+        .format(&time::format_description::well_known::Rfc3339)
+        .unwrap();
+    let body = format!(
+        "{{\"schemaVersion\":1,\"operation\":\"update\",\"txid\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"startedAt\":\"{started}\",\"targetVersion\":\"10.7.0\"}}\n"
+    );
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(path, &body).unwrap();
+    body
+}
+
+#[test]
+fn binary_update_apply_refuses_while_a_run_is_live() {
+    let dir = tempdir().unwrap();
+    let fx = launch_fixture(dir.path(), 0);
+    let body = write_marker(
+        &fx.marker,
+        time::OffsetDateTime::now_utc() - time::Duration::seconds(30),
+    );
+    let output = run_update_apply(&fx.home, &fx.path_dir);
     assert_eq!(output.status.code(), Some(SUCCESS));
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),
-        "{\"schemaVersion\":1,\"operation\":\"update\",\"result\":\"local_changes\",\"installedVersion\":\"10.6.2\",\"restartRequired\":false}\n"
+        "{\"schemaVersion\":1,\"operation\":\"update\",\"result\":\"already_running\"}\n"
     );
+    assert!(!fx.systemd_argv.exists());
+    assert_eq!(std::fs::read_to_string(&fx.marker).unwrap(), body);
 }
 
 #[test]
-fn binary_update_apply_without_omarchy_is_a_plugin_error() {
+fn binary_update_apply_replaces_a_stale_marker() {
     let dir = tempdir().unwrap();
-    let home = update_apply_home(dir.path(), "10.6.2");
-    let empty_path = dir.path().join("empty-path");
-    std::fs::create_dir_all(&empty_path).unwrap();
-    let output = run_update_apply(&home, &empty_path);
+    let fx = launch_fixture(dir.path(), 0);
+    write_marker(
+        &fx.marker,
+        time::OffsetDateTime::now_utc() - time::Duration::seconds(181),
+    );
+    let output = run_update_apply(&fx.home, &fx.path_dir);
+    assert_eq!(stdout_json(&output)["result"], "started");
+    assert!(fx.systemd_argv.exists());
+}
+
+#[test]
+fn binary_update_apply_needs_systemd_run_and_omarchy() {
+    for missing in ["systemd-run", "omarchy"] {
+        let dir = tempdir().unwrap();
+        let fx = launch_fixture(dir.path(), 0);
+        std::fs::remove_file(fx.path_dir.join(missing)).unwrap();
+        let output = run_update_apply(&fx.home, &fx.path_dir);
+        assert_eq!(output.status.code(), Some(PLUGIN), "{missing}");
+        assert!(output.stdout.is_empty());
+        assert!(!fx.marker.exists());
+    }
+}
+
+#[test]
+fn binary_update_apply_drops_the_marker_when_the_unit_does_not_start() {
+    let dir = tempdir().unwrap();
+    let fx = launch_fixture(dir.path(), 1);
+    let output = run_update_apply(&fx.home, &fx.path_dir);
     assert_eq!(output.status.code(), Some(PLUGIN));
     assert!(output.stdout.is_empty());
+    assert!(fx.systemd_argv.exists());
+    assert!(!fx.marker.exists());
 }
 
 fn run_update_unit(home: &Path, path: &Path) -> std::process::Output {

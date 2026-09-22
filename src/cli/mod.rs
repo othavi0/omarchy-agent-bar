@@ -153,9 +153,14 @@ where
 }
 
 /// `update apply` confirmation gate (CLI-029): the TTY phrase, or exactly one
-/// structured JSON document on stdin. Exit code 3 on any failure, before any
+/// structured JSON document on stdin. Returns the confirmed `targetVersion`,
+/// which only the JSON form carries. Exit code 3 on any failure, before any
 /// lock or process.
-pub fn confirm_update<R, E>(is_tty: bool, stdin: &mut R, stderr: &mut E) -> Result<(), CliFailure>
+pub fn confirm_update<R, E>(
+    is_tty: bool,
+    stdin: &mut R,
+    stderr: &mut E,
+) -> Result<Option<String>, CliFailure>
 where
     R: BufRead,
     E: Write,
@@ -169,12 +174,13 @@ where
             UPDATE_TTY_PHRASE,
             stdin,
             stderr,
-        )
+        )?;
+        Ok(None)
     } else {
         let buf = read_all(stdin)?;
-        UpdateConfirmation::parse_strict(&buf)
+        let doc = UpdateConfirmation::parse_strict(&buf)
             .map_err(|err| CliFailure::validation(err.to_string()))?;
-        Ok(())
+        Ok(Some(doc.target_version))
     }
 }
 
@@ -368,51 +374,113 @@ fn dispatch_update_check() -> Result<(), CliFailure> {
 pub const UPDATE_COMMAND: &str =
     "omarchy plugin update othavi0.agent-bar --yes && omarchy-restart-shell";
 
+#[derive(Serialize)]
+#[serde(tag = "result", rename_all = "snake_case")]
+enum UpdateLaunch {
+    Started { unit: String },
+    AlreadyRunning,
+}
+
+/// `update apply` (CLI-029A): confirm, claim the running marker, and hand the
+/// run to a transient unit. It returns before anything writes the plugin
+/// tree, so a shell reload of the plugin cannot cut the run short.
 fn dispatch_update_apply() -> Result<(), CliFailure> {
-    use crate::plugin::update_apply::apply_update;
-    use crate::plugin::{resolve_absolute_executable, PluginPaths};
-    use crate::providers::TokioProcessRunner;
-    use crate::support::maintenance_gate::MaintenanceGate;
+    use crate::plugin::update_state::{
+        Begin, UpdateDocument, UpdateRunning, UpdateStateFiles, UPDATE_RUN_WINDOW,
+    };
+    use crate::plugin::{
+        resolve_absolute_executable, txid_from_bytes, CommandRunner, ProcessCommandRunner,
+    };
+    use crate::support::{Clock, SystemClock};
 
     let is_tty = io::stdin().is_terminal();
     let stdin = io::stdin();
     let mut locked_in = stdin.lock();
     let stderr = io::stderr();
     let mut locked_err = stderr.lock();
-    confirm_update(is_tty, &mut locked_in, &mut locked_err)?;
+    let target_version = confirm_update(is_tty, &mut locked_in, &mut locked_err)?;
     drop(locked_err);
+    match &target_version {
+        Some(version) => eprintln!("agent-bar: update apply: confirmed {version}"),
+        None => eprintln!("agent-bar: update apply: confirmed"),
+    }
 
     let home = std::env::var_os("HOME")
+        .map(PathBuf::from)
         .ok_or_else(|| CliFailure::plugin("HOME is required for update apply".to_string()))?;
-    let xdg_state = std::env::var_os("XDG_STATE_HOME").map(PathBuf::from);
-    let paths = PluginPaths::production(PathBuf::from(home), xdg_state);
-
-    let gate = MaintenanceGate::open(&paths.maintenance_lock)
-        .map_err(|e| CliFailure::plugin(format!("open maintenance lock: {e}")))?;
-    let _exclusive = gate
-        .lock_exclusive()
-        .map_err(|e| CliFailure::plugin(format!("exclusive maintenance lock: {e}")))?;
-
-    let omarchy =
-        resolve_absolute_executable("omarchy").map_err(|e| CliFailure::plugin(e.to_string()))?;
-
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(|err| CliFailure::internal(err.to_string()))?;
-    let report = runtime
-        .block_on(apply_update(
-            &TokioProcessRunner,
-            &omarchy,
-            &paths.plugin_root,
-        ))
+    let state_home = std::env::var_os("XDG_STATE_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home.join(".local/state"));
+    resolve_absolute_executable("omarchy").map_err(|e| CliFailure::plugin(e.to_string()))?;
+    let systemd_run = resolve_absolute_executable("systemd-run")
         .map_err(|e| CliFailure::plugin(e.to_string()))?;
-    eprintln!("agent-bar: update apply: {}", report.result.as_str());
-    let line = report
-        .to_stdout_json()
-        .map_err(|e| CliFailure::internal(e.to_string()))?;
-    print!("{line}");
-    Ok(())
+    let helper = std::env::current_exe()
+        .and_then(std::fs::canonicalize)
+        .map_err(|e| CliFailure::plugin(format!("resolve helper path: {e}")))?;
+
+    let clock = SystemClock;
+    let now = Clock::now_utc(&clock);
+    let txid = txid_from_bytes(format!("update:{now}:{}", std::process::id()).as_bytes());
+    let files = UpdateStateFiles::in_state_dir(&state_home.join("agent-bar"));
+    let marker = UpdateRunning {
+        txid: txid.clone(),
+        started_at: now,
+        target_version,
+    };
+    let print = |launch: UpdateLaunch| -> Result<(), CliFailure> {
+        let line = UpdateDocument::new(launch)
+            .to_json_line()
+            .map_err(|e| CliFailure::internal(e.to_string()))?;
+        print!("{line}");
+        Ok(())
+    };
+    let begin = files
+        .begin(&marker, now)
+        .map_err(|e| CliFailure::plugin(format!("write update marker: {e}")))?;
+    if begin == Begin::AlreadyRunning {
+        return print(UpdateLaunch::AlreadyRunning);
+    }
+
+    let unit = format!("agent-bar-update-{txid}");
+    let mut argv = vec![
+        "--user".to_owned(),
+        "--collect".to_owned(),
+        "--no-block".to_owned(),
+        format!("--unit={unit}"),
+        format!(
+            "--property=RuntimeMaxSec={}",
+            UPDATE_RUN_WINDOW.whole_seconds()
+        ),
+        format!("--setenv=HOME={}", home.display()),
+        format!("--setenv=XDG_STATE_HOME={}", state_home.display()),
+    ];
+    if let Some(path) = std::env::var_os("PATH") {
+        argv.push(format!("--setenv=PATH={}", path.to_string_lossy()));
+    }
+    argv.extend([
+        "--".to_owned(),
+        helper.display().to_string(),
+        "update".to_owned(),
+        "run".to_owned(),
+    ]);
+    let argv: Vec<&str> = argv.iter().map(String::as_str).collect();
+    let started = ProcessCommandRunner
+        .run(&systemd_run, &argv)
+        .map_err(|e| e.to_string())
+        .and_then(|out| {
+            if out.code == 0 {
+                Ok(())
+            } else {
+                Err(out.stderr.trim().to_owned())
+            }
+        });
+    if let Err(reason) = started {
+        let _ = files.abandon();
+        return Err(CliFailure::plugin(format!(
+            "failed to start update unit: {reason}"
+        )));
+    }
+    print(UpdateLaunch::Started { unit })
 }
 
 /// The body of the `agent-bar-update-<txid>` unit (CLI-029C). Every outcome,
@@ -720,7 +788,7 @@ mod tests {
     fn update_tty_accepts_exact_phrase_only() {
         let mut stdin = Cursor::new(b"update agent-bar\n".as_slice());
         let mut stderr = Vec::new();
-        confirm_update(true, &mut stdin, &mut stderr).unwrap();
+        assert_eq!(confirm_update(true, &mut stdin, &mut stderr).unwrap(), None);
         assert_eq!(
             String::from_utf8_lossy(&stderr),
             "Type update agent-bar to continue:"
@@ -737,7 +805,10 @@ mod tests {
     fn update_json_confirmation_accepts_the_contract_document() {
         let good = br#"{"schemaVersion":1,"operation":"update","confirmed":true,"targetVersion":"10.7.0"}"#;
         let mut stdin = Cursor::new(good.as_slice());
-        confirm_update(false, &mut stdin, &mut Vec::new()).unwrap();
+        assert_eq!(
+            confirm_update(false, &mut stdin, &mut Vec::new()).unwrap(),
+            Some("10.7.0".to_owned())
+        );
 
         let mut stdin = Cursor::new(b"update agent-bar\n".as_slice());
         let err = confirm_update(false, &mut stdin, &mut Vec::new()).unwrap_err();
