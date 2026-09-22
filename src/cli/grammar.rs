@@ -212,9 +212,10 @@ fn parse_update(tokens: &[String]) -> Result<Command, CliFailure> {
         [word] if word == "check" => Ok(Command::Update(UpdateCommand::Check)),
         [word] if word == "apply" => Ok(Command::Update(UpdateCommand::Apply)),
         [word] if word == "run" => Ok(Command::Update(UpdateCommand::Run)),
-        [word, _, ..] if word == "apply" || word == "run" => Err(CliFailure::grammar(format!(
-            "unexpected argument after update {word}"
-        ))),
+        [word] if word == "status" => Ok(Command::Update(UpdateCommand::Status)),
+        [word, _, ..] if matches!(word.as_str(), "apply" | "run" | "status") => Err(
+            CliFailure::grammar(format!("unexpected argument after update {word}")),
+        ),
         [other, ..] => Err(CliFailure::grammar(format!(
             "unknown argument '{other}' for update"
         ))),

@@ -44,7 +44,7 @@ pub fn help_text(topic: Option<HelpTopic>) -> String {
             out.push_str("  agent-bar login <provider>\n");
             out.push_str("  agent-bar config show\n");
             out.push_str("  agent-bar config apply stdin|file <path>|json <value>\n");
-            out.push_str("  agent-bar update [check|apply]\n");
+            out.push_str("  agent-bar update [check|apply|status]\n");
             out.push_str("  agent-bar uninstall [purge]\n");
             out.push_str("  agent-bar reset claude <reset-id>\n");
             out.push_str("  agent-bar help [<command>]\n");
@@ -75,9 +75,10 @@ pub fn help_text(topic: Option<HelpTopic>) -> String {
         Some(HelpTopic::Update) => format!(
             "update — print usage; no interactive flow\n\
              update check — report whether a newer release exists (read-only)\n\
-             update apply — install the latest release through the Omarchy\n\
-             plugin manager after confirmation; the shell restart stays yours\n\
-             update run — the body of the unit update apply starts\n\
+             update apply — after confirmation, start a user unit that installs\n\
+             the latest release through the Omarchy plugin manager\n\
+             update status — report the running or finished update once\n\
+             update run — the body of that unit; the shell restart stays yours\n\
              From a terminal you can also run '{UPDATE_COMMAND}'.\n"
         ),
         Some(HelpTopic::Uninstall) => {
@@ -111,6 +112,7 @@ pub fn dispatch(command: Command) -> Result<(), CliFailure> {
         Command::Update(UpdateCommand::Check) => dispatch_update_check(),
         Command::Update(UpdateCommand::Apply) => dispatch_update_apply(),
         Command::Update(UpdateCommand::Run) => dispatch_update_run(),
+        Command::Update(UpdateCommand::Status) => dispatch_update_status(),
         Command::Config(config) => dispatch_config(config),
         Command::Login(provider) => dispatch_login(provider),
         Command::Status(opts) => dispatch_status(opts),
@@ -518,6 +520,30 @@ fn dispatch_update_run() -> Result<(), CliFailure> {
         .finish(&outcome)
         .map_err(|e| CliFailure::plugin(format!("write update result: {e}")))?;
     eprintln!("agent-bar: update run: {}", outcome.result.as_str());
+    Ok(())
+}
+
+/// `update status` (CLI-029B). It never takes the maintenance lock, so it
+/// answers while a run holds it.
+fn dispatch_update_status() -> Result<(), CliFailure> {
+    use crate::plugin::update_apply::read_tree_version;
+    use crate::plugin::update_state::{UpdateDocument, UpdateStateFiles};
+    use crate::plugin::PluginPaths;
+    use crate::support::{Clock, SystemClock};
+
+    let home = std::env::var_os("HOME")
+        .ok_or_else(|| CliFailure::plugin("HOME is required for update status".to_string()))?;
+    let xdg_state = std::env::var_os("XDG_STATE_HOME").map(PathBuf::from);
+    let paths = PluginPaths::production(PathBuf::from(home), xdg_state);
+    let status = UpdateStateFiles::in_state_dir(&paths.xdg_state)
+        .read_status(Clock::now_utc(&SystemClock), || {
+            read_tree_version(&paths.plugin_root).ok()
+        })
+        .map_err(|e| CliFailure::plugin(format!("read update state: {e}")))?;
+    let line = UpdateDocument::new(status)
+        .to_json_line()
+        .map_err(|e| CliFailure::internal(e.to_string()))?;
+    print!("{line}");
     Ok(())
 }
 

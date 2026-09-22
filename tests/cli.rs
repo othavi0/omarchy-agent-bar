@@ -197,6 +197,10 @@ fn login_config_update_uninstall_forms() {
         Command::Update(UpdateCommand::Run)
     );
     assert_eq!(
+        parse(words(&["update", "status"])).unwrap(),
+        Command::Update(UpdateCommand::Status)
+    );
+    assert_eq!(
         parse(words(&["uninstall"])).unwrap(),
         Command::Uninstall { purge: false }
     );
@@ -238,6 +242,7 @@ fn reset_rejects_missing_arguments_wrong_provider_and_extra_words() {
 fn update_subcommand_arguments_are_grammar_errors() {
     for extra in [
         words(&["update", "run", "now"]),
+        words(&["update", "status", "json"]),
         words(&["update", "apply", "10.0.0"]),
         words(&["update", "apply", "extra", "words"]),
     ] {
@@ -424,7 +429,7 @@ fn binary_help_names_both_update_subcommands() {
         .assert()
         .code(SUCCESS)
         .stdout(predicates::str::contains(
-            "agent-bar update [check|apply]\n",
+            "agent-bar update [check|apply|status]\n",
         ));
     CargoBin::cargo_bin("agent-bar")
         .unwrap()
@@ -432,7 +437,8 @@ fn binary_help_names_both_update_subcommands() {
         .assert()
         .code(SUCCESS)
         .stdout(predicates::str::contains("update check"))
-        .stdout(predicates::str::contains("update apply"));
+        .stdout(predicates::str::contains("update apply"))
+        .stdout(predicates::str::contains("update status"));
 }
 
 fn tree_entries(root: &Path) -> Vec<PathBuf> {
@@ -768,6 +774,52 @@ fn binary_update_run_without_omarchy_still_publishes_failed() {
     .unwrap();
     assert_eq!(result["result"], "failed");
     assert_eq!(result["installedVersion"], "10.6.1");
+}
+
+fn update_status(home: &Path) -> String {
+    let output = StdCommand::new(assert_cmd::cargo::cargo_bin("agent-bar"))
+        .args(["update", "status"])
+        .env("HOME", home)
+        .env("XDG_STATE_HOME", home.join("state"))
+        .stdin(std::process::Stdio::null())
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(SUCCESS));
+    assert!(output.stderr.is_empty());
+    String::from_utf8(output.stdout).unwrap()
+}
+
+#[test]
+fn binary_update_status_follows_a_run_from_marker_to_result() {
+    let dir = tempdir().unwrap();
+    let fx = launch_fixture(dir.path(), 0);
+    let none = "{\"schemaVersion\":1,\"operation\":\"update\",\"status\":\"none\"}\n";
+    assert_eq!(update_status(&fx.home), none);
+
+    let started_at = time::OffsetDateTime::now_utc() - time::Duration::seconds(5);
+    write_marker(&fx.marker, started_at);
+    let started = started_at
+        .format(&time::format_description::well_known::Rfc3339)
+        .unwrap();
+    assert_eq!(
+        update_status(&fx.home),
+        format!("{{\"schemaVersion\":1,\"operation\":\"update\",\"status\":\"running\",\"startedAt\":\"{started}\",\"targetVersion\":\"10.7.0\"}}\n")
+    );
+
+    write_executable(
+        &fx.path_dir.join("omarchy"),
+        "#!/bin/bash\necho 'othavi0.agent-bar is up to date.'\nexit 0\n",
+    );
+    assert_eq!(
+        run_update_unit(&fx.home, &fx.path_dir).status.code(),
+        Some(SUCCESS)
+    );
+    let finished: serde_json::Value = serde_json::from_str(&update_status(&fx.home)).unwrap();
+    assert_eq!(finished["status"], "finished");
+    assert_eq!(finished["result"], "up_to_date");
+    assert_eq!(finished["installedVersion"], "10.6.1");
+    assert_eq!(finished["restartRequired"], false);
+    assert_eq!(update_status(&fx.home), none);
 }
 
 #[test]

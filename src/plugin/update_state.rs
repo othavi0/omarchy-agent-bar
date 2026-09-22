@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use time::{Duration, OffsetDateTime};
 
-use crate::plugin::update_apply::UpdateOutcome;
+use crate::plugin::update_apply::{UpdateOutcome, UpdateResult};
 use crate::support::{replace_atomically_with, FileMutator, StdFileMutator};
 
 /// How long a running marker counts as live. It equals the unit's
@@ -68,6 +68,20 @@ pub enum Begin {
     AlreadyRunning,
 }
 
+/// `update status` body (CLI-029B).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum UpdateStatus {
+    None,
+    #[serde(rename_all = "camelCase")]
+    Running {
+        #[serde(with = "time::serde::rfc3339")]
+        started_at: OffsetDateTime,
+        target_version: Option<String>,
+    },
+    Finished(UpdateOutcome),
+}
+
 /// The two update state files under `$XDG_STATE_HOME/agent-bar/`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UpdateStateFiles {
@@ -114,6 +128,43 @@ impl UpdateStateFiles {
         remove_if_present(&self.running)
     }
 
+    /// What the last update is doing (CLI-029B). A result is consumed by the
+    /// read that reports it, and so is a marker whose unit can no longer be
+    /// alive: each finished run is reported exactly once. `tree_version`
+    /// supplies `installedVersion` for a run that never wrote a result.
+    pub fn read_status(
+        &self,
+        now: OffsetDateTime,
+        tree_version: impl FnOnce() -> Option<String>,
+    ) -> io::Result<UpdateStatus> {
+        if let Some(bytes) = claim(&self.result)? {
+            let _ = self.abandon();
+            let outcome = parse_document::<UpdateOutcome>(&bytes)
+                .map(|doc| doc.body)
+                .unwrap_or_else(|| {
+                    UpdateOutcome::new(UpdateResult::Failed, None, tree_version(), now)
+                });
+            return Ok(UpdateStatus::Finished(outcome));
+        }
+        if let Some(marker) = self.read_marker()? {
+            if marker.is_live(now) {
+                return Ok(UpdateStatus::Running {
+                    started_at: marker.started_at,
+                    target_version: marker.target_version,
+                });
+            }
+        }
+        if claim(&self.running)?.is_some() {
+            return Ok(UpdateStatus::Finished(UpdateOutcome::new(
+                UpdateResult::Failed,
+                None,
+                tree_version(),
+                now,
+            )));
+        }
+        Ok(UpdateStatus::None)
+    }
+
     fn read_marker(&self) -> io::Result<Option<UpdateRunning>> {
         Ok(read_document(&self.running)?.map(|doc| doc.body))
     }
@@ -141,14 +192,37 @@ impl UpdateStateFiles {
 fn read_document<T: for<'de> Deserialize<'de>>(
     path: &Path,
 ) -> io::Result<Option<UpdateDocument<T>>> {
-    let bytes = match std::fs::read(path) {
-        Ok(bytes) => bytes,
+    match std::fs::read(path) {
+        Ok(bytes) => Ok(parse_document(&bytes)),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(err) => Err(err),
+    }
+}
+
+fn parse_document<T: for<'de> Deserialize<'de>>(bytes: &[u8]) -> Option<UpdateDocument<T>> {
+    serde_json::from_slice::<UpdateDocument<T>>(bytes)
+        .ok()
+        .filter(|doc| doc.schema_version == 1 && doc.operation == "update")
+}
+
+/// Take `path` out of the shared directory and return its bytes. The rename
+/// makes the claim atomic, so two concurrent readers never both report it.
+fn claim(path: &Path) -> io::Result<Option<Vec<u8>>> {
+    let claimed = path.with_file_name(format!(
+        ".{}.{}.claimed",
+        path.file_name()
+            .map(|n| n.to_string_lossy())
+            .unwrap_or_default(),
+        std::process::id()
+    ));
+    match std::fs::rename(path, &claimed) {
+        Ok(()) => {}
         Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(None),
         Err(err) => return Err(err),
-    };
-    Ok(serde_json::from_slice::<UpdateDocument<T>>(&bytes)
-        .ok()
-        .filter(|doc| doc.schema_version == 1 && doc.operation == "update"))
+    }
+    let bytes = std::fs::read(&claimed);
+    remove_if_present(&claimed)?;
+    bytes.map(Some)
 }
 
 fn remove_if_present(path: &Path) -> io::Result<()> {
@@ -161,7 +235,6 @@ fn remove_if_present(path: &Path) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugin::update_apply::UpdateResult;
     use crate::support::{AtomicFailPoint, FailingMutator};
     use time::macros::datetime;
 
@@ -192,6 +265,70 @@ mod tests {
     }
 
     const NOW: OffsetDateTime = datetime!(2026-09-22 16:40:05 UTC);
+
+    fn status_line(files: &UpdateStateFiles, now: OffsetDateTime) -> String {
+        let status = files
+            .read_status(now, || Some("10.6.2".to_owned()))
+            .unwrap();
+        UpdateDocument::new(status).to_json_line().unwrap()
+    }
+
+    const NONE: &str = "{\"schemaVersion\":1,\"operation\":\"update\",\"status\":\"none\"}\n";
+
+    #[test]
+    fn status_is_none_without_state_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let files = UpdateStateFiles::in_state_dir(&dir.path().join("agent-bar"));
+        assert_eq!(status_line(&files, NOW), NONE);
+    }
+
+    #[test]
+    fn status_is_running_while_the_marker_is_live() {
+        let dir = tempfile::tempdir().unwrap();
+        let files = UpdateStateFiles::in_state_dir(dir.path());
+        files.begin(&marker(NOW), NOW).unwrap();
+        let later = NOW + Duration::seconds(179);
+        for _ in 0..2 {
+            assert_eq!(
+                status_line(&files, later),
+                "{\"schemaVersion\":1,\"operation\":\"update\",\"status\":\"running\",\"startedAt\":\"2026-09-22T16:40:05Z\",\"targetVersion\":\"10.6.2\"}\n"
+            );
+        }
+    }
+
+    #[test]
+    fn status_reports_a_finished_result_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let files = UpdateStateFiles::in_state_dir(dir.path());
+        files.begin(&marker(NOW), NOW).unwrap();
+        files.finish(&outcome()).unwrap();
+        assert_eq!(
+            status_line(&files, NOW),
+            "{\"schemaVersion\":1,\"operation\":\"update\",\"status\":\"finished\",\"result\":\"updated\",\"fromVersion\":\"10.6.1\",\"installedVersion\":\"10.6.2\",\"restartRequired\":true,\"finishedAt\":\"2026-09-22T16:40:05Z\"}\n"
+        );
+        assert_eq!(status_line(&files, NOW), NONE);
+        assert!(entries(dir.path()).is_empty());
+    }
+
+    #[test]
+    fn status_reports_a_stale_or_unreadable_marker_once_as_failed() {
+        let dir = tempfile::tempdir().unwrap();
+        let files = UpdateStateFiles::in_state_dir(dir.path());
+        for stale in [
+            UpdateDocument::new(marker(NOW)).to_json_line().unwrap(),
+            "{not json".to_owned(),
+        ] {
+            std::fs::write(&files.running, &stale).unwrap();
+            let checked_at = NOW + Duration::seconds(180);
+            assert_eq!(
+                status_line(&files, checked_at),
+                "{\"schemaVersion\":1,\"operation\":\"update\",\"status\":\"finished\",\"result\":\"failed\",\"fromVersion\":null,\"installedVersion\":\"10.6.2\",\"restartRequired\":false,\"finishedAt\":\"2026-09-22T16:43:05Z\"}\n",
+                "{stale}"
+            );
+            assert_eq!(status_line(&files, checked_at), NONE);
+            assert!(entries(dir.path()).is_empty());
+        }
+    }
 
     #[test]
     fn begin_writes_the_marker_document_and_clears_an_old_result() {
