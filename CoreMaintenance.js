@@ -74,8 +74,12 @@ function updateStatusArgv(helperPath) {
   return [String(helperPath), "update", "status"]
 }
 
+function restartPendingMessage(version) {
+  return String(version) + " installed. Restart the shell to load it."
+}
+
 var UPDATE_RESULT_MESSAGES = {
-  updated: function (v) { return v + " installed. Restart the shell to load it." },
+  updated: restartPendingMessage,
   up_to_date: function (v) { return "Agent Bar is up to date." },
   local_changes: function (v) {
     return "The plugin folder has local changes. "

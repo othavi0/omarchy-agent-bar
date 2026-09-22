@@ -199,6 +199,7 @@ KeyboardPanel {
       list = list.concat(rail.collectFocusTargets())
     if (stalledMessage && typeof stalledMessage.collectFocusTargets === "function")
       list = list.concat(stalledMessage.collectFocusTargets())
+    list = list.concat(restartBanner.collectFocusTargets())
     if (contentLoader.item && typeof contentLoader.item.collectFocusTargets === "function")
       list = list.concat(contentLoader.item.collectFocusTargets())
     if (settingsFooter.shown)
@@ -370,6 +371,21 @@ KeyboardPanel {
               fontFamily: Style.font.family
               onActionActivated: function (kind, target) {
                 if (kind === "restart_shell" && root.agentService)
+                  root.agentService.restartShell()
+              }
+              onVisibleChanged: root.scheduleFocusRebuild()
+            }
+
+            RestartBanner {
+              id: restartBanner
+              width: parent.width
+              visible: !!root.agentService && root.agentService.restartPending
+                  && root.view !== "settings" && !stalledMessage.visible
+              version: root.agentService ? root.agentService.pendingVersion : ""
+              foreground: Color.foreground
+              fontFamily: Style.font.family
+              onRestartRequested: {
+                if (root.agentService)
                   root.agentService.restartShell()
               }
               onVisibleChanged: root.scheduleFocusRebuild()
