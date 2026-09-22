@@ -435,10 +435,12 @@ struct ClaudeUsageDoc {
     spend: Option<Value>,
     #[serde(default)]
     extra_usage: Option<Value>,
+    /// Kept as raw JSON and mapped leniently: a malformed reset block yields
+    /// no entries instead of failing the whole Claude row.
     #[serde(default)]
-    cedar_ember: Option<ClaudeCedarEmberRaw>,
+    cedar_ember: Option<Value>,
     #[serde(default)]
-    juniper_tide: Option<ClaudeJuniperTideRaw>,
+    juniper_tide: Option<Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -715,13 +717,13 @@ pub fn claude_from_usage_json(
     // then remaining cedar_ember grants, then juniper_tide last.
     let mut resets = doc
         .cedar_ember
-        .as_ref()
-        .map(claude_cedar_ember_resets)
+        .and_then(|raw| serde_json::from_value::<ClaudeCedarEmberRaw>(raw).ok())
+        .map(|raw| claude_cedar_ember_resets(&raw))
         .unwrap_or_default();
     if let Some(reset) = doc
         .juniper_tide
-        .as_ref()
-        .and_then(claude_juniper_tide_reset)
+        .and_then(|raw| serde_json::from_value::<ClaudeJuniperTideRaw>(raw).ok())
+        .and_then(|raw| claude_juniper_tide_reset(&raw))
     {
         resets.push(reset);
     }
@@ -1026,6 +1028,39 @@ mod tests {
         match result {
             ProviderResult::Ready { resets, .. } => assert!(resets.is_empty(), "{resets:?}"),
             other => panic!("expected ready, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn claude_malformed_reset_blocks_keep_the_windows_ready() {
+        for blocks in [
+            r#""cedar_ember":{"eligible":true,"grants":null}"#,
+            r#""cedar_ember":{"eligible":true,"grants":[{"id":"g","clears":null,"resets_left":1,"usable_now":true}]}"#,
+            r#""cedar_ember":{"eligible":true,"grants":[{"id":"g","paused":null,"resets_left":1,"usable_now":true}]}"#,
+            r#""cedar_ember":{"eligible":true,"grants":[{"id":123,"resets_left":1,"usable_now":true}]}"#,
+            r#""cedar_ember":{"eligible":true,"grants":[{"id":"g","resets_left":1.5,"usable_now":true}]}"#,
+            r#""juniper_tide":{"eligible":"yes","available":true}"#,
+            r#""cedar_ember":[],"juniper_tide":7"#,
+        ] {
+            let body = format!(
+                r#"{{"five_hour":{{"utilization":20.0,"resets_at":"2026-09-22T20:00:00Z"}},"seven_day":{{"utilization":40.0,"resets_at":"2026-09-25T12:00:00Z"}},{blocks}}}"#
+            );
+            let result = claude_from_usage_json(
+                body.as_bytes(),
+                datetime!(2026-09-22 18:00:00 UTC),
+                None,
+                true,
+            );
+            match result {
+                ProviderResult::Ready {
+                    windows, resets, ..
+                } => {
+                    let ids: Vec<&str> = windows.iter().map(|w| w.id()).collect();
+                    assert_eq!(ids, vec!["session", "weekly"], "{blocks}");
+                    assert!(resets.is_empty(), "{blocks}: {resets:?}");
+                }
+                other => panic!("{blocks}: expected ready, got {other:?}"),
+            }
         }
     }
 
