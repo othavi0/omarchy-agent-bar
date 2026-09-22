@@ -58,14 +58,14 @@ Item {
         foreground: root.foreground
       }
 
-      PanelActionButton {
+      Button {
         visible: root.anyClaimable
-        size: Style.space(22)
-        iconText: "󰦛"
-        tooltipText: root.busy ? "Using reset…" : "Use reset"
-        foreground: root.foreground
-        enabled: !root.busy
+        text: root.busy ? "Using reset…" : "Use reset"
+        bordered: true
         focusable: true
+        enabled: !root.busy
+        foreground: root.foreground
+        fontFamily: root.fontFamily
         Accessible.name: "Use reset"
         onClicked: root.useResetClicked()
       }
