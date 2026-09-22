@@ -610,14 +610,14 @@ TestCase {
 
   function test_reset_rows_hidden_when_empty() {
     var noResets = { id: "claude", name: "Claude", state: "ready", windows: [], resets: [] }
-    compare(Core.resetRows(noResets, 0, "MM/dd/yyyy").length, 0)
+    compare(Core.resetRows(noResets, 0, "MM/dd/yyyy", "hh:mm").length, 0)
     compare(Core.resetsSummary(noResets).visible, false)
     compare(Core.resetsSummary(null).visible, false)
   }
 
   function test_reset_rows_fields() {
     var p = claudeResetsProvider()
-    var rows = Core.resetRows(p, Date.parse("2026-09-22T12:00:00Z"), "MM/dd/yyyy")
+    var rows = Core.resetRows(p, Date.parse("2026-09-22T12:00:00Z"), "MM/dd/yyyy", "hh:mm")
     compare(rows.length, 2)
     compare(rows[0].id, "cedar-ember:opus55-launch-promax-20260921")
     compare(rows[0].clearsText, "session and weekly")
@@ -637,12 +637,23 @@ TestCase {
                          available: 2, total: null, clears: [],
                          expiresAt: null, refillsAt: null, cooldownUntil: null,
                          claimable: false }] }
-    var rows = Core.resetRows(p, 0, "MM/dd/yyyy")
+    var rows = Core.resetRows(p, 0, "MM/dd/yyyy", "hh:mm")
     compare(rows.length, 1)
     compare(rows[0].countText, "2")
     compare(rows[0].clearsText, "")
     compare(rows[0].dateText, "")
     compare(rows[0].claimable, false)
+  }
+
+  function test_reset_rows_cooldown_uses_the_time_format_not_the_date_format() {
+    var p = { id: "claude", name: "Claude", state: "ready", windows: [],
+              resets: [{ id: "cedar-ember:x", label: "X",
+                         available: 0, total: 1, clears: ["session"],
+                         expiresAt: null, refillsAt: null,
+                         cooldownUntil: "2026-09-22T18:30:00Z", claimable: false }] }
+    var rows = Core.resetRows(p, 0, "MM/dd/yyyy", "hh:mm")
+    compare(rows[0].dateText,
+        "cooldown " + Qt.formatTime(new Date(Date.parse("2026-09-22T18:30:00Z")), "hh:mm"))
   }
 
   function test_resets_summary_sums_available_and_finds_first_claimable() {
@@ -677,7 +688,7 @@ TestCase {
 
   function test_reset_confirm_model_names_provider_label_and_clears() {
     var p = claudeResetsProvider()
-    var rows = Core.resetRows(p, 0, "MM/dd/yyyy")
+    var rows = Core.resetRows(p, 0, "MM/dd/yyyy", "hh:mm")
     var model = Core.resetConfirmModel(p, rows[0])
     compare(model.title, "Use reset?")
     compare(model.confirmText, "Use reset")

@@ -700,22 +700,23 @@ function resetCountText(available, total) {
   return a + "/" + (isFinite(t) ? Math.max(0, Math.floor(t)) : 0)
 }
 
-function resetDateText(reset, nowMs, localeShortFormat) {
-  var fmt = String(localeShortFormat || "")
+function resetDateText(reset, nowMs, localeDateFormat, localeTimeFormat) {
+  var dateFmt = String(localeDateFormat || "")
+  var timeFmt = String(localeTimeFormat || "")
   if (reset.expiresAt) {
     var ms = parseIsoMs(reset.expiresAt)
-    if (isFinite(ms) && fmt.length)
-      return "until " + Qt.formatDate(new Date(ms), fmt)
+    if (isFinite(ms) && dateFmt.length)
+      return "until " + Qt.formatDate(new Date(ms), dateFmt)
   }
   if (reset.refillsAt) {
     var rms = parseIsoMs(reset.refillsAt)
-    if (isFinite(rms) && fmt.length)
-      return "next " + Qt.formatDate(new Date(rms), fmt)
+    if (isFinite(rms) && dateFmt.length)
+      return "next " + Qt.formatDate(new Date(rms), dateFmt)
   }
   if (reset.cooldownUntil) {
     var cms = parseIsoMs(reset.cooldownUntil)
-    if (isFinite(cms) && fmt.length)
-      return "cooldown " + Qt.formatTime(new Date(cms), fmt)
+    if (isFinite(cms) && timeFmt.length)
+      return "cooldown " + Qt.formatTime(new Date(cms), timeFmt)
   }
   return ""
 }
@@ -729,7 +730,7 @@ function resetCountAccessible(available, total) {
   return a + " of " + (isFinite(t) ? Math.max(0, Math.floor(t)) : 0)
 }
 
-function resetRows(provider, nowMs, localeShortFormat) {
+function resetRows(provider, nowMs, localeDateFormat, localeTimeFormat) {
   var resets = resetsOf(provider)
   var out = []
   for (var i = 0; i < resets.length; i++) {
@@ -737,7 +738,7 @@ function resetRows(provider, nowMs, localeShortFormat) {
     var label = plainText(r.label || "")
     var clearsText = resetClearsText(provider, r.clears)
     var countText = resetCountText(r.available, r.total)
-    var dateText = resetDateText(r, nowMs, localeShortFormat)
+    var dateText = resetDateText(r, nowMs, localeDateFormat, localeTimeFormat)
     var accessibleParts = [label, resetCountAccessible(r.available, r.total)]
     if (dateText.length)
       accessibleParts.push(dateText)

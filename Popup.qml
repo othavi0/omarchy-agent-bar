@@ -140,7 +140,7 @@ KeyboardPanel {
     var provider = Core.findProvider(agentService.snapshot, resetUi.providerId)
     var rows = Core.resetRows(provider,
         root.owner && root.owner.nowMs !== undefined ? root.owner.nowMs : Date.now(),
-        Qt.locale().dateFormat(Locale.ShortFormat))
+        Qt.locale().dateFormat(Locale.ShortFormat), Qt.locale().timeFormat(Locale.ShortFormat))
     for (var i = 0; i < rows.length; i++) {
       if (rows[i].id === resetUi.resetId)
         return rows[i]
