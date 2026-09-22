@@ -50,6 +50,10 @@ Item {
   property int restartShellRequestCount: 0
   property string lastViewInstallationUrl: ""
   property var pendingMaintenanceIntention: null
+  property string restartPendingVersion: ""
+  readonly property bool restartPending: restartPendingVersion.length > 0
+  readonly property string pendingVersion: restartPendingVersion
+  readonly property bool updateRunning: updateApplyLane.busy
   property string pendingMaintenancePayload: ""
   property int resetTimeoutMs: 45000
   property var resetUi: Core.resetUiIdle()
@@ -184,14 +188,8 @@ Item {
   }
 
   function openSettings(owner) {
-    // An update in flight or awaiting its restart keeps the About tab
-    // reachable; the settings read stays off because the helper on disk may
-    // already be the new version.
-    if (maintenanceState.blocked) {
-      if (Maintenance.maintenanceUiHoldsUpdate(maintenanceUi))
-        requestPopup(owner, selectedProviderId || null, "settings")
+    if (maintenanceState.blocked)
       return
-    }
     requestPopup(owner, selectedProviderId || null, "settings")
     if (!settingsState || settingsState.phase === "closed") {
       settingsGeneration++
@@ -321,6 +319,7 @@ Item {
     var argv = Maintenance.restartShellArgv()
     lastRestartShellArgv = argv.slice()
     restartShellRequestCount++
+    restartPendingVersion = ""
     if (testMode)
       return
     Quickshell.execDetached(argv)
@@ -382,35 +381,23 @@ Item {
   function confirmUpdate() {
     if (!maintenanceUi || !maintenanceUi.updateConfirmOpen || maintenanceState.blocked)
       return false
-    var intention = Maintenance.maintenanceIntention("update", maintenanceUi)
-    if (!intention || !resolvedHelperPath().length) {
+    var argv = Maintenance.updateApplyArgv(resolvedHelperPath())
+    var target = String(maintenanceUi.targetVersion || "")
+    if (!argv || !target.length || !updateApplyLane.ready) {
       maintenanceUi = Maintenance.maintenanceUiFromUpdateApply(
         maintenanceUi, Maintenance.updateApplyOutcomeFromLane(null))
       return false
     }
-    pendingMaintenanceIntention = intention
-    pendingMaintenancePayload = JSON.stringify(intention.payload)
     maintenanceUi = Maintenance.maintenanceUiUpdating(maintenanceUi)
-    beginMaintenanceHandoff()
-    return true
+    return updateApplyLane.start(argv, JSON.stringify(Maintenance.updateConfirmation(target)))
   }
 
   function applyUpdateApplyDone(outcome) {
     noteLaneSettled(outcome)
-    pendingMaintenanceIntention = null
-    pendingMaintenancePayload = ""
     var result = Maintenance.updateApplyOutcomeFromLane(outcome)
     maintenanceUi = Maintenance.maintenanceUiFromUpdateApply(maintenanceUi, result)
-    // The QML running now cannot read the new helper's envelopes, so nothing
-    // polls again until restartShell() replaces both.
-    if (result.result === "updated") {
-      maintenanceState = Maintenance.maintenanceRestartPending()
-      return
-    }
-    maintenanceState = Maintenance.maintenanceIdle()
-    pollEnabled = true
-    if (versionReady)
-      pollTimer.restart()
+    if (result.restartRequired)
+      restartPendingVersion = maintenanceUi.targetVersion || "Agent Bar"
   }
 
   function openUninstallConfirm() {
@@ -729,36 +716,28 @@ Item {
     var intention = pendingMaintenanceIntention
     if (!intention)
       return
-    var helper = resolvedHelperPath()
-    var lane = intention.kind === "update" ? updateApplyLane : maintenanceHandoffLane
-    if (!lane.ready)
+    if (!maintenanceHandoffLane.ready)
       return
-    var argv = intention.kind === "update"
-        ? Maintenance.updateApplyArgv(helper)
-        : Maintenance.uninstallArgv(helper, intention.purge)
-    if (!argv)
-      return
-    lane.start(argv, pendingMaintenancePayload)
+    maintenanceHandoffLane.start(
+      Maintenance.uninstallArgv(resolvedHelperPath(), intention.purge),
+      pendingMaintenancePayload)
   }
 
   function applyMaintenanceHandoffDone(outcome) {
     noteLaneSettled(outcome)
-    var intention = pendingMaintenanceIntention
     pendingMaintenanceIntention = null
     pendingMaintenancePayload = ""
     maintenanceState = Maintenance.maintenanceIdle()
     pollEnabled = true
     if (versionReady)
       pollTimer.restart()
-    if (intention && intention.kind === "uninstall") {
-      if (outcome.exitCode === 0) {
-        maintenanceUi = Maintenance.maintenanceUiIdle(helperVersion)
-        maintenanceUi.message = "Uninstall completed."
-      } else {
-        maintenanceUi = Maintenance.cloneMaintenanceUi(maintenanceUi)
-        maintenanceUi.phase = "error"
-        maintenanceUi.message = "Uninstall failed."
-      }
+    if (outcome.exitCode === 0) {
+      maintenanceUi = Maintenance.maintenanceUiIdle(helperVersion)
+      maintenanceUi.message = "Uninstall completed."
+    } else {
+      maintenanceUi = Maintenance.cloneMaintenanceUi(maintenanceUi)
+      maintenanceUi.phase = "error"
+      maintenanceUi.message = "Uninstall failed."
     }
   }
 

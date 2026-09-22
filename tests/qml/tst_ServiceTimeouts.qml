@@ -750,8 +750,8 @@ TestCase {
     compare(s.maintenanceUi.phase, "updating")
     compare(s.maintenanceUi.updateConfirmOpen, false)
     compare(s.maintenanceUi.message, "Updating\u2026 this takes a few seconds.")
-    compare(s.maintenanceState.blocked, true)
-    compare(s.pollEnabled, false)
+    compare(s.maintenanceState.blocked, false)
+    compare(s.pollEnabled, true)
     compare(s.lanes.updateApply.busy, true)
     compare(s.lanes.maintenanceHandoff.busy, false)
     compare(JSON.stringify(s.lanes.updateApply.process.command),
@@ -761,33 +761,32 @@ TestCase {
     compare(s.lanes.updateApply.process.stdinEnabled, false)
   }
 
-  function test_update_waits_for_a_busy_status_lane() {
+  function test_update_starts_beside_a_busy_status_lane() {
     var s = serviceWithUpdateOffer()
     s.kickStatus()
     compare(s.lanes.status.busy, true)
     s.openUpdateConfirm()
     verify(s.confirmUpdate())
-    compare(s.maintenanceState.blocked, true)
-    compare(s.lanes.updateApply.busy, false)
-    finishLane(s, "status", 0, validEnvelope())
+    compare(s.maintenanceState.blocked, false)
     compare(s.lanes.updateApply.busy, true)
+    finishLane(s, "status", 0, validEnvelope())
+    compare(s.refresh("claude"), "ok")
+    compare(s.lanes.status.busy, true)
   }
 
-  function test_updated_holds_polling_until_the_restart() {
+  function test_updated_sets_restart_pending_and_keeps_polling() {
     var s = startUpdate()
+    compare(s.restartPending, false)
     finishLane(s, "updateApply", 0, updateApplyDoc("updated", "10.3.18"))
     compare(s.maintenanceUi.phase, "restart_required")
     compare(s.maintenanceUi.message, "10.3.18 installed. Restart the shell to load it.")
     compare(s.maintenanceUi.installedVersion, "10.3.17")
-    compare(s.maintenanceState.blocked, true)
-    compare(s.pollEnabled, false)
-    compare(s.pendingMaintenanceIntention, null)
-    s.kickStatus()
-    compare(s.lanes.status.busy, false)
-    s.checkForUpdates()
-    compare(s.lanes.maintenanceCheck.busy, false)
-    s.tryMaintenanceDetach()
-    compare(s.lanes.updateApply.busy, false)
+    compare(s.restartPending, true)
+    compare(s.pendingVersion, "10.3.18")
+    compare(s.maintenanceState.blocked, false)
+    compare(s.pollEnabled, true)
+    compare(s.refresh("claude"), "ok")
+    compare(s.lanes.status.busy, true)
     compare(s.lanes.maintenanceHandoff.busy, false)
     var before = s.restartShellRequestCount
     s.restartShell()
@@ -858,9 +857,11 @@ TestCase {
 
   function test_closing_and_reopening_during_the_update_keeps_the_phase() {
     var s = startUpdate()
+    compare(s.updateRunning, true)
     s.openSettings("mon-a")
     compare(s.popupOwner.view, "settings")
-    compare(s.lanes.settingsRead.busy, false)
+    compare(s.lanes.settingsRead.busy, true)
+    finishLane(s, "settingsRead", 0, JSON.stringify(validSettings()))
     s.closePopup("mon-a")
     compare(s.popupOwner, null)
     compare(s.maintenanceUi.phase, "updating")
@@ -868,11 +869,11 @@ TestCase {
     compare(s.popupOwner.view, "settings")
     compare(s.maintenanceUi.phase, "updating")
     finishLane(s, "updateApply", 0, updateApplyDoc("updated", "10.3.18"))
+    compare(s.updateRunning, false)
     s.dismissPopup()
     s.openSettings("mon-a")
     compare(s.popupOwner.view, "settings")
     compare(s.maintenanceUi.phase, "restart_required")
-    compare(s.lanes.settingsRead.busy, false)
   }
 
   function test_uninstall_still_refuses_to_open_settings_while_blocked() {

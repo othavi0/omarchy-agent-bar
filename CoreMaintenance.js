@@ -9,10 +9,6 @@ function maintenanceBeginHandoff(state) {
   return { phase: "handoff", blocked: true }
 }
 
-function maintenanceRestartPending() {
-  return { phase: "restart_pending", blocked: true }
-}
-
 function maintenanceCanDetach(maint, anyLaneBusy) {
   if (!maint || maint.phase !== "handoff")
     return false
@@ -226,10 +222,6 @@ function maintenanceUiCanUpdate(ui) {
       && !!ui.targetVersion && String(ui.targetVersion).length > 0
 }
 
-function maintenanceUiHoldsUpdate(ui) {
-  return !!ui && (ui.phase === "updating" || ui.phase === "restart_required")
-}
-
 function maintenanceUiOpenUpdateConfirm(ui) {
   var next = cloneMaintenanceUi(ui)
   next.updateConfirmOpen = maintenanceUiCanUpdate(next)
@@ -320,16 +312,6 @@ function maintenanceIntention(kind, ui) {
       kind: "uninstall",
       purge: !!(ui && ui.purgeSettings),
       payload: uninstallConfirmation(!!(ui && ui.purgeSettings))
-    }
-  }
-  if (kind === "update") {
-    var target = ui && ui.targetVersion ? String(ui.targetVersion) : ""
-    if (!target.length)
-      return null
-    return {
-      kind: "update",
-      targetVersion: target,
-      payload: updateConfirmation(target)
     }
   }
   return null

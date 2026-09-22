@@ -5,7 +5,6 @@ import qs.Commons
 import "CoreService.js" as Service
 import "CoreView.js" as Core
 import "CoreScroll.js" as Scroll
-import "CoreMaintenance.js" as Maintenance
 import "components"
 
 // Do NOT redeclare KeyboardPanel's required anchorItem/bar here. Redeclaring
@@ -231,7 +230,7 @@ KeyboardPanel {
   onAgentServiceChanged: scheduleFocusRebuild()
   onIsOpenChanged: {
     if (isOpen)
-      settingsTab = agentService && Maintenance.maintenanceUiHoldsUpdate(agentService.maintenanceUi)
+      settingsTab = agentService && (agentService.updateRunning || agentService.restartPending)
           ? "about" : "providers"
   }
 

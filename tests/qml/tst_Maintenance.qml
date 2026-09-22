@@ -166,21 +166,6 @@ TestCase {
     compare(failed.message, "The update did not finish. You are still on 10.3.1.")
   }
 
-  function test_update_hold_phases() {
-    compare(Core.maintenanceUiHoldsUpdate(Core.maintenanceUiUpdating(availableUi())), true)
-    compare(Core.maintenanceUiHoldsUpdate(availableUi()), false)
-    compare(Core.maintenanceUiHoldsUpdate(Core.maintenanceUiIdle("1")), false)
-    var restart = Core.maintenanceUiFromUpdateApply(Core.maintenanceUiUpdating(availableUi()),
-        Core.parseUpdateApplyOutcome(applyDoc("updated", "10.4.0")))
-    compare(Core.maintenanceUiHoldsUpdate(restart), true)
-  }
-
-  function test_restart_pending_state_never_detaches() {
-    var hold = Core.maintenanceRestartPending()
-    compare(hold.blocked, true)
-    compare(Core.maintenanceCanDetach(hold, false), false)
-  }
-
   function test_uninstall_confirmation_json() {
     var keep = Core.uninstallConfirmation(false)
     compare(keep.schemaVersion, 1)
@@ -291,22 +276,13 @@ TestCase {
     compare(un.payload.purgeSettingsAndBackups, true)
   }
 
-  function test_update_intention_carries_the_confirmation() {
+  function test_uninstall_is_the_only_maintenance_intention() {
     var ui = Core.maintenanceUiIdle("10.0.0")
     ui.targetVersion = "10.1.0"
-    var up = Core.maintenanceIntention("update", ui)
-    compare(up.kind, "update")
-    compare(up.targetVersion, "10.1.0")
-    compare(JSON.stringify(up.payload),
-            '{"schemaVersion":1,"operation":"update","confirmed":true,"targetVersion":"10.1.0"}')
-    compare(Core.maintenanceIntention("update", Core.maintenanceUiIdle("10.0.0")), null)
-  }
-
-  function test_only_uninstall_and_update_are_known_intention_kinds() {
-    var ui = Core.maintenanceUiIdle("10.0.0")
-    ui.targetVersion = "10.1.0"
+    compare(Core.maintenanceIntention("update", ui), null)
     compare(Core.maintenanceIntention("reinstall", ui), null)
     compare(Core.maintenanceIntention("", ui), null)
+    compare(Core.maintenanceIntention("uninstall", ui).kind, "uninstall")
   }
 
   function test_service_login_uses_exec_detached() {
@@ -440,9 +416,10 @@ TestCase {
     verify(named >= buttons, "every button carries an accessible name")
   }
 
-  function test_popup_opens_settings_on_about_while_an_update_holds() {
+  function test_popup_reads_update_state_from_the_service() {
     var src = read("Popup.qml")
-    verify(src.indexOf("Maintenance.maintenanceUiHoldsUpdate(agentService.maintenanceUi)") >= 0)
+    verify(src.indexOf("CoreMaintenance.js") < 0, "the popup never reads the maintenance view model")
+    verify(src.indexOf("agentService.updateRunning || agentService.restartPending") >= 0)
     verify(src.indexOf('? "about" : "providers"') >= 0)
   }
 
