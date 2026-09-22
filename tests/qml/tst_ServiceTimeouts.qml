@@ -629,4 +629,46 @@ TestCase {
     compare(s.resetBusy, true)
     compare(s.lanes.reset.runId, resetRun)
   }
+
+  function test_the_refresh_a_reset_fires_keeps_its_caption() {
+    var s = startClaimWithPopupOpen()
+    finishLane(s, "reset", 0, Harness.claudeResetResult("reset"))
+    verify(s.lanes.status.busy)
+
+    finishLane(s, "status", 0, Harness.claudeResetEnvelope([]))
+    verify(s.resetUi.outcome !== null, "the forced refresh must not erase the caption")
+    compare(s.resetUi.outcome.result, "reset")
+
+    s.kickStatus()
+    finishLane(s, "status", 0, Harness.claudeResetEnvelope([]))
+    compare(s.resetUi.outcome, null)
+  }
+
+  function test_a_poll_in_flight_at_settle_keeps_the_caption_until_after_the_forced_run() {
+    var s = startClaimWithPopupOpen()
+    s.kickStatus()
+    var pollRun = s.lanes.status.runId
+    finishLane(s, "reset", 0, Harness.claudeResetResult("reset"))
+    compare(s.lanes.status.runId, pollRun, "the forced run queues behind the poll")
+
+    finishLane(s, "status", 0, Harness.claudeResetEnvelope())
+    verify(s.resetUi.outcome !== null, "the poll that predates the claim leaves the caption")
+    compare(s.lanes.status.runId, pollRun + 1)
+    verify(s.lanes.status.process.command.indexOf("bypass") >= 0)
+
+    finishLane(s, "status", 0, Harness.claudeResetEnvelope([]))
+    verify(s.resetUi.outcome !== null)
+
+    s.kickStatus()
+    finishLane(s, "status", 0, Harness.claudeResetEnvelope([]))
+    compare(s.resetUi.outcome, null)
+  }
+
+  function test_closing_the_popup_clears_the_reset_caption() {
+    var s = startClaimWithPopupOpen()
+    finishLane(s, "reset", 0, Harness.claudeResetResult("reset"))
+    finishLane(s, "status", 0, Harness.claudeResetEnvelope([]))
+    s.closePopup("monitor-a")
+    compare(s.resetUi.outcome, null)
+  }
 }

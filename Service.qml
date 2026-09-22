@@ -53,6 +53,10 @@ Item {
   property int resetTimeoutMs: 30000
   property var resetUi: Core.resetUiIdle()
   readonly property bool resetBusy: !resetLane.ready
+  // UX-073: the refresh a settled claim fires must not erase that claim's
+  // caption, so it is tracked from queueing to its status run's id.
+  property bool resetRefreshQueued: false
+  property int resetRefreshRunId: 0
   readonly property var lanes: ({
     versionProbe: versionProbeLane,
     status: statusLane,
@@ -438,8 +442,10 @@ Item {
         ? parsed.outcome
         : { result: "provider_error", resetsLeft: null, cooldownUntil: null, clears: [] }
     resetUi = Core.resetUiSettled(target, normalized)
-    if (target && target.providerId)
+    if (target && target.providerId && !maintenanceState.blocked) {
+      resetRefreshQueued = true
       refreshProvider(target.providerId, true)
+    }
   }
 
   function dispatchAction(providerId, action) {
@@ -533,12 +539,18 @@ Item {
       return
     var targets = Core.takePending(pendingForcedTargets)
     pendingForcedTargets = targets.remaining
-    statusLane.start(Core.statusArgv(helper, targets.captured))
+    if (statusLane.start(Core.statusArgv(helper, targets.captured)) && resetRefreshQueued) {
+      resetRefreshQueued = false
+      resetRefreshRunId = statusLane.startedRunId
+    }
   }
 
   function applyStatusResult(outcome) {
     noteLaneSettled(outcome)
     tryMaintenanceDetach()
+    var keepsResetCaption = resetRefreshQueued || outcome.runId === resetRefreshRunId
+    if (outcome.runId === resetRefreshRunId)
+      resetRefreshRunId = 0
 
     if (outcome.exitCode !== 0) {
       maybeFollowUpStatus()
@@ -550,7 +562,8 @@ Item {
       return
     }
     snapshot = parsed.envelope
-    resetUi = Core.resetUiClearOutcome(resetUi)
+    if (!keepsResetCaption)
+      resetUi = Core.resetUiClearOutcome(resetUi)
     maybeFollowUpStatus()
   }
 
