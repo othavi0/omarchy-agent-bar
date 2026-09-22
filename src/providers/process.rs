@@ -18,6 +18,7 @@ pub struct ProcessSpec {
     pub timeout: Duration,
     pub max_stdout_bytes: usize,
     pub max_stderr_bytes: usize,
+    pub own_process_group: bool,
 }
 
 impl ProcessSpec {
@@ -33,6 +34,7 @@ impl ProcessSpec {
             timeout: Duration::from_secs(10),
             max_stdout_bytes: 1024 * 1024,
             max_stderr_bytes: 1024 * 1024,
+            own_process_group: false,
         }
     }
 
@@ -49,6 +51,13 @@ impl ProcessSpec {
 
     pub fn with_env(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         self.env.push((key.into(), value.into()));
+        self
+    }
+
+    /// Start the process as the leader of a new process group, so a timeout
+    /// kills every descendant rather than only the direct child.
+    pub fn with_own_process_group(mut self) -> Self {
+        self.own_process_group = true;
         self
     }
 
@@ -145,10 +154,14 @@ pub async fn run_process(spec: &ProcessSpec) -> Result<ProcessOutput, ProcessErr
     for (key, value) in &spec.env {
         command.env(key, value);
     }
+    if spec.own_process_group {
+        command.process_group(0);
+    }
 
     let mut child = command.spawn().map_err(|err| {
         ProcessError::Spawn(format!("failed to spawn {}: {err}", spec.program.display()))
     })?;
+    let group_leader = child.id().filter(|_| spec.own_process_group);
 
     let mut stdout_pipe = child.stdout.take();
     let mut stderr_pipe = child.stderr.take();
@@ -239,6 +252,9 @@ pub async fn run_process(spec: &ProcessSpec) -> Result<ProcessOutput, ProcessErr
         }
         Ok(Err(err)) => Err(ProcessError::Io(err)),
         Err(_elapsed) => {
+            if let Some(pgid) = group_leader {
+                kill_process_group(pgid);
+            }
             let _ = child.kill().await;
             let _ = child.wait().await;
             Ok(ProcessOutput {
@@ -250,6 +266,17 @@ pub async fn run_process(spec: &ProcessSpec) -> Result<ProcessOutput, ProcessErr
                 stderr_truncated: false,
             })
         }
+    }
+}
+
+fn kill_process_group(pgid: u32) {
+    let Ok(pgid) = libc::pid_t::try_from(pgid) else {
+        return;
+    };
+    // SAFETY: kill(2) takes plain integers and touches no memory; a negative
+    // pid addresses the group this runner created with process_group(0).
+    unsafe {
+        libc::kill(-pgid, libc::SIGKILL);
     }
 }
 
@@ -283,6 +310,45 @@ mod tests {
         let out = TokioProcessRunner.run(&spec).await.unwrap();
         assert!(out.timed_out);
         assert_eq!(out.exit_code, None);
+    }
+
+    fn process_is_gone(pid: &str) -> bool {
+        match std::fs::read_to_string(format!("/proc/{pid}/stat")) {
+            Err(_) => true,
+            Ok(stat) => stat
+                .rsplit_once(") ")
+                .is_some_and(|(_, rest)| rest.starts_with('Z')),
+        }
+    }
+
+    #[tokio::test]
+    async fn timeout_kills_the_whole_process_group() {
+        let dir = tempfile::tempdir().unwrap();
+        let pid_file = dir.path().join("grandchild.pid");
+        let script = dir.path().join("spawn.sh");
+        std::fs::write(
+            &script,
+            format!(
+                "/bin/sleep 30 &\necho $! > '{}'\nwait\n",
+                pid_file.display()
+            ),
+        )
+        .unwrap();
+        let spec = ProcessSpec::new("/bin/bash", [script.display().to_string()])
+            .with_own_process_group()
+            .with_timeout(Duration::from_millis(500));
+        let out = TokioProcessRunner.run(&spec).await.unwrap();
+        assert!(out.timed_out);
+        let pid = std::fs::read_to_string(&pid_file).unwrap();
+        let pid = pid.trim();
+        let deadline = std::time::Instant::now() + Duration::from_secs(3);
+        while !process_is_gone(pid) && std::time::Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        assert!(
+            process_is_gone(pid),
+            "grandchild {pid} survived the timeout"
+        );
     }
 
     #[tokio::test]

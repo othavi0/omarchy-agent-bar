@@ -352,6 +352,7 @@ fn required_dependency_owners() -> BTreeMap<&'static str, &'static str> {
         ("semver", "update version comparison"),
         ("fs2", "exclusive maintenance gate lock"),
         ("sha2", "bundle and ownership hashes"),
+        ("libc", "kill a timed-out process group"),
         ("assert_cmd", "CLI integration tests"),
         ("predicates", "CLI integration tests"),
         ("tokio", "test-util runtime in tests"),
