@@ -1,0 +1,27 @@
+{
+  "five_hour": { "utilization": 9.0, "resets_at": "2026-09-22T19:50:00.988481+00:00" },
+  "seven_day": { "utilization": 24.0, "resets_at": "2026-09-25T12:00:00.988499+00:00" },
+  "juniper_tide": {
+    "eligible": false,
+    "available": false,
+    "next_available_at": null,
+    "weekly_resets_at": null,
+    "resets_per_week": 1
+  },
+  "cedar_ember": {
+    "eligible": true,
+    "grants": [
+      {
+        "id": "opus55-launch-promax-20260921",
+        "label": "Claude Opus 5.5 launch: one usage-limit reset for Pro and Max",
+        "resets_total": 1,
+        "resets_left": 1,
+        "ends_at": "2026-10-22T16:00:00+00:00",
+        "clears": ["five_hour", "seven_day", "seven_day_overage_included"],
+        "paused": false,
+        "usable_now": true
+      }
+    ],
+    "next_grant_id": "opus55-launch-promax-20260921"
+  }
+}

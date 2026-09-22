@@ -435,6 +435,10 @@ struct ClaudeUsageDoc {
     spend: Option<Value>,
     #[serde(default)]
     extra_usage: Option<Value>,
+    #[serde(default)]
+    cedar_ember: Option<ClaudeCedarEmberRaw>,
+    #[serde(default)]
+    juniper_tide: Option<ClaudeJuniperTideRaw>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -477,6 +481,126 @@ struct ClaudeLimitModel {
     display_name: Option<String>,
     #[serde(default)]
     id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct ClaudeCedarEmberRaw {
+    #[serde(default)]
+    eligible: bool,
+    #[serde(default)]
+    grants: Vec<ClaudeCedarEmberGrantRaw>,
+    #[serde(default)]
+    next_grant_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ClaudeCedarEmberGrantRaw {
+    id: String,
+    #[serde(default)]
+    label: Option<String>,
+    #[serde(default)]
+    resets_total: Option<u32>,
+    #[serde(default)]
+    resets_left: Option<u32>,
+    #[serde(default)]
+    ends_at: Option<String>,
+    #[serde(default)]
+    clears: Vec<String>,
+    #[serde(default)]
+    paused: bool,
+    #[serde(default)]
+    usable_now: bool,
+    #[serde(default)]
+    cooldown_until: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct ClaudeJuniperTideRaw {
+    #[serde(default)]
+    eligible: bool,
+    #[serde(default)]
+    available: bool,
+    #[serde(default)]
+    next_available_at: Option<String>,
+    #[serde(default)]
+    weekly_resets_at: Option<String>,
+    #[serde(default)]
+    resets_per_week: Option<u32>,
+}
+
+/// Maps `five_hour`/`seven_day` to this provider's window vocabulary; any
+/// other key (a grant clearing an unmodeled window) is dropped, per the
+/// amendment's `clears` mapping.
+fn claude_reset_clears(raw: &[String]) -> Vec<String> {
+    raw.iter()
+        .filter_map(|key| match key.as_str() {
+            "five_hour" => Some("session".to_owned()),
+            "seven_day" => Some("weekly".to_owned()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// One `UsageReset` per eligible, unpaused `cedar_ember` grant with resets
+/// left or a live cooldown, `next_grant_id` ordered first.
+fn claude_cedar_ember_resets(raw: &ClaudeCedarEmberRaw) -> Vec<UsageReset> {
+    if !raw.eligible {
+        return Vec::new();
+    }
+    let mut grants: Vec<&ClaudeCedarEmberGrantRaw> = raw.grants.iter().collect();
+    if let Some(next) = raw.next_grant_id.as_deref() {
+        grants.sort_by_key(|g| g.id != next);
+    }
+    grants
+        .into_iter()
+        .filter(|g| {
+            !g.paused && (g.resets_left.is_some_and(|n| n > 0) || g.cooldown_until.is_some())
+        })
+        .filter_map(|g| {
+            let grant_id = sanitize_bucket_id(&g.id);
+            let id = format!("cedar-ember:{grant_id}");
+            let label = g.label.as_deref().unwrap_or("Usage reset");
+            let cooldown_until = g.cooldown_until.as_deref().and_then(parse_reset_timestamp);
+            let claimable = g.usable_now && cooldown_until.is_none();
+            UsageReset::try_new(
+                id,
+                label,
+                g.resets_left.unwrap_or(0),
+                g.resets_total,
+                claude_reset_clears(&g.clears),
+                g.ends_at.as_deref().and_then(parse_reset_timestamp),
+                None,
+                cooldown_until,
+                claimable,
+            )
+            .ok()
+        })
+        .collect()
+}
+
+/// One `UsageReset` for the weekly `juniper_tide` reset, when eligible and
+/// either due now or scheduled.
+fn claude_juniper_tide_reset(raw: &ClaudeJuniperTideRaw) -> Option<UsageReset> {
+    if !raw.eligible || (!raw.available && raw.next_available_at.is_none()) {
+        return None;
+    }
+    let refills_at = raw
+        .next_available_at
+        .as_deref()
+        .or(raw.weekly_resets_at.as_deref())
+        .and_then(parse_reset_timestamp);
+    UsageReset::try_new(
+        "juniper-tide",
+        "Weekly reset",
+        u32::from(raw.available),
+        raw.resets_per_week,
+        vec!["session".to_owned()],
+        None,
+        refills_at,
+        None,
+        raw.available,
+    )
+    .ok()
 }
 
 pub fn claude_from_usage_json(
@@ -587,6 +711,21 @@ pub fn claude_from_usage_json(
         }
     }
 
+    // Ordering: next_grant_id first (handled inside the cedar_ember mapper),
+    // then remaining cedar_ember grants, then juniper_tide last.
+    let mut resets = doc
+        .cedar_ember
+        .as_ref()
+        .map(claude_cedar_ember_resets)
+        .unwrap_or_default();
+    if let Some(reset) = doc
+        .juniper_tide
+        .as_ref()
+        .and_then(claude_juniper_tide_reset)
+    {
+        resets.push(reset);
+    }
+
     ProviderResult::Ready {
         id: ProviderId::Claude,
         name: CLAUDE.display_name.to_owned(),
@@ -594,7 +733,7 @@ pub fn claude_from_usage_json(
         plan,
         windows,
         last_success_at: now,
-        resets: Vec::new(),
+        resets,
     }
 }
 
@@ -841,6 +980,81 @@ mod tests {
                 assert!(message.contains("expired"), "message: {message}");
             }
             other => panic!("expected unauthenticated, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn claude_cedar_ember_grant_becomes_a_claimable_reset() {
+        let body =
+            include_bytes!("../../tests/fixtures/providers/claude/usage-with-cedar-ember.json");
+        let result = claude_from_usage_json(body, datetime!(2026-09-22 18:00:00 UTC), None, true);
+        match result {
+            ProviderResult::Ready { resets, .. } => {
+                assert_eq!(resets.len(), 1, "{resets:?}");
+                let reset = &resets[0];
+                assert_eq!(reset.id(), "cedar-ember:opus55-launch-promax-20260921");
+                assert_eq!(
+                    reset.label(),
+                    "Claude Opus 5.5 launch: one usage-limit reset for Pro and Max"
+                );
+                assert_eq!(reset.available(), 1);
+                assert_eq!(reset.total(), Some(1));
+                assert_eq!(reset.clears(), &["session".to_owned(), "weekly".to_owned()]);
+                assert!(reset.claimable());
+                assert!(reset.cooldown_until().is_none());
+                assert!(reset.expires_at().is_some());
+            }
+            other => panic!("expected ready, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn claude_cedar_ember_ineligible_yields_no_resets() {
+        let body = br#"{"cedar_ember":{"eligible":false,"grants":[{"id":"x","resets_left":1,"paused":false,"usable_now":true}]}}"#;
+        let result = claude_from_usage_json(body, datetime!(2026-09-22 18:00:00 UTC), None, true);
+        match result {
+            ProviderResult::Ready { resets, .. } => assert!(resets.is_empty(), "{resets:?}"),
+            other => panic!("expected ready, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn claude_cedar_ember_paused_grant_is_skipped() {
+        let body = br#"{"cedar_ember":{"eligible":true,"grants":[
+            {"id":"a","resets_left":1,"paused":true,"usable_now":true}
+        ]}}"#;
+        let result = claude_from_usage_json(body, datetime!(2026-09-22 18:00:00 UTC), None, true);
+        match result {
+            ProviderResult::Ready { resets, .. } => assert!(resets.is_empty(), "{resets:?}"),
+            other => panic!("expected ready, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn claude_juniper_tide_weekly_reset_maps_when_available() {
+        let body = br#"{"juniper_tide":{"eligible":true,"available":true,"weekly_resets_at":"2026-09-25T12:00:00Z","resets_per_week":1}}"#;
+        let result = claude_from_usage_json(body, datetime!(2026-09-22 18:00:00 UTC), None, true);
+        match result {
+            ProviderResult::Ready { resets, .. } => {
+                assert_eq!(resets.len(), 1);
+                assert_eq!(resets[0].id(), "juniper-tide");
+                assert_eq!(resets[0].label(), "Weekly reset");
+                assert_eq!(resets[0].available(), 1);
+                assert_eq!(resets[0].total(), Some(1));
+                assert_eq!(resets[0].clears(), &["session".to_owned()]);
+                assert!(resets[0].claimable());
+            }
+            other => panic!("expected ready, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn claude_juniper_tide_ineligible_yields_no_reset() {
+        let body = br#"{"juniper_tide":{"eligible":false,"available":false,"resets_per_week":1}}"#;
+        let result = claude_from_usage_json(body, datetime!(2026-09-22 18:00:00 UTC), None, true);
+        match result {
+            ProviderResult::Ready { resets, .. } => assert!(resets.is_empty(), "{resets:?}"),
+            other => panic!("expected ready, got {other:?}"),
         }
     }
 
