@@ -194,15 +194,18 @@ Requirements:
   the only way a check runs. See also
   `docs/specs/v10/amendments/2026-09-10-automatic-updates-design.md`
   (superseded).
-- `UX-042`: When available, show the target version, a `Release notes`
-  link, a `Marketplace page` link, and, on its own read-only line under
-  the message, the command the user runs themself: `omarchy plugin update
-  othavi0.agent-bar && omarchy-restart-shell`. The message reads `Update
-  to <version> is available. Run this in a terminal:`. The plugin never
-  runs that command.
-- `UX-043`: **Retired**, removed by the 2026-09-14 amendment. There is
-  nothing left for the plugin to apply, so there is no update confirmation
-  dialog.
+- `UX-042`: When available, show the installed version, `Update to
+  <version>` as the primary button, `Release notes`, `Marketplace page`,
+  and, on its own read-only line under them, the fallback command for a
+  terminal: `omarchy plugin update othavi0.agent-bar --yes &&
+  omarchy-restart-shell`. Amended by the 2026-09-22 update-apply design
+  (`docs/specs/v10/amendments/2026-09-22-update-apply-in-popup-design.md`).
+- `UX-043`: Reinstated by the 2026-09-22 update-apply design. `Update to
+  <version>` opens a `ConfirmDialog` with one confirmation and no arming;
+  confirm runs `update apply` on its own lane through the maintenance
+  handoff (`UX-043A`), and the result renders per `UX-043B`: `restart_required`
+  offers `Restart shell` and `Later` and keeps polling stopped until the
+  restart, other results return to the tab with one plain-text line.
 - `UX-044`: `Uninstall Agent Bar` is visually separated as a danger action.
 - `UX-045`: Uninstall confirmation defaults to preserving settings.
 - `UX-046`: `Also delete saved settings and backups` is unchecked by default.

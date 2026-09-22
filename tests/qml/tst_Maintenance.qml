@@ -1,11 +1,13 @@
 import QtQuick
 import QtTest
 import "../../CoreMaintenance.js" as Core
+import "ViewHarness.js" as ViewHarness
 
 TestCase {
   id: testCase
   name: "AgentBarMaintenance"
   when: windowShown
+  visible: true
 
   property string repoRoot: {
     var u = Qt.resolvedUrl(".")
@@ -50,7 +52,183 @@ TestCase {
   function test_marketplace_url_and_update_command_text_exact() {
     compare(Core.marketplaceUrl(), "https://plugins.omarchy.org/plugin.html?id=othavi0.agent-bar")
     compare(Core.updateCommandText(),
-            "GIT_PAGER=cat omarchy plugin update othavi0.agent-bar && omarchy-restart-shell")
+            "omarchy plugin update othavi0.agent-bar --yes && omarchy-restart-shell")
+  }
+
+  function test_update_apply_and_status_argv_and_confirmation() {
+    compare(Core.updateApplyArgv("/p/bin/agent-bar").join(" "), "/p/bin/agent-bar update apply")
+    compare(Core.updateApplyArgv(""), null)
+    compare(Core.updateStatusArgv("/p/bin/agent-bar").join(" "), "/p/bin/agent-bar update status")
+    compare(Core.updateStatusArgv(""), null)
+    compare(JSON.stringify(Core.updateConfirmation("10.6.2")),
+            '{"schemaVersion":1,"operation":"update","confirmed":true,"targetVersion":"10.6.2"}')
+  }
+
+  function lane(stdout, exitCode, timedOut) {
+    return { stdout: stdout, exitCode: exitCode === undefined ? 0 : exitCode, timedOut: !!timedOut }
+  }
+
+  function finishedDoc(result, installed, restartRequired) {
+    return JSON.stringify({
+      schemaVersion: 1,
+      operation: "update",
+      status: "finished",
+      result: result,
+      fromVersion: "10.6.1",
+      installedVersion: installed,
+      restartRequired: restartRequired === undefined ? result === "updated" : restartRequired,
+      finishedAt: "2026-09-22T12:00:00Z"
+    }) + "\n"
+  }
+
+  function test_update_start_reads_started_and_already_running() {
+    compare(Core.updateStartFromLane(lane('{"schemaVersion":1,"operation":"update","result":"started","unit":"agent-bar-update-1.service"}\n')), "started")
+    compare(Core.updateStartFromLane(lane('{"schemaVersion":1,"operation":"update","result":"already_running"}\n')), "already_running")
+    compare(Core.updateStartFromLane(lane('{"result":"already_running"}\n')), "failed", "no envelope")
+    compare(Core.updateStartFromLane(lane('{"schemaVersion":1,"result":"started"}\n')), "failed", "no operation")
+    compare(Core.updateStartFromLane(lane('{"operation":"update","result":"started"}\n')), "failed", "no schemaVersion")
+    compare(Core.updateStartFromLane(lane('{"result":"started"}', 4)), "failed")
+    compare(Core.updateStartFromLane(lane("", 1, true)), "failed")
+    compare(Core.updateStartFromLane(lane("Starting unit\n")), "failed")
+    compare(Core.updateStartFromLane(lane('{"schemaVersion":2,"operation":"update","result":"started"}')), "failed")
+    compare(Core.updateStartFromLane(lane('{"schemaVersion":1,"operation":"uninstall","result":"started"}')), "failed")
+    compare(Core.updateStartFromLane(lane('{"result":"updated"}')), "failed")
+    compare(Core.updateStartFromLane(null), "failed")
+  }
+
+  function test_update_status_reads_each_status() {
+    compare(Core.updateStatusFromLane(lane('{"schemaVersion":1,"operation":"update","status":"none"}\n')).status, "none")
+    var running = Core.updateStatusFromLane(lane('{"schemaVersion":1,"operation":"update","status":"running","startedAt":"2026-09-22T12:00:00Z","targetVersion":"10.6.2"}'))
+    compare(running.status, "running")
+    compare(running.targetVersion, "10.6.2")
+    var done = Core.updateStatusFromLane(lane(finishedDoc("updated", "10.6.2")))
+    compare(done.status, "finished")
+    compare(JSON.stringify(done.outcome), '{"result":"updated","installedVersion":"10.6.2","restartRequired":true}')
+    var kinds = ["up_to_date", "local_changes", "fetch_failed", "validation_failed", "timed_out", "locked", "failed"]
+    for (var i = 0; i < kinds.length; i++) {
+      var o = Core.updateStatusFromLane(lane(finishedDoc(kinds[i], "10.6.1"))).outcome
+      compare(o.result, kinds[i])
+      compare(o.restartRequired, false)
+    }
+    compare(Core.updateStatusFromLane(lane(finishedDoc("exploded", "10.6.1"))).outcome.result, "failed")
+    compare(Core.updateStatusFromLane(lane(finishedDoc("failed", "10.6.2", true))).outcome.restartRequired, true)
+    compare(Core.updateStatusFromLane(lane("")).status, "unreadable")
+    compare(Core.updateStatusFromLane(lane("not json")).status, "unreadable")
+    compare(Core.updateStatusFromLane(lane('{"status":"none"}', 3)).status, "unreadable")
+    compare(Core.updateStatusFromLane(lane("", 1, true)).status, "unreadable")
+    compare(Core.updateStatusFromLane(lane('{"schemaVersion":1,"operation":"update","status":"paused"}')).status, "unreadable")
+    compare(Core.updateStatusFromLane(lane('{"schemaVersion":2,"operation":"update","status":"none"}')).status, "unreadable")
+    compare(Core.updateStatusFromLane(lane('{"status":"none"}\n')).status, "unreadable", "no envelope")
+    compare(Core.updateStatusFromLane(lane('{"schemaVersion":1,"status":"running","targetVersion":"10.6.2"}\n')).status, "unreadable", "no operation")
+    compare(Core.updateStatusFromLane(lane('{"operation":"update","status":"none"}\n')).status, "unreadable", "no schemaVersion")
+    compare(Core.updateStatusFromLane(lane('{"schemaVersion":"1","operation":"update","status":"none"}\n')).status, "unreadable", "string schemaVersion")
+    var withTxid = Core.updateStatusFromLane(lane('{"schemaVersion":1,"operation":"update","status":"finished","txid":"0123456789abcdef0123456789abcdef","result":"updated","fromVersion":"10.6.1","installedVersion":"10.6.2","restartRequired":true,"finishedAt":"2026-09-22T12:00:00Z"}\n'))
+    compare(JSON.stringify(withTxid), '{"status":"finished","outcome":{"result":"updated","installedVersion":"10.6.2","restartRequired":true}}')
+  }
+
+  function test_update_result_message_table() {
+    function msg(result, installed) {
+      return Core.updateResultMessage({ result: result, installedVersion: installed || "", restartRequired: result === "updated" }, "10.6.1")
+    }
+    compare(msg("updated", "10.6.2"), "10.6.2 installed. Restart the shell to load it.")
+    compare(msg("up_to_date"), "Agent Bar is up to date.")
+    compare(msg("local_changes"),
+            "The plugin folder has local changes. Run git status in ~/.config/omarchy/plugins/othavi0.agent-bar.")
+    compare(msg("fetch_failed"), "Could not reach GitHub. Try again.")
+    compare(msg("validation_failed"), "The update failed validation and was rolled back. You are still on 10.6.1.")
+    compare(msg("timed_out"), "The update timed out. You are still on 10.6.1.")
+    compare(msg("locked"), "Another maintenance task is running. Try again in a minute.")
+    compare(msg("failed"), "The update did not finish. You are still on 10.6.1.")
+    compare(msg("validation_failed", "10.6.0"), "The update failed validation and was rolled back. You are still on 10.6.0.")
+  }
+
+  function test_update_confirm_model() {
+    var m = Core.updateConfirmModel("10.6.2")
+    compare(m.title, "Update to 10.6.2?")
+    compare(m.message, "Omarchy fetches the release, validates it, and installs it. The bar keeps working until you restart the shell.")
+    compare(m.confirmText, "Update")
+    compare(m.cancelText, "Cancel")
+  }
+
+  function availableUi() {
+    return Core.maintenanceUiFromCheck(Core.maintenanceUiIdle("10.3.1"), checkFixture("available.json"), 0, "10.3.1")
+  }
+
+  function test_update_confirm_opens_only_with_a_target() {
+    compare(Core.maintenanceUiOpenUpdateConfirm(Core.maintenanceUiIdle("10.3.1")).updateConfirmOpen, false)
+    var open = Core.maintenanceUiOpenUpdateConfirm(availableUi())
+    compare(open.updateConfirmOpen, true)
+    compare(open.phase, "update_available")
+    var closed = Core.maintenanceUiCloseUpdateConfirm(open)
+    compare(closed.updateConfirmOpen, false)
+    compare(closed.phase, "update_available")
+  }
+
+  function outcome(result, installed) {
+    return Core.updateStatusFromLane(lane(finishedDoc(result, installed))).outcome
+  }
+
+  function test_update_transitions_to_restart_required() {
+    var ui = Core.maintenanceUiUpdating(Core.maintenanceUiOpenUpdateConfirm(availableUi()))
+    compare(ui.phase, "updating")
+    compare(ui.updateConfirmOpen, false)
+    compare(ui.message, "Updating\u2026 this takes a few seconds.")
+    compare(ui.updateCommand, "omarchy plugin update othavi0.agent-bar --yes && omarchy-restart-shell")
+    var done = Core.maintenanceUiFromUpdateResult(ui, outcome("updated", "10.4.0"))
+    compare(done.phase, "restart_required")
+    compare(done.installedVersion, "10.3.1")
+    compare(done.targetVersion, "10.4.0")
+    compare(done.message, "10.4.0 installed. Restart the shell to load it.")
+    compare(done.updateCommand, "")
+  }
+
+  function test_update_transitions_to_up_to_date() {
+    var ui = Core.maintenanceUiUpdating(availableUi())
+    var done = Core.maintenanceUiFromUpdateResult(ui, outcome("up_to_date", "10.3.1"))
+    compare(done.phase, "up_to_date")
+    compare(done.message, "Agent Bar is up to date.")
+    compare(done.targetVersion, "")
+    compare(done.releaseNotesUrl, "")
+    compare(done.updateCommand, "")
+  }
+
+  function test_update_failure_keeps_target_and_fallback() {
+    var ui = Core.maintenanceUiUpdating(availableUi())
+    var done = Core.maintenanceUiFromUpdateResult(ui, outcome("fetch_failed", "10.3.1"))
+    compare(done.phase, "update_failed")
+    compare(done.message, "Could not reach GitHub. Try again.")
+    compare(done.targetVersion, "10.4.0")
+    compare(done.releaseNotesUrl, "https://github.com/othavi0/omarchy-agent-bar/releases/tag/v10.4.0")
+    compare(done.updateCommand, "omarchy plugin update othavi0.agent-bar --yes && omarchy-restart-shell")
+    compare(Core.maintenanceUiOpenUpdateConfirm(done).updateConfirmOpen, true)
+    var failed = Core.maintenanceUiFromUpdateResult(ui, Core.failedUpdateOutcome())
+    compare(failed.message, "The update did not finish. You are still on 10.3.1.")
+  }
+
+  function test_a_failure_offers_the_update_again_only_when_retrying_can_help() {
+    var retry = ["fetch_failed", "timed_out", "locked", "failed"]
+    for (var i = 0; i < retry.length; i++) {
+      var ui = Core.maintenanceUiFromUpdateResult(Core.maintenanceUiUpdating(availableUi()), outcome(retry[i], "10.3.1"))
+      compare(ui.phase, "update_failed", retry[i])
+      compare(Core.maintenanceUiCanUpdate(ui), true, retry[i])
+    }
+    var stuck = ["local_changes", "validation_failed"]
+    for (var j = 0; j < stuck.length; j++) {
+      var held = Core.maintenanceUiFromUpdateResult(Core.maintenanceUiUpdating(availableUi()), outcome(stuck[j], "10.3.1"))
+      compare(held.phase, "update_failed", stuck[j])
+      compare(Core.maintenanceUiCanUpdate(held), false, stuck[j])
+      compare(Core.maintenanceUiOpenUpdateConfirm(held).updateConfirmOpen, false, stuck[j])
+      var rechecked = Core.maintenanceUiFromCheck(held, checkFixture("available.json"), 0, "10.3.1")
+      compare(Core.maintenanceUiCanUpdate(rechecked), true, "the next check offers it again")
+    }
+  }
+
+  function test_a_run_seen_at_startup_enters_updating_with_its_target() {
+    var ui = Core.maintenanceUiUpdating(Core.maintenanceUiIdle("10.3.1"), "10.4.0")
+    compare(ui.phase, "updating")
+    compare(ui.targetVersion, "10.4.0")
+    compare(ui.message, "Updating\u2026 this takes a few seconds.")
+    compare(Core.maintenanceUiUpdating(availableUi(), "").targetVersion, "10.4.0")
   }
 
   function test_uninstall_confirmation_json() {
@@ -74,8 +252,9 @@ TestCase {
     compare(ui.installedVersion, "10.3.1")
     compare(ui.targetVersion, "10.4.0")
     compare(ui.releaseNotesUrl, "https://github.com/othavi0/omarchy-agent-bar/releases/tag/v10.4.0")
-    compare(ui.message, "Update to 10.4.0 is available. Run this in a terminal:")
-    compare(ui.updateCommand, "GIT_PAGER=cat omarchy plugin update othavi0.agent-bar && omarchy-restart-shell")
+    compare(ui.message, "10.4.0 is available.")
+    compare(ui.updateCommand, "omarchy plugin update othavi0.agent-bar --yes && omarchy-restart-shell")
+    compare(ui.updateConfirmOpen, false)
   }
 
   function test_update_check_up_to_date() {
@@ -162,11 +341,13 @@ TestCase {
     compare(un.payload.purgeSettingsAndBackups, true)
   }
 
-  function test_only_uninstall_is_a_known_intention_kind() {
+  function test_uninstall_is_the_only_maintenance_intention() {
     var ui = Core.maintenanceUiIdle("10.0.0")
     ui.targetVersion = "10.1.0"
+    compare(Core.maintenanceIntention("update", ui), null)
     compare(Core.maintenanceIntention("reinstall", ui), null)
     compare(Core.maintenanceIntention("", ui), null)
+    compare(Core.maintenanceIntention("uninstall", ui).kind, "uninstall")
   }
 
   function test_service_login_uses_exec_detached() {
@@ -210,20 +391,114 @@ TestCase {
     verify(src.indexOf("Removes Agent Bar. Your settings stay.") >= 0)
   }
 
-  // The maintainer-blocked update path (marketplace maintainer issue #4979):
-  // the plugin only points the user at the marketplace page and the manual
-  // command now, mirroring how the release-notes and restart-shell buttons
-  // wire their source contract to a plain, testable Service call.
-  function test_maintenance_view_marketplace_button_source_contract() {
+  function fakeService(ui) {
+    var svc = Qt.createQmlObject(
+      'import QtQuick; QtObject { property var maintenanceUi: null; '
+      + 'property var maintenanceState: ({ phase: "idle", blocked: false }) }', testCase)
+    svc.maintenanceUi = ui
+    return svc
+  }
+
+  function viewState(view) {
+    function shown(texts) {
+      var found = ViewHarness.buttonsWithText(view, texts)
+      compare(found.length <= 1, true, texts.join("|"))
+      return found.length ? (found[0].visible ? (found[0].enabled ? "on" : "off") : "-") : "-"
+    }
+    var dialogs = ViewHarness.findAll(view, function (item) {
+      return item.confirmText !== undefined && String(item.title).indexOf("Update to ") === 0
+    })
+    return [
+      shown(["Update to 10.4.0", "Update to ", "Updating…"]),
+      shown(["Restart shell"]),
+      shown(["Later"]),
+      shown(["Check for updates", "Checking…"]),
+      dialogs.length === 1 && dialogs[0].visible ? "open" : "-"
+    ].join(" ")
+  }
+
+  function failedUi(result) {
+    return Core.maintenanceUiFromUpdateResult(Core.maintenanceUiUpdating(availableUi()), outcome(result, "10.3.1"))
+  }
+
+  // Columns: update, restart, later, check, update dialog.
+  function test_maintenance_view_buttons_per_phase() {
+    var idle = Core.maintenanceUiIdle("10.3.1")
+    var table = [
+      ["idle", idle, "- - - on -"],
+      ["checking", Core.maintenanceUiChecking(idle), "- - - off -"],
+      ["up_to_date", Core.maintenanceUiFromCheck(idle, checkFixture("up-to-date.json"), 0, "10.3.1"), "- - - on -"],
+      ["error", Core.maintenanceUiFromCheck(idle, "", 1, "10.3.1"), "- - - on -"],
+      ["update_available", availableUi(), "on - - - -"],
+      ["confirm", Core.maintenanceUiOpenUpdateConfirm(availableUi()), "on - - - open"],
+      ["updating", Core.maintenanceUiUpdating(availableUi()), "off - - - -"],
+      ["restart_required", failedUi("updated"), "- on on - -"],
+      ["fetch_failed", failedUi("fetch_failed"), "on - - on -"],
+      ["timed_out", failedUi("timed_out"), "on - - on -"],
+      ["locked", failedUi("locked"), "on - - on -"],
+      ["failed", failedUi("failed"), "on - - on -"],
+      ["local_changes", failedUi("local_changes"), "- - - on -"],
+      ["validation_failed", failedUi("validation_failed"), "- - - on -"],
+      ["failed at startup", Core.maintenanceUiFromUpdateResult(idle, outcome("failed", "10.3.1")), "- - - on -"]
+    ]
+    for (var i = 0; i < table.length; i++) {
+      var view = ViewHarness.createView(repoRoot, "MaintenanceView.qml", testCase, testCase,
+                                        { width: 480, agentService: fakeService(table[i][1]) })
+      compare(viewState(view), table[i][2], table[i][0])
+      view.destroy()
+    }
+  }
+
+  function test_maintenance_view_buttons_call_the_service() {
+    var svc = Qt.createQmlObject(
+      'import QtQuick; QtObject { property var maintenanceUi: null; '
+      + 'property var maintenanceState: ({ phase: "idle", blocked: false }); property var calls: []; '
+      + 'function note(n) { var c = calls.slice(); c.push(n); calls = c } '
+      + 'function openUpdateConfirm() { note("openUpdateConfirm") } '
+      + 'function restartShell() { note("restartShell") } '
+      + 'function dismissPopup() { note("dismissPopup") } '
+      + 'function checkForUpdates() { note("checkForUpdates") } '
+      + 'function openMarketplacePage() { note("openMarketplacePage") } '
+      + 'function confirmUpdate() { note("confirmUpdate") } '
+      + 'function closeUpdateConfirm() { note("closeUpdateConfirm") } }', testCase)
+    svc.maintenanceUi = Core.maintenanceUiOpenUpdateConfirm(failedUi("fetch_failed"))
+    var view = ViewHarness.createView(repoRoot, "MaintenanceView.qml", testCase, testCase,
+                                      { width: 480, agentService: svc })
+    ViewHarness.buttonsWithText(view, ["Update to 10.4.0"])[0].clicked()
+    ViewHarness.buttonsWithText(view, ["Check for updates"])[0].clicked()
+    ViewHarness.buttonsWithText(view, ["Marketplace page"])[0].clicked()
+    var dialog = ViewHarness.findAll(view, function (item) {
+      return item.confirmText !== undefined && String(item.title) === "Update to 10.4.0?"
+    })[0]
+    compare(dialog.message, "Omarchy fetches the release, validates it, and installs it. The bar keeps working until you restart the shell.")
+    compare(dialog.confirmText, "Update")
+    compare(dialog.destructive, false)
+    dialog.confirmed()
+    dialog.canceled()
+    svc.maintenanceUi = failedUi("updated")
+    ViewHarness.buttonsWithText(view, ["Restart shell"])[0].clicked()
+    ViewHarness.buttonsWithText(view, ["Later"])[0].clicked()
+    compare(JSON.stringify(svc.calls), JSON.stringify([
+      "openUpdateConfirm", "checkForUpdates", "openMarketplacePage",
+      "confirmUpdate", "closeUpdateConfirm", "restartShell", "dismissPopup"]))
+    view.destroy()
+  }
+
+  function test_maintenance_view_text_is_plain_and_buttons_are_named() {
     var src = read("MaintenanceView.qml")
-    var start = src.indexOf("id: marketplaceButton")
-    verify(start >= 0)
-    var onClicked = src.indexOf("onClicked:", start)
-    verify(onClicked >= 0)
-    var closeAt = src.indexOf("}", onClicked)
-    verify(closeAt > onClicked)
-    var body = src.substring(onClicked, closeAt)
-    verify(body.indexOf("root.agentService.openMarketplacePage()") >= 0)
+    var texts = src.match(/\bText \{/g).length
+    var plain = src.match(/textFormat: Text\.PlainText/g).length
+    compare(plain, texts, "every Text renders plain")
+    var buttons = src.match(/\bButton \{/g).length
+    var named = src.match(/Accessible\.name:/g).length
+    verify(named >= buttons, "every button carries an accessible name")
+  }
+
+  function test_popup_reads_update_state_from_the_service() {
+    var src = read("Popup.qml")
+    verify(src.indexOf("CoreMaintenance.js") < 0, "the popup never reads the maintenance view model")
+    verify(src.indexOf("agentService.updateRunning || agentService.restartPending") >= 0)
+    verify(src.indexOf('? "about" : "providers"') >= 0)
   }
 
   function test_service_open_marketplace_page_source_contract() {

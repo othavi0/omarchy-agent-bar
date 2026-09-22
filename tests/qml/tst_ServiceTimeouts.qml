@@ -229,10 +229,9 @@ TestCase {
     verify(s.appliedSettings !== null)
   }
 
-  // UX-042: a manual check only paints the read-only status; the plugin
-  // never queues a handoff, touches pendingMaintenanceIntention, or runs
-  // the command itself. The command sits in ui.updateCommand for the user
-  // to copy into a terminal.
+  // UX-042: a check only paints the status. Nothing installs until the
+  // user confirms the update dialog; the fallback command sits in
+  // ui.updateCommand for a terminal.
   function test_manual_check_finds_an_update_stays_read_only() {
     var s = createService()
     bootstrapSettings(s)
@@ -243,7 +242,7 @@ TestCase {
     compare(s.maintenanceState.blocked, false)
     compare(s.lanes.maintenanceHandoff.busy, false)
     compare(s.maintenanceUi.updateCommand,
-        "GIT_PAGER=cat omarchy plugin update othavi0.agent-bar && omarchy-restart-shell")
+        "omarchy plugin update othavi0.agent-bar --yes && omarchy-restart-shell")
   }
 
   function test_handoff_waiting_on_status_starts_when_status_finishes() {
@@ -705,5 +704,372 @@ TestCase {
     var s = startClaimWithPopupOpen()
     finishLane(s, "reset", 1, "{not-json")
     compare(s.resetUi.outcome.result, "provider_error")
+  }
+
+  readonly property string startedDoc:
+      '{"schemaVersion":1,"operation":"update","result":"started","unit":"agent-bar-update-7.service"}\n'
+  readonly property string runningDoc:
+      '{"schemaVersion":1,"operation":"update","status":"running","startedAt":"2026-09-22T12:00:00Z","targetVersion":"10.3.18"}\n'
+  readonly property string noneDoc: '{"schemaVersion":1,"operation":"update","status":"none"}\n'
+
+  function finishedDoc(result, installed) {
+    return JSON.stringify({
+      schemaVersion: 1,
+      operation: "update",
+      status: "finished",
+      result: result,
+      fromVersion: "10.3.17",
+      installedVersion: installed,
+      restartRequired: result === "updated",
+      finishedAt: "2026-09-22T12:01:00Z"
+    }) + "\n"
+  }
+
+  function serviceWithUpdateOffer() {
+    var s = createService()
+    bootstrapSettings(s)
+    s.beginCollection()
+    finishLane(s, "status", 0, validEnvelope())
+    s.checkForUpdates()
+    finishLane(s, "maintenanceCheck", 0, availableCheck())
+    compare(s.maintenanceUi.phase, "update_available")
+    return s
+  }
+
+  function startUpdate() {
+    var s = serviceWithUpdateOffer()
+    s.openUpdateConfirm()
+    verify(s.confirmUpdate())
+    return s
+  }
+
+  function runUpdateToStatus(stdout, exitCode) {
+    var s = startUpdate()
+    finishLane(s, "update", 0, startedDoc)
+    s.pollUpdateStatus()
+    compare(JSON.stringify(s.lanes.update.process.command), '["/nonexistent","update","status"]')
+    finishLane(s, "update", exitCode === undefined ? 0 : exitCode, stdout)
+    return s
+  }
+
+  function test_update_confirm_dialog_opens_and_closes() {
+    var s = serviceWithUpdateOffer()
+    s.openUpdateConfirm()
+    compare(s.maintenanceUi.updateConfirmOpen, true)
+    s.closeUpdateConfirm()
+    compare(s.maintenanceUi.updateConfirmOpen, false)
+    compare(s.maintenanceUi.phase, "update_available")
+    compare(s.confirmUpdate(), false)
+    compare(s.lanes.update.busy, false)
+  }
+
+  function test_update_confirm_runs_the_apply_lane_with_argv_and_stdin() {
+    var s = startUpdate()
+    compare(s.maintenanceUi.phase, "updating")
+    compare(s.maintenanceUi.updateConfirmOpen, false)
+    compare(s.maintenanceUi.message, "Updating… this takes a few seconds.")
+    compare(s.maintenanceState.blocked, false)
+    compare(s.pollEnabled, true)
+    compare(s.lanes.update.busy, true)
+    compare(s.lanes.maintenanceHandoff.busy, false)
+    compare(JSON.stringify(s.lanes.update.process.command),
+            '["/nonexistent","update","apply"]')
+    compare(s.lanes.update.process.written,
+            '{"schemaVersion":1,"operation":"update","confirmed":true,"targetVersion":"10.3.18"}\n')
+    compare(s.lanes.update.process.stdinEnabled, false)
+  }
+
+  function test_update_starts_beside_a_busy_status_lane() {
+    var s = serviceWithUpdateOffer()
+    s.kickStatus()
+    compare(s.lanes.status.busy, true)
+    s.openUpdateConfirm()
+    verify(s.confirmUpdate())
+    compare(s.maintenanceState.blocked, false)
+    compare(s.lanes.update.busy, true)
+    finishLane(s, "status", 0, validEnvelope())
+    compare(s.refresh("claude"), "ok")
+    compare(s.lanes.status.busy, true)
+  }
+
+  function test_started_polls_update_status_every_two_seconds_until_finished() {
+    var s = startUpdate()
+    s.updateTimeoutMs = 5000
+    finishLane(s, "update", 0, startedDoc)
+    compare(s.maintenanceUi.phase, "updating")
+    compare(s.updateRunning, true)
+    compare(s.lanes.update.busy, false)
+    compare(s.updatePollIntervalMs, 2000)
+    s.updatePollIntervalMs = 20
+    tryVerify(function () { return s.lanes.update.busy }, 1000)
+    compare(JSON.stringify(s.lanes.update.process.command), '["/nonexistent","update","status"]')
+    compare(s.lanes.update.process.stdinEnabled, false)
+    finishLane(s, "update", 0, runningDoc)
+    compare(s.maintenanceUi.phase, "updating")
+    compare(s.restartPending, false)
+    tryVerify(function () { return s.lanes.update.busy }, 1000)
+    finishLane(s, "update", 0, finishedDoc("updated", "10.3.18"))
+    compare(s.maintenanceUi.phase, "restart_required")
+    compare(s.maintenanceUi.message, "10.3.18 installed. Restart the shell to load it.")
+    compare(s.restartPending, true)
+    compare(s.pendingVersion, "10.3.18")
+    compare(s.updateRunning, false)
+    wait(100)
+    compare(s.lanes.update.busy, false, "polling stops after the result")
+  }
+
+  function test_already_running_polls_like_started() {
+    var s = startUpdate()
+    finishLane(s, "update", 0, '{"schemaVersion":1,"operation":"update","result":"already_running"}\n')
+    compare(s.maintenanceUi.phase, "updating")
+    compare(s.updateRunning, true)
+    s.pollUpdateStatus()
+    compare(JSON.stringify(s.lanes.update.process.command), '["/nonexistent","update","status"]')
+  }
+
+  function test_updated_sets_restart_pending_and_keeps_polling() {
+    var s = runUpdateToStatus(finishedDoc("updated", "10.3.18"))
+    compare(s.maintenanceUi.phase, "restart_required")
+    compare(s.maintenanceUi.installedVersion, "10.3.17")
+    compare(s.restartPending, true)
+    compare(s.pendingVersion, "10.3.18")
+    compare(s.maintenanceState.blocked, false)
+    compare(s.pollEnabled, true)
+    compare(s.refresh("claude"), "ok")
+    compare(s.lanes.status.busy, true)
+    compare(s.lanes.maintenanceHandoff.busy, false)
+  }
+
+  function test_up_to_date_result_returns_to_up_to_date() {
+    var s = runUpdateToStatus(finishedDoc("up_to_date", "10.3.17"))
+    compare(s.maintenanceUi.phase, "up_to_date")
+    compare(s.maintenanceUi.message, "Agent Bar is up to date.")
+    compare(s.restartPending, false)
+    compare(s.updateRunning, false)
+  }
+
+  function test_each_failure_result_renders_its_line() {
+    var table = [
+      ["local_changes", "The plugin folder has local changes. Run git status in ~/.config/omarchy/plugins/othavi0.agent-bar."],
+      ["fetch_failed", "Could not reach GitHub. Try again."],
+      ["validation_failed", "The update failed validation and was rolled back. You are still on 10.3.17."],
+      ["timed_out", "The update timed out. You are still on 10.3.17."],
+      ["failed", "The update did not finish. You are still on 10.3.17."]
+    ]
+    for (var i = 0; i < table.length; i++) {
+      var s = runUpdateToStatus(finishedDoc(table[i][0], "10.3.17"))
+      compare(s.maintenanceUi.phase, "update_failed", table[i][0])
+      compare(s.maintenanceUi.message, table[i][1])
+      compare(s.maintenanceUi.targetVersion, "10.3.18")
+      compare(s.maintenanceUi.updateCommand,
+              "omarchy plugin update othavi0.agent-bar --yes && omarchy-restart-shell")
+      compare(s.restartPending, false)
+      compare(s.updateRunning, false)
+      cleanup()
+    }
+  }
+
+  function test_a_refused_or_unreadable_apply_renders_as_failed() {
+    var s = startUpdate()
+    finishLane(s, "update", 2, startedDoc)
+    compare(s.maintenanceUi.phase, "update_failed")
+    compare(s.maintenanceUi.message, "The update did not finish. You are still on 10.3.17.")
+    compare(s.updateRunning, false)
+    cleanup()
+    s = startUpdate()
+    finishLane(s, "update", 0, "Updating plugin...\n")
+    compare(s.maintenanceUi.message, "The update did not finish. You are still on 10.3.17.")
+    compare(s.updateRunning, false)
+  }
+
+  function test_none_or_unreadable_while_polling_fails_at_once() {
+    var replies = [
+      [0, noneDoc, "none"],
+      [0, '{"status":"running","targetVersion":"10.3.18"}\n', "no envelope"],
+      [0, "not json\n", "not json"],
+      [1, "", "helper failed"]
+    ]
+    for (var i = 0; i < replies.length; i++) {
+      var s = runUpdateToStatus(replies[i][1], replies[i][0])
+      compare(s.maintenanceUi.phase, "update_failed", replies[i][2])
+      compare(s.maintenanceUi.message, "The update did not finish. You are still on 10.3.17.", replies[i][2])
+      compare(s.maintenanceUi.updateResult, "failed", replies[i][2])
+      compare(s.updateRunning, false, replies[i][2])
+      compare(s.restartPending, false, replies[i][2])
+      cleanup()
+    }
+  }
+
+  function test_update_lane_timeout_renders_as_failed() {
+    var s = startUpdate()
+    tryVerify(function () { return s.maintenanceUi.phase === "update_failed" }, 2000)
+    compare(s.maintenanceUi.message, "The update did not finish. You are still on 10.3.17.")
+    compare(s.updateRunning, false)
+  }
+
+  function test_no_result_within_the_poll_window_renders_as_failed() {
+    var s = startUpdate()
+    compare(s.updatePollWindowMs, 240000)
+    s.updatePollWindowMs = 150
+    s.updatePollIntervalMs = 20
+    finishLane(s, "update", 0, startedDoc)
+    tryVerify(function () { return s.lanes.update.busy }, 1000)
+    finishLane(s, "update", 0, runningDoc)
+    tryVerify(function () { return s.maintenanceUi.phase === "update_failed" }, 2000)
+    compare(s.maintenanceUi.message, "The update did not finish. You are still on 10.3.17.")
+    compare(s.updateRunning, false)
+  }
+
+  function test_update_lane_deadline_is_30_seconds() {
+    var xhr = new XMLHttpRequest()
+    xhr.open("GET", serviceUrl, false)
+    xhr.send()
+    var src = String(xhr.responseText)
+    verify(src.indexOf("property int updateTimeoutMs: 30000") >= 0)
+  }
+
+  function serviceAtStartup() {
+    service = Harness.createService(serviceUrl, testCase, testCase, null)
+    return service
+  }
+
+  function test_startup_reads_update_status_once_before_collecting() {
+    var s = serviceAtStartup()
+    compare(s.lanes.update.busy, true)
+    compare(JSON.stringify(s.lanes.update.process.command), '["/nonexistent","update","status"]')
+    compare(s.lanes.status.busy, false)
+    compare(s.updateRunning, false, "reading the status is not an update")
+    s.openUninstallConfirm()
+    compare(s.maintenanceUi.uninstallConfirmOpen, true)
+    s.closeUninstallConfirm()
+    finishLane(s, "update", 0, noneDoc)
+    compare(s.maintenanceUi.phase, "idle")
+    compare(s.updateRunning, false)
+    compare(s.restartPending, false)
+    s.beginCollection()
+    compare(s.lanes.status.busy, true)
+    compare(s.lanes.update.busy, false)
+  }
+
+  function test_startup_running_then_finished_updated_asks_for_the_restart() {
+    var s = serviceAtStartup()
+    finishLane(s, "update", 0, runningDoc)
+    compare(s.maintenanceUi.phase, "updating")
+    compare(s.maintenanceUi.targetVersion, "10.3.18")
+    compare(s.updateRunning, true)
+    s.pollUpdateStatus()
+    compare(JSON.stringify(s.lanes.update.process.command), '["/nonexistent","update","status"]')
+    finishLane(s, "update", 0, finishedDoc("updated", "10.3.18"))
+    compare(s.maintenanceUi.phase, "restart_required")
+    compare(s.maintenanceUi.message, "10.3.18 installed. Restart the shell to load it.")
+    compare(s.restartPending, true)
+    compare(s.pendingVersion, "10.3.18")
+    compare(s.updateRunning, false)
+  }
+
+  function test_startup_finished_updated_asks_for_the_restart() {
+    var s = serviceAtStartup()
+    finishLane(s, "update", 0, finishedDoc("updated", "10.3.18"))
+    compare(s.maintenanceUi.phase, "restart_required")
+    compare(s.restartPending, true)
+    compare(s.pendingVersion, "10.3.18")
+  }
+
+  function test_startup_finished_failure_renders_its_line() {
+    var s = serviceAtStartup()
+    finishLane(s, "update", 0, finishedDoc("locked", "10.3.17"))
+    compare(s.maintenanceUi.phase, "update_failed")
+    compare(s.maintenanceUi.message, "Another maintenance task is running. Try again in a minute.")
+    compare(s.restartPending, false)
+    compare(s.updateRunning, false)
+  }
+
+  function test_startup_unreadable_status_does_nothing() {
+    var s = serviceAtStartup()
+    finishLane(s, "update", 1, "")
+    compare(s.maintenanceUi.phase, "idle")
+    compare(s.updateRunning, false)
+  }
+
+  function test_later_keeps_the_restart_flag_and_restart_shell_clears_it() {
+    var s = runUpdateToStatus(finishedDoc("updated", "10.3.18"))
+    s.openSettings("mon-a")
+    s.dismissPopup()
+    compare(s.popupOwner, null)
+    compare(s.restartPending, true)
+    compare(s.pendingVersion, "10.3.18")
+    compare(s.maintenanceUi.phase, "restart_required")
+    var before = s.restartShellRequestCount
+    s.restartShell()
+    compare(s.restartShellRequestCount, before + 1)
+    compare(JSON.stringify(s.lastRestartShellArgv), '["omarchy-restart-shell"]')
+    compare(s.restartPending, false)
+    compare(s.pendingVersion, "")
+    compare(JSON.stringify(s.maintenanceUi), JSON.stringify({
+      phase: "idle",
+      installedVersion: "10.3.17",
+      targetVersion: "",
+      releaseNotesUrl: "",
+      updateCommand: "",
+      purgeSettings: false,
+      uninstallArmed: false,
+      message: "",
+      updateResult: "",
+      uninstallConfirmOpen: false,
+      updateConfirmOpen: false
+    }), "the About tab leaves restart_required with the banner")
+  }
+
+  function test_restart_shell_without_a_pending_update_keeps_the_phase() {
+    var s = runUpdateToStatus(finishedDoc("fetch_failed", "10.3.17"))
+    compare(s.maintenanceUi.phase, "update_failed")
+    s.restartShell()
+    compare(s.restartShellRequestCount, 1)
+    compare(s.maintenanceUi.phase, "update_failed")
+    compare(s.maintenanceUi.message, "Could not reach GitHub. Try again.")
+  }
+
+  function test_uninstall_is_refused_while_an_update_runs() {
+    var s = startUpdate()
+    s.openUninstallConfirm()
+    compare(s.maintenanceUi.uninstallConfirmOpen, false)
+    compare(s.armOrConfirmUninstall(), false)
+    compare(s.lanes.maintenanceHandoff.busy, false)
+    compare(s.maintenanceUi.phase, "updating")
+    finishLane(s, "update", 0, startedDoc)
+    s.openUninstallConfirm()
+    compare(s.maintenanceUi.uninstallConfirmOpen, false, "polling still counts as running")
+  }
+
+  function test_closing_and_reopening_during_the_update_keeps_the_phase() {
+    var s = startUpdate()
+    compare(s.updateRunning, true)
+    s.openSettings("mon-a")
+    compare(s.popupOwner.view, "settings")
+    compare(s.lanes.settingsRead.busy, true)
+    finishLane(s, "settingsRead", 0, JSON.stringify(validSettings()))
+    s.closePopup("mon-a")
+    compare(s.popupOwner, null)
+    compare(s.maintenanceUi.phase, "updating")
+    s.openSettings("mon-b")
+    compare(s.popupOwner.view, "settings")
+    compare(s.maintenanceUi.phase, "updating")
+    finishLane(s, "update", 0, startedDoc)
+    s.pollUpdateStatus()
+    finishLane(s, "update", 0, finishedDoc("updated", "10.3.18"))
+    compare(s.updateRunning, false)
+    s.dismissPopup()
+    s.openSettings("mon-a")
+    compare(s.popupOwner.view, "settings")
+    compare(s.maintenanceUi.phase, "restart_required")
+  }
+
+  function test_uninstall_still_refuses_to_open_settings_while_blocked() {
+    var s = createService()
+    bootstrapSettings(s)
+    s.pendingMaintenanceIntention = ({ kind: "uninstall", purge: false })
+    s.beginMaintenanceHandoff()
+    s.openSettings("mon-a")
+    compare(s.popupOwner, null)
   }
 }

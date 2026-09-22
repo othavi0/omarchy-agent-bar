@@ -40,7 +40,116 @@ function marketplaceUrl() {
 }
 
 function updateCommandText() {
-  return "GIT_PAGER=cat omarchy plugin update othavi0.agent-bar && omarchy-restart-shell"
+  return "omarchy plugin update othavi0.agent-bar --yes && omarchy-restart-shell"
+}
+
+function updateApplyArgv(helperPath) {
+  if (!helperPath || !String(helperPath).length)
+    return null
+  return [String(helperPath), "update", "apply"]
+}
+
+function updateConfirmation(targetVersion) {
+  return {
+    schemaVersion: 1,
+    operation: "update",
+    confirmed: true,
+    targetVersion: String(targetVersion)
+  }
+}
+
+function updateConfirmModel(targetVersion) {
+  return {
+    title: "Update to " + targetVersion + "?",
+    message: "Omarchy fetches the release, validates it, and installs it. "
+        + "The bar keeps working until you restart the shell.",
+    cancelText: "Cancel",
+    confirmText: "Update"
+  }
+}
+
+function updateStatusArgv(helperPath) {
+  if (!helperPath || !String(helperPath).length)
+    return null
+  return [String(helperPath), "update", "status"]
+}
+
+function restartPendingMessage(version) {
+  return String(version) + " installed. Restart the shell to load it."
+}
+
+var UPDATE_RESULT_MESSAGES = {
+  updated: restartPendingMessage,
+  up_to_date: function (v) { return "Agent Bar is up to date." },
+  local_changes: function (v) {
+    return "The plugin folder has local changes. "
+        + "Run git status in ~/.config/omarchy/plugins/othavi0.agent-bar."
+  },
+  fetch_failed: function (v) { return "Could not reach GitHub. Try again." },
+  validation_failed: function (v) {
+    return "The update failed validation and was rolled back. You are still on " + v + "."
+  },
+  timed_out: function (v) { return "The update timed out. You are still on " + v + "." },
+  locked: function (v) { return "Another maintenance task is running. Try again in a minute." },
+  failed: function (v) { return "The update did not finish. You are still on " + v + "." }
+}
+
+var UPDATE_RETRYABLE_RESULTS = { fetch_failed: true, timed_out: true, locked: true, failed: true }
+
+function failedUpdateOutcome() {
+  return { result: "failed", installedVersion: "", restartRequired: false }
+}
+
+function updateDocFromLane(lane) {
+  if (!lane || lane.timedOut || lane.exitCode !== 0)
+    return null
+  var doc = null
+  try {
+    doc = JSON.parse(String(lane.stdout || "").trim())
+  } catch (e) {
+    return null
+  }
+  if (!doc || typeof doc !== "object")
+    return null
+  if (doc.schemaVersion !== 1 || doc.operation !== "update")
+    return null
+  return doc
+}
+
+function updateStartFromLane(lane) {
+  var doc = updateDocFromLane(lane)
+  if (doc && (doc.result === "started" || doc.result === "already_running"))
+    return doc.result
+  return "failed"
+}
+
+function updateStatusFromLane(lane) {
+  var doc = updateDocFromLane(lane)
+  if (!doc)
+    return { status: "unreadable" }
+  if (doc.status === "none")
+    return { status: "none" }
+  if (doc.status === "running")
+    return { status: "running", targetVersion: doc.targetVersion ? String(doc.targetVersion) : "" }
+  if (doc.status !== "finished")
+    return { status: "unreadable" }
+  var result = String(doc.result || "")
+  return {
+    status: "finished",
+    outcome: {
+      result: UPDATE_RESULT_MESSAGES.hasOwnProperty(result) ? result : "failed",
+      installedVersion: doc.installedVersion ? String(doc.installedVersion) : "",
+      restartRequired: doc.restartRequired === true
+    }
+  }
+}
+
+function updateResultMessage(outcome, installedVersion) {
+  var version = outcome.installedVersion && outcome.installedVersion.length
+      ? outcome.installedVersion
+      : String(installedVersion || "")
+  var result = outcome.restartRequired ? "updated" : outcome.result
+  return UPDATE_RESULT_MESSAGES[result](version)
 }
 
 function uninstallArgv(helperPath, purge) {
@@ -68,7 +177,9 @@ function maintenanceUiIdle(installedVersion) {
     purgeSettings: false,
     uninstallArmed: false,
     message: "",
-    uninstallConfirmOpen: false
+    updateResult: "",
+    uninstallConfirmOpen: false,
+    updateConfirmOpen: false
   }
 }
 
@@ -89,12 +200,15 @@ function cloneMaintenanceUi(ui) {
     purgeSettings: !!(ui && ui.purgeSettings),
     uninstallArmed: !!(ui && ui.uninstallArmed),
     message: ui && ui.message ? String(ui.message) : "",
-    uninstallConfirmOpen: !!(ui && ui.uninstallConfirmOpen)
+    updateResult: ui && ui.updateResult ? String(ui.updateResult) : "",
+    uninstallConfirmOpen: !!(ui && ui.uninstallConfirmOpen),
+    updateConfirmOpen: !!(ui && ui.updateConfirmOpen)
   }
 }
 
 function maintenanceUiFromCheck(ui, stdout, exitCode, fallbackVersion) {
   var next = cloneMaintenanceUi(ui)
+  next.updateResult = ""
   if (exitCode === 0) {
     try {
       var doc = JSON.parse(String(stdout || ""))
@@ -118,7 +232,7 @@ function maintenanceUiFromCheck(ui, stdout, exitCode, fallbackVersion) {
           next.targetVersion = String(latest.version)
           next.releaseNotesUrl = latest.releaseNotesUrl ? String(latest.releaseNotesUrl) : ""
           next.updateCommand = updateCommandText()
-          next.message = "Update to " + next.targetVersion + " is available. Run this in a terminal:"
+          next.message = next.targetVersion + " is available."
           return next
         }
         if (doc.available === false) {
@@ -136,6 +250,60 @@ function maintenanceUiFromCheck(ui, stdout, exitCode, fallbackVersion) {
   next.phase = "error"
   next.updateCommand = ""
   next.message = "Update check failed."
+  return next
+}
+
+function maintenanceUiCanUpdate(ui) {
+  if (!ui || !ui.targetVersion || !String(ui.targetVersion).length)
+    return false
+  if (ui.phase === "update_available")
+    return true
+  return ui.phase === "update_failed" && UPDATE_RETRYABLE_RESULTS.hasOwnProperty(ui.updateResult)
+}
+
+function maintenanceUiOpenUpdateConfirm(ui) {
+  var next = cloneMaintenanceUi(ui)
+  next.updateConfirmOpen = maintenanceUiCanUpdate(next)
+  return next
+}
+
+function maintenanceUiCloseUpdateConfirm(ui) {
+  var next = cloneMaintenanceUi(ui)
+  next.updateConfirmOpen = false
+  return next
+}
+
+function maintenanceUiUpdating(ui, targetVersion) {
+  var next = cloneMaintenanceUi(ui)
+  if (targetVersion && String(targetVersion).length)
+    next.targetVersion = String(targetVersion)
+  next.phase = "updating"
+  next.updateConfirmOpen = false
+  next.message = "Updating\u2026 this takes a few seconds."
+  return next
+}
+
+function maintenanceUiFromUpdateResult(ui, outcome) {
+  var next = cloneMaintenanceUi(ui)
+  next.updateConfirmOpen = false
+  next.message = updateResultMessage(outcome, next.installedVersion)
+  next.updateResult = outcome.result
+  if (outcome.restartRequired) {
+    next.phase = "restart_required"
+    if (outcome.installedVersion.length)
+      next.targetVersion = outcome.installedVersion
+    next.updateCommand = ""
+    return next
+  }
+  if (outcome.result === "up_to_date") {
+    next.phase = "up_to_date"
+    next.targetVersion = ""
+    next.releaseNotesUrl = ""
+    next.updateCommand = ""
+    return next
+  }
+  next.phase = "update_failed"
+  next.updateCommand = updateCommandText()
   return next
 }
 

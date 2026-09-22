@@ -16,9 +16,11 @@ Agent Bar is a Quickshell plugin, not a general terminal application. The bar
 provides the glanceable state. The consolidated popup provides quota details,
 provider actions, Settings, an update check, and uninstall without requiring
 the user to learn a CLI: Settings About checks for updates and, when one is
-available, shows the install command
-(`GIT_PAGER=cat omarchy plugin update othavi0.agent-bar && omarchy-restart-shell`) for the
-user to run themselves; nothing in the plugin installs it. The uninstall
+available, offers `Update to <version>`. After one confirmation the plugin
+runs the Omarchy plugin manager and then offers `Restart shell`. The
+terminal fallback
+(`omarchy plugin update othavi0.agent-bar --yes && omarchy-restart-shell`)
+stays visible. The uninstall
 button delegates to the Omarchy plugin manager (`omarchy plugin remove`),
 which owns the actual mutation.
 
@@ -27,9 +29,9 @@ Success means:
 - every visible value comes from normalized provider data;
 - all monitors share one state and polling source;
 - stale and partial failures remain understandable;
-- Settings changes are recoverable; update is a read-only check with the
-  install command shown for the user to run, and uninstall is an explicit,
-  confirmed action delegated to the Omarchy plugin manager;
+- Settings changes are recoverable; update and uninstall are explicit,
+  confirmed actions delegated to the Omarchy plugin manager, and the update
+  runs in a transient user unit that reports through a state file;
 - pointer, keyboard, focus, scrolling, themes, and absence of Agent
   Bar-authored motion work as native Quattro behavior;
 - the plugin never leaks credentials or raw provider output.

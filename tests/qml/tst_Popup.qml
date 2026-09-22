@@ -2,11 +2,13 @@ import QtQuick
 import QtTest
 import "../../CoreView.js" as Core
 import "../../CoreService.js" as Service
+import "ViewHarness.js" as ViewHarness
 
 TestCase {
   id: testCase
   name: "AgentBarPopup"
   when: windowShown
+  visible: true
 
   property string repoRoot: {
     var u = Qt.resolvedUrl(".")
@@ -23,6 +25,45 @@ TestCase {
     xhr.open("GET", "file://" + repoRoot + "/" + rel, false)
     xhr.send()
     return String(xhr.responseText || "")
+  }
+
+  function test_restart_banner_is_one_line_with_a_restart_button() {
+    var banner = ViewHarness.createView(repoRoot, "components/RestartBanner.qml", testCase, testCase,
+                                        { width: 420, version: "10.6.2" })
+    var lines = ViewHarness.findAll(banner, function (item) {
+      return item.textFormat !== undefined && item.text !== undefined && item.bordered === undefined
+    })
+    compare(lines.length, 1)
+    compare(lines[0].text, "10.6.2 installed. Restart the shell to load it.")
+    compare(lines[0].textFormat, Text.PlainText)
+    var buttons = ViewHarness.buttonsWithText(banner, ["Restart shell"])
+    compare(buttons.length, 1)
+    compare(buttons[0].visible, true)
+    compare(banner.collectFocusTargets().length, 1)
+    compare(banner.collectFocusTargets()[0], buttons[0])
+    var requested = 0
+    banner.restartRequested.connect(function () { requested++ })
+    buttons[0].clicked()
+    compare(requested, 1)
+    buttons[0].focusActivate()
+    compare(requested, 2)
+    banner.visible = false
+    compare(banner.collectFocusTargets().length, 0)
+    banner.destroy()
+  }
+
+  function test_popup_shows_the_restart_banner_on_the_status_view_only() {
+    var src = read("Popup.qml")
+    var start = src.indexOf("RestartBanner {")
+    verify(start > src.indexOf("id: stalledMessage"), "the banner sits under the stalled message")
+    verify(start < src.indexOf("id: contentLoader"), "the banner sits above the provider content")
+    var block = src.substring(start, src.indexOf("\n            }\n", start))
+    verify(block.indexOf("root.agentService.restartPending") >= 0)
+    verify(block.indexOf('root.view !== "settings"') >= 0)
+    verify(block.indexOf("!stalledMessage.visible") >= 0)
+    verify(block.indexOf("version: root.agentService ? root.agentService.pendingVersion") >= 0)
+    verify(block.indexOf("root.agentService.restartShell()") >= 0)
+    verify(src.indexOf("list.concat(restartBanner.collectFocusTargets())") >= 0)
   }
 
   function test_state_message_restart_action_emits_typed_signal() {

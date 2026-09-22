@@ -27,6 +27,9 @@ Item {
   property int settingsTimeoutMs: 15000
   property int maintenanceCheckTimeoutMs: 30000
   property int maintenanceHandoffTimeoutMs: 120000
+  property int updateTimeoutMs: 30000
+  property int updatePollIntervalMs: 2000
+  property int updatePollWindowMs: 240000
   property int pollIntervalMs: Core.pollIntervalMs(appliedSettings)
   property int collectionDelayMs: 0
 
@@ -49,6 +52,10 @@ Item {
   property int restartShellRequestCount: 0
   property string lastViewInstallationUrl: ""
   property var pendingMaintenanceIntention: null
+  property string restartPendingVersion: ""
+  readonly property bool restartPending: restartPendingVersion.length > 0
+  readonly property string pendingVersion: restartPendingVersion
+  readonly property bool updateRunning: updatePollWindow.running
   property string pendingMaintenancePayload: ""
   property int resetTimeoutMs: 45000
   property var resetUi: Core.resetUiIdle()
@@ -65,6 +72,7 @@ Item {
     settingsWrite: settingsWriteLane,
     maintenanceCheck: maintenanceCheckLane,
     maintenanceHandoff: maintenanceHandoffLane,
+    update: updateLane,
     reset: resetLane
   })
   readonly property int stalledLaneCount:
@@ -75,6 +83,7 @@ Item {
       + (settingsWriteLane.stalled ? 1 : 0)
       + (maintenanceCheckLane.stalled ? 1 : 0)
       + (maintenanceHandoffLane.stalled ? 1 : 0)
+      + (updateLane.stalled ? 1 : 0)
       + (resetLane.stalled ? 1 : 0)
   readonly property string runtimeHealth: Core.runtimeHealth(stalledLaneCount)
 
@@ -312,6 +321,9 @@ Item {
     var argv = Maintenance.restartShellArgv()
     lastRestartShellArgv = argv.slice()
     restartShellRequestCount++
+    restartPendingVersion = ""
+    if (maintenanceUi && maintenanceUi.phase === "restart_required")
+      maintenanceUi = Maintenance.maintenanceUiIdle(helperVersion)
     if (testMode)
       return
     Quickshell.execDetached(argv)
@@ -360,7 +372,78 @@ Item {
     )
   }
 
+  function openUpdateConfirm() {
+    if (maintenanceState.blocked)
+      return
+    maintenanceUi = Maintenance.maintenanceUiOpenUpdateConfirm(maintenanceUi)
+  }
+
+  function closeUpdateConfirm() {
+    maintenanceUi = Maintenance.maintenanceUiCloseUpdateConfirm(maintenanceUi)
+  }
+
+  function confirmUpdate() {
+    if (!maintenanceUi || !maintenanceUi.updateConfirmOpen || maintenanceState.blocked)
+      return false
+    var argv = Maintenance.updateApplyArgv(resolvedHelperPath())
+    var target = String(maintenanceUi.targetVersion || "")
+    if (!argv || !target.length || !updateLane.ready) {
+      finishUpdate(Maintenance.failedUpdateOutcome())
+      return false
+    }
+    maintenanceUi = Maintenance.maintenanceUiUpdating(maintenanceUi)
+    updatePollWindow.restart()
+    return updateLane.start(argv, JSON.stringify(Maintenance.updateConfirmation(target)), "apply")
+  }
+
+  function beginUpdatePoll() {
+    updatePollTimer.restart()
+    updatePollWindow.restart()
+  }
+
+  function pollUpdateStatus() {
+    var argv = Maintenance.updateStatusArgv(resolvedHelperPath())
+    if (!argv || !updateLane.ready)
+      return
+    updateLane.start(argv, "", "status")
+  }
+
+  function finishUpdate(outcome) {
+    updatePollTimer.stop()
+    updatePollWindow.stop()
+    maintenanceUi = Maintenance.maintenanceUiFromUpdateResult(maintenanceUi, outcome)
+    if (outcome.restartRequired)
+      restartPendingVersion = maintenanceUi.targetVersion || "Agent Bar"
+  }
+
+  function applyUpdateLaneResult(outcome) {
+    noteLaneSettled(outcome)
+    if (outcome.context === "apply") {
+      if (Maintenance.updateStartFromLane(outcome) === "failed")
+        finishUpdate(Maintenance.failedUpdateOutcome())
+      else
+        beginUpdatePoll()
+      return
+    }
+    var status = Maintenance.updateStatusFromLane(outcome)
+    if (status.status === "finished") {
+      finishUpdate(status.outcome)
+      return
+    }
+    if (status.status === "running") {
+      if (!updatePollWindow.running) {
+        maintenanceUi = Maintenance.maintenanceUiUpdating(maintenanceUi, status.targetVersion)
+        beginUpdatePoll()
+      }
+      return
+    }
+    if (updatePollWindow.running)
+      finishUpdate(Maintenance.failedUpdateOutcome())
+  }
+
   function openUninstallConfirm() {
+    if (maintenanceState.blocked || updateRunning)
+      return
     maintenanceUi = Maintenance.maintenanceUiOpenUninstallConfirm(maintenanceUi)
   }
 
@@ -373,6 +456,8 @@ Item {
   }
 
   function armOrConfirmUninstall() {
+    if (maintenanceState.blocked || updateRunning)
+      return false
     var result = Maintenance.maintenanceUiArmOrConfirmUninstall(maintenanceUi)
     maintenanceUi = result.ui
     if (!result.confirmed)
@@ -502,6 +587,7 @@ Item {
     versionReady = true
     versionFailed = false
     syncMaintenanceVersion()
+    pollUpdateStatus()
     kickSettingsBootstrap()
     if (collectionDelayMs > 0) {
       collectionDelay.interval = collectionDelayMs
@@ -673,37 +759,31 @@ Item {
         || maintenanceCheckLane.busy || resetLane.busy
     if (!Maintenance.maintenanceCanDetach(maintenanceState, anyLaneBusy))
       return
+    var intention = pendingMaintenanceIntention
+    if (!intention)
+      return
     if (!maintenanceHandoffLane.ready)
       return
-    var helper = resolvedHelperPath()
-    var intention = pendingMaintenanceIntention
-    var argv = Maintenance.uninstallArgv(helper, intention.purge)
-    if (!argv)
-      return
-    var confirmation = intention && intention.kind === "uninstall"
-        ? pendingMaintenancePayload
-        : ""
-    maintenanceHandoffLane.start(argv, confirmation)
+    maintenanceHandoffLane.start(
+      Maintenance.uninstallArgv(resolvedHelperPath(), intention.purge),
+      pendingMaintenancePayload)
   }
 
   function applyMaintenanceHandoffDone(outcome) {
     noteLaneSettled(outcome)
-    var intention = pendingMaintenanceIntention
     pendingMaintenanceIntention = null
     pendingMaintenancePayload = ""
     maintenanceState = Maintenance.maintenanceIdle()
     pollEnabled = true
     if (versionReady)
       pollTimer.restart()
-    if (intention && intention.kind === "uninstall") {
-      if (outcome.exitCode === 0) {
-        maintenanceUi = Maintenance.maintenanceUiIdle(helperVersion)
-        maintenanceUi.message = "Uninstall completed."
-      } else {
-        maintenanceUi = Maintenance.cloneMaintenanceUi(maintenanceUi)
-        maintenanceUi.phase = "error"
-        maintenanceUi.message = "Uninstall failed."
-      }
+    if (outcome.exitCode === 0) {
+      maintenanceUi = Maintenance.maintenanceUiIdle(helperVersion)
+      maintenanceUi.message = "Uninstall completed."
+    } else {
+      maintenanceUi = Maintenance.cloneMaintenanceUi(maintenanceUi)
+      maintenanceUi.phase = "error"
+      maintenanceUi.message = "Uninstall failed."
     }
   }
 
@@ -783,6 +863,15 @@ Item {
     onSettled: function (outcome) { root.applyMaintenanceHandoffDone(outcome) }
   }
 
+  HelperLane {
+    id: updateLane
+    process: updateProcess
+    stdoutSource: updateOut
+    stderrSource: updateErr
+    timeoutMs: root.updateTimeoutMs
+    onSettled: function (outcome) { root.applyUpdateLaneResult(outcome) }
+  }
+
   Process {
     id: versionProbe
     stdout: StdioCollector { id: versionOut; waitForEnd: true }
@@ -831,6 +920,12 @@ Item {
     stderr: StdioCollector { id: maintenanceHandoffErr; waitForEnd: true }
   }
 
+  Process {
+    id: updateProcess
+    stdout: StdioCollector { id: updateOut; waitForEnd: true }
+    stderr: StdioCollector { id: updateErr; waitForEnd: true }
+  }
+
   Timer {
     id: collectionDelay
     repeat: false
@@ -847,6 +942,22 @@ Item {
         return
       root.kickStatus()
     }
+  }
+
+  Timer {
+    id: updatePollTimer
+    interval: root.updatePollIntervalMs
+    repeat: true
+    running: false
+    onTriggered: root.pollUpdateStatus()
+  }
+
+  Timer {
+    id: updatePollWindow
+    interval: root.updatePollWindowMs
+    repeat: false
+    running: false
+    onTriggered: root.finishUpdate(Maintenance.failedUpdateOutcome())
   }
 
   Timer {
@@ -878,6 +989,8 @@ Item {
   Component.onDestruction: {
     collectionDelay.stop()
     pollTimer.stop()
+    updatePollTimer.stop()
+    updatePollWindow.stop()
     nowTimer.stop()
   }
 }

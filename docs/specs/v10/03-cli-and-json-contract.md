@@ -33,6 +33,9 @@ agent-bar config apply json <value>
 
 agent-bar update
 agent-bar update check
+agent-bar update apply
+agent-bar update status
+agent-bar update run <txid>
 agent-bar uninstall
 agent-bar uninstall purge
 
@@ -337,6 +340,25 @@ and the command the user runs themself:
 `omarchy plugin update othavi0.agent-bar && omarchy-restart-shell`. The
 plugin never fetches, installs, or restarts the shell on its own.
 
+Amended by the 2026-09-22 in-popup update apply:
+`docs/specs/v10/amendments/2026-09-22-update-apply-in-popup-design.md`.
+`update apply` returns as a foreground command that runs only after the
+user confirms in the popup or at a TTY. It runs the Omarchy plugin
+manager once and reports a typed result. `update run`, the transient
+unit, and the automatic shell restart stay removed. The terminal fallback
+command is now
+`omarchy plugin update othavi0.agent-bar --yes && omarchy-restart-shell`.
+
+Amended by the 2026-09-22 detached update run:
+`docs/specs/v10/amendments/2026-09-22-update-apply-detached-design.md`.
+It supersedes the foreground mechanism above. A successful fast-forward
+makes the shell reload the plugin service, which stops any helper the old
+service started, so `update apply` now only starts a transient user unit.
+The unit runs `update run`, and `update status` reports what it did
+through two state files. `CLI-029` keeps the confirmation contract;
+`CLI-029A`, `CLI-029B`, and `CLI-029C` below replace the earlier
+`CLI-029A` and `CLI-029B`.
+
 - `CLI-024`: **Retired**, removed by the 2026-09-15 amendment. `doctor scan`
   no longer exists.
 - `CLI-025`: **Retired**, removed by the 2026-09-15 amendment. `doctor clean`
@@ -347,11 +369,90 @@ plugin never fetches, installs, or restarts the shell on its own.
   detached `omarchy plugin remove` handoff.
 - `CLI-028`: QML passes structured intentions; it never concatenates command
   strings.
-- `CLI-029`: **Retired**, removed by the 2026-09-14 amendment. `update apply`
-  no longer exists; `update apply` and `update run` are grammar errors like
-  any other unknown argument.
-- `CLI-029A`: **Retired**, removed by the 2026-09-14 amendment. `update run`
-  and its unit no longer exist.
+- `CLI-029`: `update apply` takes no argument. In a non-TTY it reads
+  exactly one JSON document from stdin, with optional surrounding
+  whitespace and nothing after it:
+  `{"schemaVersion":1,"operation":"update","confirmed":true,"targetVersion":"<version>"}`.
+  `targetVersion` is a non-empty `major.minor.patch` string. Unknown
+  fields and any other input exit `3` before any lock, file, or process.
+  In a TTY it asks for the exact phrase `update agent-bar`.
+- `CLI-029A`: After confirmation, `update apply` logs
+  `confirmed <targetVersion>` on stderr (`confirmed` alone after the TTY
+  phrase), resolves `omarchy` and `systemd-run` to absolute paths (exit
+  `5` when either is missing), and resolves its own executable path. It
+  creates the marker `$XDG_STATE_HOME/agent-bar/update-running.json`
+  atomically, by hard link from a temporary file, so two racing launchers
+  never both start a unit:
+  `{"schemaVersion":1,"operation":"update","txid":"<txid>","startedAt":"<RFC 3339>","targetVersion":"<version>","fromVersion":"<tree version>"}`
+  (`targetVersion` is `null` after the TTY phrase, and `fromVersion` is the
+  plugin root's `bundle.json` version, `null` when unreadable). When a
+  marker younger than 240 seconds already exists and no
+  `update-result.json` carries its `txid`, it prints
+  `{"schemaVersion":1,"operation":"update","result":"already_running"}`
+  and starts nothing. Any other existing marker is stale: it is taken over
+  only while it still holds the bytes that were read, so a marker another
+  launcher wrote meanwhile is never removed. Once its marker is in place it
+  deletes any unread `update-result.json` and runs
+  `systemd-run --user --collect --no-block --unit=agent-bar-update-<txid>
+  --property=RuntimeMaxSec=240 --setenv=HOME=<home>
+  --setenv=XDG_STATE_HOME=<state home> --setenv=PATH=<path> --
+  <helper> update run <txid>`. The 240 second limit leaves a minute past
+  the 60 second lock wait plus the 120 second plugin-manager timeout. The
+  `--setenv` values are the caller's, with
+  `XDG_STATE_HOME` defaulting to `$HOME/.local/state`, so the unit reads
+  and writes the same files and finds the same tools as the caller. On
+  success it prints
+  `{"schemaVersion":1,"operation":"update","result":"started","unit":"agent-bar-update-<txid>"}`
+  and exits `0`. When `systemd-run` fails, it deletes its own marker and
+  exits `5`. It returns before anything writes the plugin tree, and it never
+  takes the maintenance lock.
+- `CLI-029B`: `update status` takes no argument and prints exactly one JSON
+  object plus newline. With neither state file it prints
+  `{"schemaVersion":1,"operation":"update","status":"none"}`. While the
+  marker is younger than 240 seconds it prints
+  `{"schemaVersion":1,"operation":"update","status":"running","startedAt":"<RFC 3339>","targetVersion":<version or null>}`.
+  When `update-result.json` exists it prints `"status":"finished"` followed
+  by the result document's fields, whatever its `txid`, and deletes the
+  file, so each result is reported once. It deletes the marker with it only
+  when the marker carries the same `txid`. A marker older than 240
+  seconds, or an unreadable one, with no result is reported once as
+  `"status":"finished"` with the marker's `txid` (`null` when unreadable),
+  its `fromVersion`, and the tree version on disk as `installedVersion`,
+  and is deleted; only the marker this read judged is deleted. When both
+  versions are known and differ, the result is `updated` with
+  `"restartRequired":true`; otherwise it is `failed` with
+  `"restartRequired":false`. It never takes the maintenance lock. It exits
+  `0`, or `5` when a state file cannot be read or renamed.
+- `CLI-029C`: `update run <txid>` is the unit body. It takes exactly one
+  argument, the 32 lowercase hex digits of the run's `txid`; any other
+  form exits `2`. It retries the exclusive maintenance lock every 500 ms
+  for up to 60 seconds and reports `locked` when the lock stays held. It
+  holds the lock for the whole plugin-manager run, so a status collection
+  or settings apply that starts meanwhile waits on the shared lock, up to
+  the run's 120 second budget, rather than failing. It reads the tree version
+  from the plugin root's `bundle.json`, runs
+  `omarchy plugin update othavi0.agent-bar --yes` in its own process group
+  with `GIT_TERMINAL_PROMPT=0`, stdin closed, and a 120 second timeout
+  that kills the whole group, then reads the tree version again. A tree
+  version that changed is `updated` whatever the exit status or timeout.
+  Otherwise exit `0` is `up_to_date`, a timeout is `timed_out`, and a
+  non-zero exit maps by the plugin manager's stderr: `cannot fast-forward`
+  to `local_changes`, `fetch failed` to `fetch_failed`,
+  `failed validation` to `validation_failed`, and anything else to
+  `failed`. A missing `omarchy` or an unreadable tree version is `failed`
+  without running the plugin manager. It writes
+  `$XDG_STATE_HOME/agent-bar/update-result.json` atomically (temporary
+  file plus rename, mode `0600`):
+  `{"schemaVersion":1,"operation":"update","txid":"<txid>","result":"<result>","fromVersion":"<before>","installedVersion":"<after>","restartRequired":<bool>,"finishedAt":"<RFC 3339>"}`.
+  A version is `null` only when `bundle.json` was unreadable at that
+  point, and `restartRequired` is true only for `updated`. It then deletes
+  the running marker only when it carries the same `txid`; a run whose
+  marker is missing still runs and writes its result. It writes one stderr
+  line
+  `agent-bar: update run: <result>`, prints nothing on stdout, and exits
+  `0`. Only a failure to write the result file exits `5`. Plugin-manager
+  output never enters the file, stdout, or stderr. It never restarts the
+  shell, touches settings or cache, or retries the plugin manager.
 - `CLI-030`: Uninstall never touches unrelated Omarchy plugins or layout
   entries.
 - `CLI-031`: Notification dispatch failure is reported on stderr, does not

@@ -68,15 +68,16 @@ default), and toggle notifications. The file is
 
 ## Update
 
-Settings tells you when a new version is out. Install it with:
+Settings tells you when a new version is out. Click
+`Update to <version>` and confirm. The update runs in the background and
+the bar keeps working. When the new version is installed, the popup shows
+`Restart shell`; click it to load the new version.
+
+You can also update from a terminal:
 
 ```bash
-GIT_PAGER=cat omarchy plugin update othavi0.agent-bar && omarchy-restart-shell
+omarchy plugin update othavi0.agent-bar --yes && omarchy-restart-shell
 ```
-
-Answer `Yes` when it asks `Update othavi0.agent-bar?`. Without
-`GIT_PAGER=cat`, the command can open the changes in `less` and wait at a
-`:` prompt. If that happens, press `q`.
 
 If Settings shows a migration notice, your copy predates the git install.
 Reinstall it:
@@ -98,10 +99,9 @@ omarchy plugin remove othavi0.agent-bar
 Settings also has a Remove button.
 
 > [!IMPORTANT]
-> **Agent Bar no longer installs its own updates.** The Omarchy plugin
-> marketplace requires a verified immutable target before any automatic
-> update, and Omarchy 4.0.3 has no way to name a commit or tag. Run the
-> command in [Update](#update) yourself.
+> **Agent Bar installs an update only when you click it.** It never
+> updates on a schedule, and it installs whatever `master` holds at that
+> moment.
 >
 > Versions 10.3.22 and older never loaded on Omarchy 4.0.3. The chips show
 > `···`, the popup stays on its loading placeholder, and Settings says

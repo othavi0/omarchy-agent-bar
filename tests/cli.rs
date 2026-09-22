@@ -3,8 +3,9 @@ use std::process::Command as StdCommand;
 
 use agent_bar::cli::{
     parse, CacheMode, Command, ConfigCommand, ConfigInput, HelpTopic, NotificationMode, ProviderId,
-    StatusFormat, StatusOptions, UpdateCommand, GRAMMAR, SUCCESS, VALIDATION,
+    StatusFormat, StatusOptions, UpdateCommand, GRAMMAR, PLUGIN, SUCCESS, VALIDATION,
 };
+use agent_bar::plugin::update_state::Txid;
 use assert_cmd::Command as CargoBin;
 use tempfile::tempdir;
 
@@ -189,6 +190,25 @@ fn login_config_update_uninstall_forms() {
         Command::Update(UpdateCommand::Check)
     );
     assert_eq!(
+        parse(words(&["update", "apply"])).unwrap(),
+        Command::Update(UpdateCommand::Apply)
+    );
+    assert_eq!(
+        parse(words(&[
+            "update",
+            "run",
+            "0123456789abcdef0123456789abcdef"
+        ]))
+        .unwrap(),
+        Command::Update(UpdateCommand::Run(
+            Txid::parse("0123456789abcdef0123456789abcdef").unwrap()
+        ))
+    );
+    assert_eq!(
+        parse(words(&["update", "status"])).unwrap(),
+        Command::Update(UpdateCommand::Status)
+    );
+    assert_eq!(
         parse(words(&["uninstall"])).unwrap(),
         Command::Uninstall { purge: false }
     );
@@ -227,11 +247,15 @@ fn reset_rejects_missing_arguments_wrong_provider_and_extra_words() {
 }
 
 #[test]
-fn update_apply_and_update_run_are_grammar_errors() {
+fn update_subcommand_arguments_are_grammar_errors() {
     for extra in [
         words(&["update", "run"]),
         words(&["update", "run", "now"]),
-        words(&["update", "apply"]),
+        words(&["update", "run", "0123456789ABCDEF0123456789ABCDEF"]),
+        words(&["update", "run", "0123456789abcdef0123456789abcde"]),
+        words(&["update", "run", "0123456789abcdef0123456789abcdef0"]),
+        words(&["update", "run", "0123456789abcdef0123456789abcdef", "x"]),
+        words(&["update", "status", "json"]),
         words(&["update", "apply", "10.0.0"]),
         words(&["update", "apply", "extra", "words"]),
     ] {
@@ -411,6 +435,548 @@ fn binary_help_mentions_plugin_first_product() {
 }
 
 #[test]
+fn binary_help_names_both_update_subcommands() {
+    CargoBin::cargo_bin("agent-bar")
+        .unwrap()
+        .arg("help")
+        .assert()
+        .code(SUCCESS)
+        .stdout(predicates::str::contains(
+            "agent-bar update [check|apply|status]\n",
+        ));
+    CargoBin::cargo_bin("agent-bar")
+        .unwrap()
+        .args(["help", "update"])
+        .assert()
+        .code(SUCCESS)
+        .stdout(predicates::str::contains("update check"))
+        .stdout(predicates::str::contains("update apply"))
+        .stdout(predicates::str::contains("update status"));
+}
+
+fn tree_entries(root: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap().flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path.clone());
+            }
+            out.push(path);
+        }
+    }
+    out.sort();
+    out
+}
+
+#[test]
+fn binary_update_apply_rejects_bad_confirmation_before_any_side_effect() {
+    let good_shape =
+        r#"{"schemaVersion":1,"operation":"update","confirmed":true,"targetVersion":"10.7.0"}"#;
+    let cases: Vec<String> = vec![
+        String::new(),
+        "   \n".to_owned(),
+        "{not-json".to_owned(),
+        r#"{"schemaVersion":1,"operation":"update","confirmed":false,"targetVersion":"10.7.0"}"#
+            .to_owned(),
+        r#"{"schemaVersion":2,"operation":"update","confirmed":true,"targetVersion":"10.7.0"}"#
+            .to_owned(),
+        r#"{"schemaVersion":1,"operation":"uninstall","confirmed":true,"targetVersion":"10.7.0"}"#
+            .to_owned(),
+        r#"{"schemaVersion":1,"operation":"update","confirmed":true,"targetVersion":""}"#
+            .to_owned(),
+        r#"{"schemaVersion":1,"operation":"update","confirmed":true,"targetVersion":"10.7"}"#
+            .to_owned(),
+        r#"{"schemaVersion":1,"operation":"update","confirmed":true,"targetVersion":"10.7.0-rc1"}"#
+            .to_owned(),
+        r#"{"schemaVersion":1,"operation":"update","confirmed":true}"#.to_owned(),
+        r#"{"schemaVersion":1,"operation":"update","confirmed":true,"targetVersion":"10.7.0","extra":1}"#
+            .to_owned(),
+        format!("{good_shape}{good_shape}"),
+        format!("{good_shape}\n{{}}"),
+    ];
+    for input in cases {
+        let dir = tempdir().unwrap();
+        let home = dir.path().join("home");
+        std::fs::create_dir_all(&home).unwrap();
+        let empty_path = dir.path().join("empty-path");
+        std::fs::create_dir_all(&empty_path).unwrap();
+        CargoBin::cargo_bin("agent-bar")
+            .unwrap()
+            .args(["update", "apply"])
+            .env("HOME", &home)
+            .env_remove("XDG_STATE_HOME")
+            .env_remove("XDG_CACHE_HOME")
+            .env_remove("XDG_CONFIG_HOME")
+            .env("PATH", &empty_path)
+            .write_stdin(input.clone())
+            .assert()
+            .code(VALIDATION)
+            .stdout("");
+        assert!(
+            tree_entries(dir.path()) == vec![empty_path.clone(), home.clone()],
+            "input {input:?} left side effects: {:?}",
+            tree_entries(dir.path())
+        );
+    }
+}
+
+const UPDATE_CONFIRMATION: &str =
+    r#"{"schemaVersion":1,"operation":"update","confirmed":true,"targetVersion":"10.7.0"}"#;
+
+fn update_apply_home(dir: &Path, version: &str) -> PathBuf {
+    let home = dir.join("home");
+    let root = home.join(".config/omarchy/plugins/othavi0.agent-bar");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(
+        root.join("bundle.json"),
+        format!(r#"{{"schemaVersion":1,"version":"{version}"}}"#),
+    )
+    .unwrap();
+    home
+}
+
+fn run_update_apply(home: &Path, path: &Path) -> std::process::Output {
+    let mut child = StdCommand::new(assert_cmd::cargo::cargo_bin("agent-bar"))
+        .args(["update", "apply"])
+        .env("HOME", home)
+        .env("XDG_STATE_HOME", home.join("state"))
+        .env("PATH", path)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    {
+        use std::io::Write as _;
+        let mut stdin = child.stdin.take().unwrap();
+        stdin.write_all(UPDATE_CONFIRMATION.as_bytes()).unwrap();
+    }
+    child.wait_with_output().unwrap()
+}
+
+struct LaunchFixture {
+    home: PathBuf,
+    path_dir: PathBuf,
+    systemd_argv: PathBuf,
+    marker: PathBuf,
+}
+
+fn launch_fixture(dir: &Path, systemd_run_exit: i32) -> LaunchFixture {
+    let home = update_apply_home(dir, "10.6.1");
+    let path_dir = dir.join("pathbin");
+    let systemd_argv = dir.join("systemd-run-argv.bin");
+    write_executable(&path_dir.join("omarchy"), "#!/bin/bash\nexit 99\n");
+    write_executable(
+        &path_dir.join("systemd-run"),
+        &format!(
+            "#!/bin/bash\n: > '{argv}'\nfor a in \"$@\"; do printf '%s\\0' \"$a\" >> '{argv}'; done\nexit {systemd_run_exit}\n",
+            argv = systemd_argv.display()
+        ),
+    );
+    LaunchFixture {
+        marker: home.join("state/agent-bar/update-running.json"),
+        home,
+        path_dir,
+        systemd_argv,
+    }
+}
+
+fn stdout_json(output: &std::process::Output) -> serde_json::Value {
+    serde_json::from_slice(&output.stdout).unwrap_or_else(|err| {
+        panic!(
+            "stdout {:?} is not JSON ({err}); stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        )
+    })
+}
+
+#[test]
+fn binary_update_apply_starts_the_run_unit_and_writes_the_marker() {
+    let dir = tempdir().unwrap();
+    let fx = launch_fixture(dir.path(), 0);
+    let output = run_update_apply(&fx.home, &fx.path_dir);
+    assert_eq!(output.status.code(), Some(SUCCESS));
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr),
+        "agent-bar: update apply: confirmed 10.7.0\n"
+    );
+    let doc = stdout_json(&output);
+    let unit = doc["unit"].as_str().unwrap().to_owned();
+    let txid = unit.strip_prefix("agent-bar-update-").unwrap().to_owned();
+    assert_eq!(txid.len(), 32);
+    assert!(txid.bytes().all(|b| b.is_ascii_hexdigit()));
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        format!("{{\"schemaVersion\":1,\"operation\":\"update\",\"result\":\"started\",\"unit\":\"{unit}\"}}\n")
+    );
+
+    let helper = std::fs::canonicalize(assert_cmd::cargo::cargo_bin("agent-bar")).unwrap();
+    assert_eq!(
+        read_nul_argv(&fx.systemd_argv),
+        [
+            "--user".to_owned(),
+            "--collect".to_owned(),
+            "--no-block".to_owned(),
+            format!("--unit={unit}"),
+            "--property=RuntimeMaxSec=240".to_owned(),
+            format!("--setenv=HOME={}", fx.home.display()),
+            format!(
+                "--setenv=XDG_STATE_HOME={}",
+                fx.home.join("state").display()
+            ),
+            format!("--setenv=PATH={}", fx.path_dir.display()),
+            "--".to_owned(),
+            helper.display().to_string(),
+            "update".to_owned(),
+            "run".to_owned(),
+            txid.clone(),
+        ]
+    );
+
+    let marker: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&fx.marker).unwrap()).unwrap();
+    assert_eq!(marker["schemaVersion"], 1);
+    assert_eq!(marker["operation"], "update");
+    assert_eq!(marker["txid"], txid.as_str());
+    assert_eq!(marker["targetVersion"], "10.7.0");
+    assert_eq!(marker["fromVersion"], "10.6.1");
+    let started = marker["startedAt"].as_str().unwrap();
+    let started =
+        time::OffsetDateTime::parse(started, &time::format_description::well_known::Rfc3339)
+            .unwrap();
+    assert!(
+        (time::OffsetDateTime::now_utc() - started)
+            .whole_seconds()
+            .abs()
+            < 60
+    );
+}
+
+const TXID_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const TXID_B: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
+fn write_marker(path: &Path, started_at: time::OffsetDateTime) -> String {
+    write_marker_for(path, TXID_A, started_at)
+}
+
+fn write_marker_for(path: &Path, txid: &str, started_at: time::OffsetDateTime) -> String {
+    let started = started_at
+        .format(&time::format_description::well_known::Rfc3339)
+        .unwrap();
+    let body = format!(
+        "{{\"schemaVersion\":1,\"operation\":\"update\",\"txid\":\"{txid}\",\"startedAt\":\"{started}\",\"targetVersion\":\"10.7.0\"}}\n"
+    );
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(path, &body).unwrap();
+    body
+}
+
+#[test]
+fn binary_update_apply_refuses_while_a_run_is_live() {
+    let dir = tempdir().unwrap();
+    let fx = launch_fixture(dir.path(), 0);
+    let body = write_marker(
+        &fx.marker,
+        time::OffsetDateTime::now_utc() - time::Duration::seconds(30),
+    );
+    let output = run_update_apply(&fx.home, &fx.path_dir);
+    assert_eq!(output.status.code(), Some(SUCCESS));
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "{\"schemaVersion\":1,\"operation\":\"update\",\"result\":\"already_running\"}\n"
+    );
+    assert!(!fx.systemd_argv.exists());
+    assert_eq!(std::fs::read_to_string(&fx.marker).unwrap(), body);
+}
+
+#[test]
+fn binary_update_apply_replaces_a_stale_marker() {
+    let dir = tempdir().unwrap();
+    let fx = launch_fixture(dir.path(), 0);
+    write_marker(
+        &fx.marker,
+        time::OffsetDateTime::now_utc() - time::Duration::seconds(241),
+    );
+    let output = run_update_apply(&fx.home, &fx.path_dir);
+    assert_eq!(stdout_json(&output)["result"], "started");
+    assert!(fx.systemd_argv.exists());
+}
+
+#[test]
+fn binary_update_apply_needs_systemd_run_and_omarchy() {
+    for missing in ["systemd-run", "omarchy"] {
+        let dir = tempdir().unwrap();
+        let fx = launch_fixture(dir.path(), 0);
+        std::fs::remove_file(fx.path_dir.join(missing)).unwrap();
+        let output = run_update_apply(&fx.home, &fx.path_dir);
+        assert_eq!(output.status.code(), Some(PLUGIN), "{missing}");
+        assert!(output.stdout.is_empty());
+        assert!(!fx.marker.exists());
+    }
+}
+
+#[test]
+fn binary_update_apply_drops_the_marker_when_the_unit_does_not_start() {
+    let dir = tempdir().unwrap();
+    let fx = launch_fixture(dir.path(), 1);
+    let output = run_update_apply(&fx.home, &fx.path_dir);
+    assert_eq!(output.status.code(), Some(PLUGIN));
+    assert!(output.stdout.is_empty());
+    assert!(fx.systemd_argv.exists());
+    assert!(!fx.marker.exists());
+}
+
+fn run_update_unit(home: &Path, path: &Path) -> std::process::Output {
+    run_update_unit_as(home, path, TXID_A)
+}
+
+fn run_update_unit_as(home: &Path, path: &Path, txid: &str) -> std::process::Output {
+    StdCommand::new(assert_cmd::cargo::cargo_bin("agent-bar"))
+        .args(["update", "run", txid])
+        .env("HOME", home)
+        .env("XDG_STATE_HOME", home.join("state"))
+        .env("PATH", path)
+        .stdin(std::process::Stdio::null())
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn binary_update_run_publishes_the_result_file_and_drops_the_marker() {
+    let dir = tempdir().unwrap();
+    let home = update_apply_home(dir.path(), "10.6.1");
+    let state = home.join("state/agent-bar");
+    std::fs::create_dir_all(&state).unwrap();
+    write_marker(
+        &state.join("update-running.json"),
+        time::OffsetDateTime::now_utc(),
+    );
+    let path_dir = dir.path().join("pathbin");
+    write_executable(
+        &path_dir.join("omarchy"),
+        r#"#!/bin/bash
+echo 'Updated othavi0.agent-bar.'
+echo 'omarchy-shell: IPC timed out' >&2
+printf '{"schemaVersion":1,"version":"10.6.2"}' > "$HOME/.config/omarchy/plugins/othavi0.agent-bar/bundle.json"
+exit 1
+"#,
+    );
+    let output = run_update_unit(&home, &path_dir);
+    assert_eq!(output.status.code(), Some(SUCCESS));
+    assert!(output.stdout.is_empty());
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr),
+        "agent-bar: update run: updated\n"
+    );
+    let result: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(state.join("update-result.json")).unwrap()).unwrap();
+    assert_eq!(result["schemaVersion"], 1);
+    assert_eq!(result["operation"], "update");
+    assert_eq!(result["txid"], TXID_A);
+    assert_eq!(result["result"], "updated");
+    assert_eq!(result["fromVersion"], "10.6.1");
+    assert_eq!(result["installedVersion"], "10.6.2");
+    assert_eq!(result["restartRequired"], true);
+    assert!(result["finishedAt"]
+        .as_str()
+        .is_some_and(|t| t.ends_with('Z')));
+    assert!(!state.join("update-running.json").exists());
+}
+
+#[test]
+fn binary_update_run_without_omarchy_still_publishes_failed() {
+    let dir = tempdir().unwrap();
+    let home = update_apply_home(dir.path(), "10.6.1");
+    let empty_path = dir.path().join("empty-path");
+    std::fs::create_dir_all(&empty_path).unwrap();
+    let output = run_update_unit(&home, &empty_path);
+    assert_eq!(output.status.code(), Some(SUCCESS));
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr),
+        "agent-bar: update run: failed\n"
+    );
+    let result: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(home.join("state/agent-bar/update-result.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(result["result"], "failed");
+    assert_eq!(result["installedVersion"], "10.6.1");
+}
+
+fn up_to_date_omarchy(path_dir: &Path) {
+    write_executable(
+        &path_dir.join("omarchy"),
+        "#!/bin/bash\necho 'othavi0.agent-bar is up to date.'\nexit 0\n",
+    );
+}
+
+#[test]
+fn binary_update_run_leaves_the_marker_of_another_run() {
+    let dir = tempdir().unwrap();
+    let fx = launch_fixture(dir.path(), 0);
+    up_to_date_omarchy(&fx.path_dir);
+    let body = write_marker_for(&fx.marker, TXID_B, time::OffsetDateTime::now_utc());
+    let output = run_update_unit_as(&fx.home, &fx.path_dir, TXID_A);
+    assert_eq!(output.status.code(), Some(SUCCESS));
+    assert_eq!(std::fs::read_to_string(&fx.marker).unwrap(), body);
+    let result: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(fx.marker.with_file_name("update-result.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(result["txid"], TXID_A);
+    assert_eq!(result["result"], "up_to_date");
+}
+
+#[test]
+fn binary_update_run_without_a_marker_still_writes_its_result() {
+    let dir = tempdir().unwrap();
+    let fx = launch_fixture(dir.path(), 0);
+    up_to_date_omarchy(&fx.path_dir);
+    let output = run_update_unit_as(&fx.home, &fx.path_dir, TXID_B);
+    assert_eq!(output.status.code(), Some(SUCCESS));
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr),
+        "agent-bar: update run: up_to_date\n"
+    );
+    let finished: serde_json::Value = serde_json::from_str(&update_status(&fx.home)).unwrap();
+    assert_eq!(finished["status"], "finished");
+    assert_eq!(finished["txid"], TXID_B);
+    assert_eq!(finished["result"], "up_to_date");
+    assert!(!fx.marker.exists());
+}
+
+fn write_result_for(state: &Path, txid: &str) {
+    std::fs::write(
+        state.join("update-result.json"),
+        format!("{{\"schemaVersion\":1,\"operation\":\"update\",\"txid\":\"{txid}\",\"result\":\"up_to_date\",\"fromVersion\":\"10.6.1\",\"installedVersion\":\"10.6.1\",\"restartRequired\":false,\"finishedAt\":\"2026-09-22T16:40:05Z\"}}\n"),
+    )
+    .unwrap();
+}
+
+#[test]
+fn binary_update_status_reports_any_result_but_keeps_another_runs_marker() {
+    let dir = tempdir().unwrap();
+    let fx = launch_fixture(dir.path(), 0);
+    let body = write_marker_for(&fx.marker, TXID_B, time::OffsetDateTime::now_utc());
+    write_result_for(fx.marker.parent().unwrap(), TXID_A);
+    let finished: serde_json::Value = serde_json::from_str(&update_status(&fx.home)).unwrap();
+    assert_eq!(finished["status"], "finished");
+    assert_eq!(finished["txid"], TXID_A);
+    assert_eq!(std::fs::read_to_string(&fx.marker).unwrap(), body);
+    let running: serde_json::Value = serde_json::from_str(&update_status(&fx.home)).unwrap();
+    assert_eq!(running["status"], "running");
+}
+
+#[test]
+fn binary_update_apply_takes_over_a_marker_whose_run_has_a_result() {
+    let dir = tempdir().unwrap();
+    let fx = launch_fixture(dir.path(), 0);
+    write_marker_for(&fx.marker, TXID_A, time::OffsetDateTime::now_utc());
+    write_result_for(fx.marker.parent().unwrap(), TXID_A);
+    let output = run_update_apply(&fx.home, &fx.path_dir);
+    assert_eq!(stdout_json(&output)["result"], "started");
+    let marker: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&fx.marker).unwrap()).unwrap();
+    assert_ne!(marker["txid"], TXID_A);
+    assert!(!fx.marker.with_file_name("update-result.json").exists());
+}
+
+fn write_stale_marker(path: &Path, age: i64) {
+    let started = (time::OffsetDateTime::now_utc() - time::Duration::seconds(age))
+        .format(&time::format_description::well_known::Rfc3339)
+        .unwrap();
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(
+        path,
+        format!("{{\"schemaVersion\":1,\"operation\":\"update\",\"txid\":\"{TXID_A}\",\"startedAt\":\"{started}\",\"targetVersion\":\"10.7.0\",\"fromVersion\":\"10.6.1\"}}\n"),
+    )
+    .unwrap();
+}
+
+#[test]
+fn binary_update_status_keeps_a_marker_live_for_the_whole_unit_limit() {
+    let dir = tempdir().unwrap();
+    let fx = launch_fixture(dir.path(), 0);
+    write_stale_marker(&fx.marker, 200);
+    let running: serde_json::Value = serde_json::from_str(&update_status(&fx.home)).unwrap();
+    assert_eq!(running["status"], "running");
+}
+
+#[test]
+fn binary_update_status_judges_a_run_killed_by_its_unit_limit_by_the_tree() {
+    for (tree, expected) in [
+        ("10.7.0", "{\"fromVersion\":\"10.6.1\",\"installedVersion\":\"10.7.0\",\"restartRequired\":true,\"result\":\"updated\"}"),
+        ("10.6.1", "{\"fromVersion\":\"10.6.1\",\"installedVersion\":\"10.6.1\",\"restartRequired\":false,\"result\":\"failed\"}"),
+    ] {
+        let dir = tempdir().unwrap();
+        let home = update_apply_home(dir.path(), tree);
+        let marker = home.join("state/agent-bar/update-running.json");
+        write_stale_marker(&marker, 241);
+        let mut finished: serde_json::Value =
+            serde_json::from_str(&update_status(&home)).unwrap();
+        assert_eq!(finished["status"], "finished", "{tree}");
+        assert_eq!(finished["txid"], TXID_A, "{tree}");
+        let picked = serde_json::json!({
+            "result": finished["result"].take(),
+            "fromVersion": finished["fromVersion"].take(),
+            "installedVersion": finished["installedVersion"].take(),
+            "restartRequired": finished["restartRequired"].take(),
+        });
+        assert_eq!(picked.to_string(), expected, "{tree}");
+        assert!(!marker.exists());
+    }
+}
+
+fn update_status(home: &Path) -> String {
+    let output = StdCommand::new(assert_cmd::cargo::cargo_bin("agent-bar"))
+        .args(["update", "status"])
+        .env("HOME", home)
+        .env("XDG_STATE_HOME", home.join("state"))
+        .stdin(std::process::Stdio::null())
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(SUCCESS));
+    assert!(output.stderr.is_empty());
+    String::from_utf8(output.stdout).unwrap()
+}
+
+#[test]
+fn binary_update_status_follows_a_run_from_marker_to_result() {
+    let dir = tempdir().unwrap();
+    let fx = launch_fixture(dir.path(), 0);
+    let none = "{\"schemaVersion\":1,\"operation\":\"update\",\"status\":\"none\"}\n";
+    assert_eq!(update_status(&fx.home), none);
+
+    let started_at = time::OffsetDateTime::now_utc() - time::Duration::seconds(5);
+    write_marker(&fx.marker, started_at);
+    let started = started_at
+        .format(&time::format_description::well_known::Rfc3339)
+        .unwrap();
+    assert_eq!(
+        update_status(&fx.home),
+        format!("{{\"schemaVersion\":1,\"operation\":\"update\",\"status\":\"running\",\"startedAt\":\"{started}\",\"targetVersion\":\"10.7.0\"}}\n")
+    );
+
+    write_executable(
+        &fx.path_dir.join("omarchy"),
+        "#!/bin/bash\necho 'othavi0.agent-bar is up to date.'\nexit 0\n",
+    );
+    assert_eq!(
+        run_update_unit(&fx.home, &fx.path_dir).status.code(),
+        Some(SUCCESS)
+    );
+    let finished: serde_json::Value = serde_json::from_str(&update_status(&fx.home)).unwrap();
+    assert_eq!(finished["status"], "finished");
+    assert_eq!(finished["result"], "up_to_date");
+    assert_eq!(finished["installedVersion"], "10.6.1");
+    assert_eq!(finished["restartRequired"], false);
+    assert_eq!(update_status(&fx.home), none);
+}
+
+#[test]
 fn binary_interactive_update_rejects_non_tty() {
     let dir = tempdir().unwrap();
     let home = dir.path();
@@ -433,9 +999,9 @@ fn binary_interactive_update_rejects_non_tty() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains("update check")
-            && stderr.contains(
-                "GIT_PAGER=cat omarchy plugin update othavi0.agent-bar && omarchy-restart-shell"
-            ),
+            && stderr.contains("update apply")
+            && stderr
+                .contains("omarchy plugin update othavi0.agent-bar --yes && omarchy-restart-shell"),
         "stderr={stderr}"
     );
 }

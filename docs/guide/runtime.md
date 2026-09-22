@@ -12,6 +12,8 @@
 | `$XDG_CACHE_HOME/agent-bar/notification.lock` | Alert evaluation/dispatch lock |
 | `$XDG_STATE_HOME/agent-bar/backups/` | Backups left by the retired v9 settings migration and `doctor clean` |
 | `$XDG_STATE_HOME/agent-bar/maintenance.lock` | Stable shared/exclusive mutation gate |
+| `$XDG_STATE_HOME/agent-bar/update-running.json` | Marker for an update unit that is running |
+| `$XDG_STATE_HOME/agent-bar/update-result.json` | Result of the last update unit, until `update status` reads it |
 
 Default XDG paths are `~/.config`, `~/.cache`, and `~/.local/state`.
 
@@ -61,11 +63,16 @@ exists.
 ```
 
 The service checks for a new release only when the user clicks `Check for
-updates` in the Settings About tab; there is no background schedule. It
-never installs anything or reloads the shell on its own; when a release is
-available, Settings shows the target version, a release-notes link, a
-marketplace-page link, and, on its own read-only line, the command to run
-in a terminal: `GIT_PAGER=cat omarchy plugin update othavi0.agent-bar && omarchy-restart-shell`.
+updates` in the Settings About tab; there is no background schedule. When a
+release is available, Settings shows the target version, an
+`Update to <version>` button, a release-notes link, a marketplace-page
+link, and, on its own read-only line, the command to run in a terminal:
+`omarchy plugin update othavi0.agent-bar --yes && omarchy-restart-shell`.
+The plugin installs code only after the user confirms that button. It then
+runs `update apply`, which starts a transient user unit that calls
+`omarchy plugin update` once, and polls `update status` until the unit
+finishes. The plugin never reloads the shell on its own; the user presses
+`Restart shell` when the update reports `updated`.
 
 There is no `updates` block in the product settings any more. A document
 written by 10.3.24 through 10.5.1 that still carries
@@ -100,6 +107,31 @@ re-collected on the next poll, so on a fresh install or after the cache is
 cleared a transient failure is visible for at most one refresh interval. When
 last good data exists, the retained `stale` reading is served for the
 provider's TTL instead.
+
+## Update state
+
+`update apply` and `update run` talk to each other only through two files
+in `$XDG_STATE_HOME/agent-bar/`. Both are JSON documents with
+`schemaVersion` 1 and `operation` `update`, written with mode `0600`.
+
+- `update-running.json` holds `txid`, `startedAt`, `targetVersion`, and
+  `fromVersion`, the installed version when the run started. `update
+  apply` creates it before it starts the unit, and `update run <txid>`
+  deletes it after it writes the result, only when the marker carries the
+  same `txid`. A marker older than 240 seconds, the unit's `RuntimeMaxSec`,
+  belongs to a unit that systemd has already stopped.
+- `update-result.json` holds `txid`, `result`, `fromVersion`,
+  `installedVersion`, `restartRequired`, and `finishedAt`. `update run`
+  writes it through a temporary file and a rename, so a reader never sees
+  a partial file.
+
+`update status` deletes the result file when it reports it, together with
+the marker of the same `txid`. It deletes a stale marker when it reports
+it; the run is `updated` when the installed version differs from the
+marker's `fromVersion`, and `failed` otherwise. A new `update apply`
+replaces a stale marker and deletes a result left by an earlier run. Neither file holds plugin-manager
+output, credentials, or account data. Deleting both files by hand is
+always safe; the next `update status` then prints `none`.
 
 ## Provider data sources
 

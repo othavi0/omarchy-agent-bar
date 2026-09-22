@@ -139,43 +139,52 @@ settings file is untouched until then. `update check` takes no lock.
 
 ## Update available or update failed
 
-Agent Bar only checks for updates; it never installs one. When Settings
-shows a new version, run the command it names yourself:
+When Settings shows a new version, click `Update to <version>` and
+confirm. The popup runs `update apply`, which starts the user unit
+`agent-bar-update-<txid>`. The unit runs
+`omarchy plugin update othavi0.agent-bar --yes`, and the popup reads the
+result with `update status`. When the version changes, the shell reloads
+the plugin and the popup closes; reopen it to see the restart prompt.
+From a terminal, the same update is:
 
 ```bash
-GIT_PAGER=cat omarchy plugin update othavi0.agent-bar && omarchy-restart-shell
+omarchy plugin update othavi0.agent-bar --yes && omarchy-restart-shell
 ```
 
-`omarchy plugin update` owns the actual result. Its failure modes:
+`omarchy plugin update` owns the actual result. Its failure modes, with
+the result each one produces in `update status`:
 
-- **Stuck at a `:` prompt after a screen of diff**: nothing failed. Before
-  it asks for confirmation, `omarchy plugin update` prints
-  `git diff HEAD FETCH_HEAD`. With `delta` installed it prints without
-  paging; without it, git opens the diff in `less`, which shows one screen
-  and waits at `:` with no hint. The update has not run yet, and because
-  of the `&&` neither has `omarchy-restart-shell`. Press `q`, then answer
-  `Yes` to `Update othavi0.agent-bar?`. Agent Bar 10.5.5 and older show
-  the command without `GIT_PAGER=cat`, so their Settings tab still leads
-  here; the prefix makes git print the diff straight to the terminal and
-  go directly to the confirmation. `--yes` also avoids the pager, but it
-  skips the confirmation too.
-
-- **Non-fast-forward**: `omarchy plugin update` refuses to update a plugin
-  directory with local modifications or diverged history. It never force-
-  pushes or overwrites; resolve or discard the local change in the plugin
-  directory, then retry.
-- **Validation failure after fetch**: the update fetches, fast-forwards, and
-  re-validates with `omarchy-plugin-validate`. A failing validation runs
-  `git reset --hard ORIG_HEAD` automatically, restoring the previous
-  version; nothing is left half-installed.
+- **Non-fast-forward** (`local_changes`): `omarchy plugin update` refuses
+  to update a plugin directory with local modifications or diverged
+  history. It never force-pushes or overwrites. Run `git status` in
+  `~/.config/omarchy/plugins/othavi0.agent-bar`, resolve or discard the
+  local change, then retry.
+- **Fetch failure** (`fetch_failed`): GitHub was unreachable. Retry when
+  the network is back.
+- **Validation failure after fetch** (`validation_failed`): the update
+  fetches, fast-forwards, and re-validates with `omarchy-plugin-validate`.
+  A failing validation runs `git reset --hard ORIG_HEAD` automatically,
+  restoring the previous version; nothing is left half-installed.
+- **Timeout** (`timed_out`): the plugin manager did not finish within 120
+  seconds, and the helper stopped it and every process it started. If the
+  fast-forward had already happened, the result is `updated` instead.
+- **Lock held** (`locked`): an uninstall or another update held the
+  maintenance lock for 60 seconds. Retry once it finishes.
+- **Unit stopped early** (`failed`): systemd stopped the unit at its 180
+  second limit, or it died, before it wrote a result. Read its journal with
+  `journalctl --user -u 'agent-bar-update-*'`. The unit logs only
+  `agent-bar: update run: <result>`, never plugin-manager output.
+  `already_running` from `update apply` means a run started less than 180
+  seconds ago; wait for `update status` to report it.
 - **Not a git checkout**: a plugin directory installed before the git-based
   distribution has no `.git`. `omarchy plugin update` silently skips it in
   a bulk run and refuses it outright when targeted by ID. See
   [Migrating a pre-conversion install](integration.md#migrating-a-pre-conversion-install)
   for the detection, the reinstall commands, and what survives.
 
-`omarchy plugin update` does not reload a running shell by itself; run
-`omarchy-restart-shell` afterward so the new QML loads.
+`omarchy plugin update` does not reload a running shell by itself. After
+`updated`, press `Restart shell` in Settings or run `omarchy-restart-shell`
+so the new QML loads.
 
 Confirm the outcome with:
 

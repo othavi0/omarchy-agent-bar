@@ -75,6 +75,15 @@ impl MaintenanceGate {
         Ok(ExclusiveMaintenanceGuard { file })
     }
 
+    pub fn try_lock_exclusive(&self) -> io::Result<Option<ExclusiveMaintenanceGuard>> {
+        let file = self.reopen()?;
+        match FileExt::try_lock_exclusive(&file) {
+            Ok(()) => Ok(Some(ExclusiveMaintenanceGuard { file })),
+            Err(err) if err.kind() == io::ErrorKind::WouldBlock || is_lock_busy(&err) => Ok(None),
+            Err(err) => Err(err),
+        }
+    }
+
     fn reopen(&self) -> io::Result<File> {
         OpenOptions::new()
             .read(true)

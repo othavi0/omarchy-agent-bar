@@ -576,3 +576,32 @@ fn active_docs_release_notes_10_0_0_exist() {
         "release notes must not claim unimplemented status"
     );
 }
+
+#[test]
+fn active_docs_name_the_update_unit_limit_and_run_argument() {
+    let root = workspace_root();
+    let limit = format!(
+        "RuntimeMaxSec={}",
+        agent_bar::plugin::update_state::UPDATE_RUN_WINDOW.whole_seconds()
+    );
+    for rel in [
+        "docs/specs/v10/03-cli-and-json-contract.md",
+        "docs/specs/v10/amendments/2026-09-22-update-apply-detached-design.md",
+    ] {
+        let text = read_text(&root.join(rel));
+        assert!(text.contains(&limit), "{rel} must name {limit}");
+        assert!(
+            text.contains("update run <txid>"),
+            "{rel} must name update run <txid>"
+        );
+    }
+    for rel in ["docs/guide/commands.md", "docs/guide/runtime.md"] {
+        let text = read_text(&root.join(rel));
+        let seconds = format!(
+            "{} seconds",
+            agent_bar::plugin::update_state::UPDATE_RUN_WINDOW.whole_seconds()
+        );
+        assert!(text.contains(&seconds), "{rel} must name {seconds}");
+        assert!(text.contains("`txid`"), "{rel} must name the txid field");
+    }
+}

@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use crate::plugin::update_state::Txid;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ProviderId {
     Claude,
@@ -92,10 +94,15 @@ pub enum ConfigInput {
     Json(String),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UpdateCommand {
     Interactive,
     Check,
+    Apply,
+    Status,
+    /// The transient unit body that `update apply` starts for run `txid`
+    /// (CLI-029C).
+    Run(Txid),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -5,6 +5,9 @@ use super::command::{
     StatusFormat, StatusOptions, UpdateCommand,
 };
 use super::exit::CliFailure;
+use crate::plugin::update_state::Txid;
+
+const UPDATE_RUN_USAGE: &str = "update run requires exactly one txid of 32 lowercase hex digits";
 
 const CONFIG_APPLY_USAGE: &str = "config apply requires stdin, file <path>, or json <value>";
 
@@ -210,6 +213,15 @@ fn parse_update(tokens: &[String]) -> Result<Command, CliFailure> {
     match tokens {
         [] => Ok(Command::Update(UpdateCommand::Interactive)),
         [word] if word == "check" => Ok(Command::Update(UpdateCommand::Check)),
+        [word] if word == "apply" => Ok(Command::Update(UpdateCommand::Apply)),
+        [word, txid] if word == "run" => Txid::parse(txid)
+            .map(|txid| Command::Update(UpdateCommand::Run(txid)))
+            .ok_or_else(|| CliFailure::grammar(UPDATE_RUN_USAGE)),
+        [word] | [word, _, _, ..] if word == "run" => Err(CliFailure::grammar(UPDATE_RUN_USAGE)),
+        [word] if word == "status" => Ok(Command::Update(UpdateCommand::Status)),
+        [word, _, ..] if matches!(word.as_str(), "apply" | "status") => Err(CliFailure::grammar(
+            format!("unexpected argument after update {word}"),
+        )),
         [other, ..] => Err(CliFailure::grammar(format!(
             "unknown argument '{other}' for update"
         ))),

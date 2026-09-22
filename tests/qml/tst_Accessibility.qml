@@ -44,7 +44,8 @@ TestCase {
       "components/SectionHeader.qml",
       "components/ConfirmDialog.qml",
       "components/FocusController.qml",
-      "components/ResetsSection.qml"
+      "components/ResetsSection.qml",
+      "components/RestartBanner.qml"
     ]
   }
 

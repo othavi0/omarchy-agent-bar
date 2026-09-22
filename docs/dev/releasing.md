@@ -132,11 +132,12 @@ silently in the past (three consecutive releases before the fix in PR #50),
 and a red run means `update check` simply never reports the new version.
 Run this checklist after every product merge.
 
-The plugin only checks for updates; it never applies one. There is no
-Settings button that installs a release — Settings shows the version,
-release notes, marketplace page, and the command to run. Verification below
-proves `update check` reports the new version, then proves that command
-actually installs it on a live host.
+The plugin checks for updates only when the user asks, and installs one
+only after the user confirms `Update to <version>` in Settings. That button
+runs `update apply`, which starts a user unit that runs
+`omarchy plugin update` once; `update status` reports the outcome.
+Verification below proves `update check` reports the new version, then
+proves `update apply` actually installs it on a live host.
 
 Before merging, the standing gates already cover the update contract:
 `cargo test --test root_tree_validate` mirrors `omarchy-plugin-validate`
@@ -169,18 +170,24 @@ After merging:
    # What Settings reports: must show the new version is available.
    ~/.config/omarchy/plugins/othavi0.agent-bar/bin/agent-bar update check
 
-   # The command Settings names, run by hand — there is no apply button.
-   GIT_PAGER=cat omarchy plugin update othavi0.agent-bar && omarchy-restart-shell
+   # What the Update button runs. Must print result "started".
+   printf '{"schemaVersion":1,"operation":"update","confirmed":true,"targetVersion":"%s"}' "$VERSION" \
+     | ~/.config/omarchy/plugins/othavi0.agent-bar/bin/agent-bar update apply
+
+   # Repeat until status is "finished". It must show result "updated"
+   # with installedVersion == the new version. The line is printed once.
+   ~/.config/omarchy/plugins/othavi0.agent-bar/bin/agent-bar update status
+   omarchy-restart-shell
 
    # Must now report available: false with current == the new version.
    ~/.config/omarchy/plugins/othavi0.agent-bar/bin/agent-bar update check
    ```
 
-   Then glance at the bar: chips must render with live data. `omarchy
-   plugin update` fast-forwards the tree but does not reload a running
-   `Service.qml` by itself, which is why the command above chains
-   `omarchy-restart-shell`; confirm the new QML actually loaded before
-   judging the release green.
+   Set `VERSION` to the released version first. Then glance at the bar:
+   chips must render with live data. `omarchy plugin update` fast-forwards
+   the tree but does not reload a running `Service.qml` by itself, which is
+   why `omarchy-restart-shell` follows; confirm the new QML actually loaded
+   before judging the release green.
 
 `omarchy update` (the system-wide update) does not update plugins by
 design; installs that want it hook `omarchy-plugin-update --yes` into

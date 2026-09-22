@@ -149,26 +149,47 @@ Detaching the unit lets the operation outlive the shell process that
 started it; there is no permanent daemon and no verified worker copy of the
 helper.
 
-Update has no equivalent delegation. `update check` fetches this
-repository's `bundle.json` receipt directly from `master` over HTTPS (the
-repository root is the plugin tree; see
+`update check` fetches this repository's
+`bundle.json` receipt directly from `master` over HTTPS (the repository
+root is the plugin tree; see
 [ADR 0006](../adr/0006-single-repository-distribution.md)) and reports
 `reinstallRequired: true` when the live plugin root has no `.git`
 directory, so the UI can offer the one-time remove-then-add migration
-instead of a false "up to date". The plugin never runs `omarchy plugin
-update` itself: the Omarchy plugin marketplace requires a separately
-verified immutable target before any automatic update runs, and Omarchy
-4.0.3 offers no way to name a commit or tag
-(`docs/specs/v10/amendments/2026-09-14-remove-update-execution-design.md`).
-When a check finds a newer release, Settings shows the target version and
-the command the user runs themself. The only check that runs is the one
+instead of a false "up to date". The only check that runs is the one
 `Check for updates` starts; there is no background schedule.
+
+The install is detached
+(`docs/specs/v10/amendments/2026-09-22-update-apply-detached-design.md`).
+`update apply` runs only after the user confirms `Update to <version>` in
+the popup. It writes `update-running.json`, starts the transient unit
+`agent-bar-update-<txid>` with `systemd-run --user --no-block`, and
+returns. The detachment is required: the Omarchy shell watches
+`~/.config/omarchy/plugins` and reloads the plugin service about 150 ms
+after the fast-forward writes the tree, which stops every helper the old
+`Service.qml` started.
+
+The unit runs `update run`. It holds the maintenance gate exclusively
+(waiting up to 60 seconds for it), runs
+`omarchy plugin update othavi0.agent-bar --yes` in its own process group
+with a 120 second timeout that kills the group, and compares the
+`bundle.json` version before and after. The tree version decides
+`updated`, not the exit status: a fast-forward followed by a failed plugin
+rescan is still `updated`. It writes `update-result.json` atomically and
+deletes the marker. The service reads the outcome with `update status`,
+both through its 2 second poll and once on every start, so the instance
+the shell recreates after the reload shows the restart prompt. The plugin
+manager owns the fetch, the fast-forward, `omarchy-plugin-validate`, the
+rollback, and the plugin rescan. The helper never restarts the shell. The
+plugin installs whatever `master` holds at that moment.
 
 All status/config mutations, plus the purge/preflight/handoff step above,
 hold the shared stable maintenance gate under XDG state. Maintenance holds
 it exclusively while its own local work runs, preventing an external helper
-from recreating cache or notification state mid-operation; it does not hold
-the lock across the detached unit's own execution.
+from recreating cache or notification state mid-operation; uninstall does
+not hold the lock across its detached unit's own execution. The update
+unit holds it for its whole run, so a status collection that starts
+during the run waits for it; `update status` and `update apply` take no
+lock.
 
 ## Security boundaries
 

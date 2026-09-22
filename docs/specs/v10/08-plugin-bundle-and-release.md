@@ -252,17 +252,27 @@ installer; installation is the native Omarchy plugin flow end to end.
 
 Amended by the 2026-09-14 update-execution removal:
 `docs/specs/v10/amendments/2026-09-14-remove-update-execution-design.md`.
-`update apply` is gone; the private command surface for update is now:
+Amended again by the 2026-09-22 in-popup update apply:
+`docs/specs/v10/amendments/2026-09-22-update-apply-in-popup-design.md`.
+`update apply` returns as a confirmed command (`CLI-029`). Amended by the
+2026-09-22 detached update run
+(`docs/specs/v10/amendments/2026-09-22-update-apply-detached-design.md`):
+`update apply` starts the transient unit that runs `update run`, and
+`update status` reports its outcome (`CLI-029A`..`CLI-029C`). The private
+command surface for update is now:
 
 ```text
 agent-bar update
 agent-bar update check
+agent-bar update apply
+agent-bar update status
+agent-bar update run
 ```
 
-- `BUNDLE-020` (amended 2026-09-14): Bare `update` has no interactive flow
-  and nothing to confirm, because there is no `update apply` left to run.
-  Bare `update` prints usage pointing at `update check` and at the
-  user-run `omarchy plugin update othavi0.agent-bar`, and exits `3`.
+- `BUNDLE-020` (amended 2026-09-22): Bare `update` has no interactive flow.
+  It prints usage naming `update check`, `update apply`, and the terminal
+  fallback `omarchy plugin update othavi0.agent-bar --yes &&
+  omarchy-restart-shell`, and exits `3`.
 - `BUNDLE-021`: `update check` returns a machine-readable document
   containing current version, latest compatible version, availability,
   release-notes URL, target, and `reinstallRequired`. It carries no
@@ -271,9 +281,9 @@ agent-bar update check
   (`docs/specs/v10/amendments/2026-09-15-live-quickshell-probe-design.md`):
   `current.quickshellVersion` is probed from the installed `qs --version`
   rather than assumed to equal the build's own minimum.
-- `BUNDLE-022`: **Retired**, removed by the 2026-09-14 amendment.
-  `update apply` no longer exists; the plugin never delegates to
-  `omarchy plugin update ... --yes` itself.
+- `BUNDLE-022`: **Retired**, removed by the 2026-09-14 amendment. The
+  2026-09-22 `update apply` is specified by `CLI-029`..`CLI-029C`, not by
+  this requirement.
 - `BUNDLE-023`: **Retired**, removed by the 2026-09-14 amendment. There is
   no apply state left for the Settings UI to trigger; check is the only
   state, and its result shows the version, the release notes link, the
@@ -393,7 +403,11 @@ kind. `update check` is the entire update surface; see MIG-021.
   --unit=agent-bar-remove-<32-lowercase-hex-txid>.service -- <omarchy>
   plugin remove othavi0.agent-bar --yes` and returns once systemd has
   accepted the unit, so the operation outlives the shell process that
-  started it. `MIG-022`–`MIG-026` are the current contract.
+  started it. `MIG-022`–`MIG-026` are the current contract. The
+  2026-09-22 detached update run adds a second one,
+  `agent-bar-update-<txid>` with `RuntimeMaxSec=180`, which runs
+  `update run` so the update outlives the plugin reload its own
+  fast-forward causes (`CLI-029A`..`CLI-029C`).
 
 ## UI uninstall
 
