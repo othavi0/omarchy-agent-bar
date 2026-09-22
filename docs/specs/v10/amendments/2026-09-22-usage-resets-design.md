@@ -161,8 +161,11 @@ already assigned in `03-cli-and-json-contract.md`.
 ```
 
   `result` is one of `reset`, `already_used`, `not_limited`, `cooldown`,
-  `ineligible`, `unavailable`, `unauthenticated`, `network_error`, or
-  `provider_error`. Every one of them exits `0`; they are typed data.
+  `ineligible`, `unavailable`, `unauthenticated`, `network_error`,
+  `provider_error`, or `unconfirmed`. Every one of them exits `0`; they are
+  typed data. `unconfirmed` means the POST left the machine and the helper
+  could not read a known result back, so the reset may have been consumed;
+  only a fresh usage read tells.
   `resetsLeft` and `cooldownUntil` are null when the response does not
   carry them. `clears` lists the window ids the response reports as
   cleared, mapped as in collection.

@@ -38,6 +38,7 @@ pub enum ResetResult {
     Unauthenticated,
     NetworkError,
     ProviderError,
+    Unconfirmed,
 }
 
 impl ResetResult {
@@ -52,6 +53,7 @@ impl ResetResult {
             Self::Unauthenticated => "unauthenticated",
             Self::NetworkError => "network_error",
             Self::ProviderError => "provider_error",
+            Self::Unconfirmed => "unconfirmed",
         }
     }
 
@@ -102,15 +104,17 @@ pub struct ResetContext<'a> {
 /// `result` is required; every other field is read leniently and a
 /// malformed one is simply absent from the report.
 fn report_from_claim_body(body: &[u8]) -> ResetReport {
+    // The POST already had its side effect: a 2xx body the helper cannot
+    // read is an unconfirmed claim, not a refusal.
     let Ok(value) = serde_json::from_slice::<serde_json::Value>(body) else {
-        return ResetReport::simple(ResetResult::ProviderError);
+        return ResetReport::simple(ResetResult::Unconfirmed);
     };
     let Some(result) = value
         .get("result")
         .and_then(serde_json::Value::as_str)
         .and_then(ResetResult::parse_claim_result)
     else {
-        return ResetReport::simple(ResetResult::ProviderError);
+        return ResetReport::simple(ResetResult::Unconfirmed);
     };
     let cleared: Vec<String> = value
         .get("cleared")
@@ -313,8 +317,9 @@ pub async fn claim_claude_reset(ctx: &ResetContext<'_>, reset_id: &str) -> Reset
             return ResetReport::simple(ResetResult::Unauthenticated);
         }
         Ok(_) => return ResetReport::simple(ResetResult::ProviderError),
-        Err(HttpError::Network(_)) => return ResetReport::simple(ResetResult::NetworkError),
-        Err(_) => return ResetReport::simple(ResetResult::ProviderError),
+        // Once the request left, a transport failure cannot tell whether
+        // the reset was consumed; only a fresh usage read can.
+        Err(_) => return ResetReport::simple(ResetResult::Unconfirmed),
     };
 
     report_from_claim_body(&response.body)
@@ -580,7 +585,7 @@ mod tests {
             http: &http,
         };
         let report = claim_claude_reset(&ctx, "cedar-ember:g1").await;
-        assert_eq!(report.result, ResetResult::NetworkError);
+        assert_eq!(report.result, ResetResult::Unconfirmed);
         assert!(http.last_body.lock().unwrap().is_some(), "the POST ran");
         assert_eq!(
             http.responses.lock().unwrap().len(),
@@ -821,7 +826,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn claim_response_without_a_string_result_is_provider_error() {
+    async fn claim_response_without_a_string_result_is_unconfirmed() {
         for claim_body in [
             &br#"{"resets_left":0}"#[..],
             br#"{"result":null}"#,
@@ -840,7 +845,7 @@ mod tests {
                 http: &http,
             };
             let report = claim_claude_reset(&ctx, "cedar-ember:g1").await;
-            assert_eq!(report.result, ResetResult::ProviderError);
+            assert_eq!(report.result, ResetResult::Unconfirmed);
         }
     }
 
@@ -870,7 +875,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn claim_post_network_error_is_network_error() {
+    async fn claim_post_network_error_is_unconfirmed() {
         let fs = creds_and_org_fs();
         let env = test_env();
         let clock = FixedClock(datetime!(2026-09-22 18:00:00 UTC));
@@ -887,11 +892,11 @@ mod tests {
             http: &http,
         };
         let report = claim_claude_reset(&ctx, "cedar-ember:g1").await;
-        assert_eq!(report.result, ResetResult::NetworkError);
+        assert_eq!(report.result, ResetResult::Unconfirmed);
     }
 
     #[tokio::test]
-    async fn claim_post_malformed_body_is_provider_error() {
+    async fn claim_post_malformed_body_is_unconfirmed() {
         let fs = creds_and_org_fs();
         let env = test_env();
         let clock = FixedClock(datetime!(2026-09-22 18:00:00 UTC));
@@ -905,7 +910,7 @@ mod tests {
             http: &http,
         };
         let report = claim_claude_reset(&ctx, "cedar-ember:g1").await;
-        assert_eq!(report.result, ResetResult::ProviderError);
+        assert_eq!(report.result, ResetResult::Unconfirmed);
     }
 
     #[test]

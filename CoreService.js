@@ -32,7 +32,8 @@ var RESET_RESULTS = {
   "unavailable": true,
   "unauthenticated": true,
   "network_error": true,
-  "provider_error": true
+  "provider_error": true,
+  "unconfirmed": true
 }
 
 var PROVIDER_STATES = {
