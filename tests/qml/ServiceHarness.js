@@ -63,6 +63,7 @@ function createService(serviceUrl, parent, testCase) {
       processMock("settingsWriteProcess", "settingsWriteOut", "settingsWriteErr"),
       processMock("maintenanceCheckProcess", "maintenanceCheckOut", "maintenanceCheckErr"),
       processMock("maintenanceHandoffProcess", "maintenanceHandoffOut", "maintenanceHandoffErr"),
+      processMock("resetProcess", "resetOut", "resetErr"),
       ""
     ].join("\n")
     source = source.slice(0, processStart) + processMocks + source.slice(processEnd)
@@ -83,4 +84,53 @@ function createService(serviceUrl, parent, testCase) {
   service.collectionDelayMs = 10000
   service.applyVersionProbeResult({ ok: true, exitCode: 0, stdout: "10.3.17\n", stderr: "", timedOut: false })
   return service
+}
+
+var CLAUDE_RESET_ID = "cedar-ember:x"
+
+function claudeResetEnvelope(resets) {
+  return JSON.stringify({
+    schemaVersion: 2,
+    helperVersion: "10.3.17",
+    generatedAt: "2026-09-22T12:00:00Z",
+    request: { provider: null, cache: "use" },
+    providers: [{
+      id: "claude",
+      name: "Claude",
+      state: "ready",
+      source: "live",
+      plan: null,
+      windows: [
+        { id: "session", label: "Session (5h)", usedPercent: 100, remainingPercent: 0, resetsAt: null },
+        { id: "weekly", label: "Weekly (7d)", usedPercent: 40, remainingPercent: 60, resetsAt: null }
+      ],
+      resets: resets !== undefined ? resets : [{
+        id: CLAUDE_RESET_ID,
+        label: "Launch reset",
+        available: 1,
+        total: 1,
+        clears: ["session", "weekly"],
+        expiresAt: "2026-10-22T16:00:00Z",
+        refillsAt: null,
+        cooldownUntil: null,
+        claimable: true
+      }],
+      lastSuccessAt: "2026-09-22T12:00:00Z",
+      error: null,
+      action: null
+    }]
+  })
+}
+
+function claudeResetResult(result) {
+  return JSON.stringify({
+    schemaVersion: 1,
+    operation: "reset",
+    provider: "claude",
+    resetId: CLAUDE_RESET_ID,
+    result: result || "reset",
+    resetsLeft: 0,
+    cooldownUntil: null,
+    clears: ["session", "weekly"]
+  })
 }

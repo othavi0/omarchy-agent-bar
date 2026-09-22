@@ -440,7 +440,7 @@ impl UpdateCheck {
     }
 }
 
-/// Non-TTY structured uninstall confirmation (CLI-036 / BUNDLE-036).
+/// Non-TTY structured uninstall confirmation (CLI-028 / BUNDLE-036).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UninstallConfirmation {

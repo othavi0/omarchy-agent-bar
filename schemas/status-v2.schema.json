@@ -136,6 +136,37 @@
       "type": "string",
       "enum": ["live", "cache"]
     },
+    "usageReset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "label",
+        "available",
+        "total",
+        "clears",
+        "expiresAt",
+        "refillsAt",
+        "cooldownUntil",
+        "claimable"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "label": { "type": "string", "minLength": 1 },
+        "available": { "type": "integer", "minimum": 0 },
+        "total": {
+          "oneOf": [{ "type": "null" }, { "type": "integer", "minimum": 0 }]
+        },
+        "clears": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "expiresAt": { "$ref": "#/$defs/rfc3339OrNull" },
+        "refillsAt": { "$ref": "#/$defs/rfc3339OrNull" },
+        "cooldownUntil": { "$ref": "#/$defs/rfc3339OrNull" },
+        "claimable": { "type": "boolean" }
+      }
+    },
     "providerBase": {
       "type": "object",
       "additionalProperties": false,
@@ -148,7 +179,8 @@
         "windows",
         "lastSuccessAt",
         "error",
-        "action"
+        "action",
+        "resets"
       ],
       "properties": {
         "id": { "$ref": "#/$defs/providerId" },
@@ -185,7 +217,10 @@
         "action": {
           "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/action" }]
         },
-        "rateLimitResetsAvailable": { "type": "integer", "minimum": 0 }
+        "resets": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/usageReset" }
+        }
       }
     },
     "provider": {

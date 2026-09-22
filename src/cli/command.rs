@@ -105,17 +105,19 @@ pub enum HelpTopic {
     Config,
     Update,
     Uninstall,
+    Reset,
     Help,
     Version,
 }
 
 impl HelpTopic {
-    pub const ALL: [HelpTopic; 7] = [
+    pub const ALL: [HelpTopic; 8] = [
         HelpTopic::Status,
         HelpTopic::Login,
         HelpTopic::Config,
         HelpTopic::Update,
         HelpTopic::Uninstall,
+        HelpTopic::Reset,
         HelpTopic::Help,
         HelpTopic::Version,
     ];
@@ -127,6 +129,7 @@ impl HelpTopic {
             HelpTopic::Config => "config",
             HelpTopic::Update => "update",
             HelpTopic::Uninstall => "uninstall",
+            HelpTopic::Reset => "reset",
             HelpTopic::Help => "help",
             HelpTopic::Version => "version",
         }
@@ -139,6 +142,7 @@ impl HelpTopic {
             "config" => Some(HelpTopic::Config),
             "update" => Some(HelpTopic::Update),
             "uninstall" => Some(HelpTopic::Uninstall),
+            "reset" => Some(HelpTopic::Reset),
             "help" => Some(HelpTopic::Help),
             "version" => Some(HelpTopic::Version),
             _ => None,
@@ -152,7 +156,14 @@ pub enum Command {
     Login(ProviderId),
     Config(ConfigCommand),
     Update(UpdateCommand),
-    Uninstall { purge: bool },
+    Uninstall {
+        purge: bool,
+    },
+    /// `reset claude <reset-id>` (CLI-032). Provider is fixed to Claude by
+    /// the grammar; any other provider word is a grammar error (CLI-007).
+    Reset {
+        reset_id: String,
+    },
     Help(Option<HelpTopic>),
     Version,
 }

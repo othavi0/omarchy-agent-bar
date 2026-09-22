@@ -4,7 +4,7 @@ use time::format_description::well_known::Rfc3339;
 use time::{OffsetDateTime, UtcOffset};
 
 use crate::cli::ProviderId;
-use crate::status::schema::{DataSource, Plan, ProviderResult, UsageWindow};
+use crate::status::schema::{DataSource, Plan, ProviderResult, UsageReset, UsageWindow};
 use crate::support::redact::strip_ansi_and_controls;
 
 use super::catalog::{ANTIGRAVITY, CLAUDE, CODEX, GROK};
@@ -156,7 +156,7 @@ pub fn grok_from_billing_json(
         plan,
         windows,
         last_success_at: now,
-        rate_limit_resets_available: None,
+        resets: Vec::new(),
     }
 }
 
@@ -239,8 +239,10 @@ struct CodexRateLimitsDoc {
     individual_limit: Option<CodexIndividualLimitRaw>,
     #[serde(default, rename = "extraBuckets")]
     extra_buckets: Vec<CodexExtraBucketRaw>,
-    #[serde(default, rename = "rateLimitResetsAvailable")]
-    rate_limit_resets_available: Option<u32>,
+    /// Internal wire key from [`crate::providers::codex_app_server::
+    /// normalize_to_rate_limits_json`], not part of the public status schema.
+    #[serde(default, rename = "codexCreditsAvailable")]
+    reset_credits_available: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -329,6 +331,25 @@ pub fn codex_from_rate_limits_json(bytes: &[u8], now: OffsetDateTime) -> Provide
 
     let _ = doc.credits;
 
+    // JSON-022F: never claimable here — the popup's `reset claude` command
+    // only ever claims Claude resets, so Codex resets are display-only.
+    let resets = match doc.reset_credits_available.filter(|&n| n > 0) {
+        Some(n) => UsageReset::try_new(
+            "codex-credits",
+            "Rate-limit resets",
+            n,
+            None,
+            Vec::new(),
+            None,
+            None,
+            None,
+            false,
+        )
+        .map(|r| vec![r])
+        .unwrap_or_default(),
+        None => Vec::new(),
+    };
+
     ProviderResult::Ready {
         id: ProviderId::Codex,
         name: CODEX.display_name.to_owned(),
@@ -339,7 +360,7 @@ pub fn codex_from_rate_limits_json(bytes: &[u8], now: OffsetDateTime) -> Provide
         }),
         windows,
         last_success_at: now,
-        rate_limit_resets_available: doc.rate_limit_resets_available,
+        resets,
     }
 }
 
@@ -414,6 +435,12 @@ struct ClaudeUsageDoc {
     spend: Option<Value>,
     #[serde(default)]
     extra_usage: Option<Value>,
+    /// Kept as raw JSON and mapped leniently: a malformed reset block yields
+    /// no entries instead of failing the whole Claude row.
+    #[serde(default)]
+    cedar_ember: Option<Value>,
+    #[serde(default)]
+    juniper_tide: Option<Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -456,6 +483,143 @@ struct ClaudeLimitModel {
     display_name: Option<String>,
     #[serde(default)]
     id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct ClaudeCedarEmberRaw {
+    #[serde(default)]
+    eligible: bool,
+    #[serde(default)]
+    grants: Vec<ClaudeCedarEmberGrantRaw>,
+    #[serde(default)]
+    next_grant_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ClaudeCedarEmberGrantRaw {
+    id: String,
+    #[serde(default)]
+    label: Option<String>,
+    #[serde(default)]
+    resets_total: Option<u32>,
+    #[serde(default)]
+    resets_left: Option<u32>,
+    #[serde(default)]
+    ends_at: Option<String>,
+    #[serde(default)]
+    clears: Vec<String>,
+    #[serde(default)]
+    paused: bool,
+    #[serde(default)]
+    usable_now: bool,
+    #[serde(default)]
+    cooldown_until: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct ClaudeJuniperTideRaw {
+    #[serde(default)]
+    eligible: bool,
+    #[serde(default)]
+    available: bool,
+    #[serde(default)]
+    next_available_at: Option<String>,
+    #[serde(default)]
+    weekly_resets_at: Option<String>,
+    #[serde(default)]
+    resets_per_week: Option<u32>,
+}
+
+/// Maps `five_hour`/`seven_day` to this provider's window vocabulary; any
+/// other key (a grant clearing an unmodeled window) is dropped, per the
+/// amendment's `clears` mapping.
+pub(crate) fn claude_reset_clears(raw: &[String]) -> Vec<String> {
+    raw.iter()
+        .filter_map(|key| match key.as_str() {
+            "five_hour" => Some("session".to_owned()),
+            "seven_day" => Some("weekly".to_owned()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// One `UsageReset` per eligible, unpaused `cedar_ember` grant with resets
+/// left or a live cooldown, `next_grant_id` ordered first.
+fn claude_cedar_ember_resets(raw: &ClaudeCedarEmberRaw) -> Vec<UsageReset> {
+    if !raw.eligible {
+        return Vec::new();
+    }
+    let mut grants: Vec<&ClaudeCedarEmberGrantRaw> = raw.grants.iter().collect();
+    if let Some(next) = raw.next_grant_id.as_deref() {
+        grants.sort_by_key(|g| g.id != next);
+    }
+    grants
+        .into_iter()
+        .filter(|g| {
+            !g.paused && (g.resets_left.is_some_and(|n| n > 0) || g.cooldown_until.is_some())
+        })
+        .filter_map(|g| {
+            let grant_id = sanitize_bucket_id(&g.id);
+            let id = format!("cedar-ember:{grant_id}");
+            let label = g.label.as_deref().unwrap_or("Usage reset");
+            let cooldown_until = g.cooldown_until.as_deref().and_then(parse_reset_timestamp);
+            let claimable = g.usable_now && cooldown_until.is_none();
+            UsageReset::try_new(
+                id,
+                label,
+                g.resets_left.unwrap_or(0),
+                g.resets_total,
+                claude_reset_clears(&g.clears),
+                g.ends_at.as_deref().and_then(parse_reset_timestamp),
+                None,
+                cooldown_until,
+                claimable,
+            )
+            .ok()
+        })
+        .collect()
+}
+
+/// The raw `cedar_ember` grant id behind a sanitized reset grant id, read
+/// from the same usage payload collection maps. `None` when no grant or more
+/// than one grant sanitizes to `sanitized_id`: the claim must not guess.
+pub(crate) fn claude_cedar_ember_raw_grant_id(bytes: &[u8], sanitized_id: &str) -> Option<String> {
+    let doc: ClaudeUsageDoc = serde_json::from_slice(bytes).ok()?;
+    let raw: ClaudeCedarEmberRaw = serde_json::from_value(doc.cedar_ember?).ok()?;
+    let mut matches = raw
+        .grants
+        .into_iter()
+        .filter(|g| sanitize_bucket_id(&g.id) == sanitized_id);
+    let grant = matches.next()?;
+    if matches.next().is_some() {
+        return None;
+    }
+    Some(grant.id)
+}
+
+/// One `UsageReset` for the weekly `juniper_tide` reset, when eligible and
+/// either due now or scheduled.
+fn claude_juniper_tide_reset(raw: &ClaudeJuniperTideRaw) -> Option<UsageReset> {
+    if !raw.eligible || (!raw.available && raw.next_available_at.is_none()) {
+        return None;
+    }
+    let refills_at = raw
+        .next_available_at
+        .as_deref()
+        .or(raw.weekly_resets_at.as_deref())
+        .and_then(parse_reset_timestamp);
+    UsageReset::try_new(
+        "juniper-tide",
+        "Weekly reset",
+        u32::from(raw.available),
+        raw.resets_per_week,
+        vec!["session".to_owned()],
+        None,
+        refills_at,
+        None,
+        raw.available,
+    )
+    .ok()
 }
 
 pub fn claude_from_usage_json(
@@ -566,6 +730,21 @@ pub fn claude_from_usage_json(
         }
     }
 
+    // Ordering: next_grant_id first (handled inside the cedar_ember mapper),
+    // then remaining cedar_ember grants, then juniper_tide last.
+    let mut resets = doc
+        .cedar_ember
+        .and_then(|raw| serde_json::from_value::<ClaudeCedarEmberRaw>(raw).ok())
+        .map(|raw| claude_cedar_ember_resets(&raw))
+        .unwrap_or_default();
+    if let Some(reset) = doc
+        .juniper_tide
+        .and_then(|raw| serde_json::from_value::<ClaudeJuniperTideRaw>(raw).ok())
+        .and_then(|raw| claude_juniper_tide_reset(&raw))
+    {
+        resets.push(reset);
+    }
+
     ProviderResult::Ready {
         id: ProviderId::Claude,
         name: CLAUDE.display_name.to_owned(),
@@ -573,7 +752,7 @@ pub fn claude_from_usage_json(
         plan,
         windows,
         last_success_at: now,
-        rate_limit_resets_available: None,
+        resets,
     }
 }
 
@@ -651,10 +830,12 @@ pub(crate) fn format_plan_label(raw: &str) -> String {
         .join(" ")
 }
 
+/// JSON-022C/D name a quota-reset count `codex-credits`, which is data, not
+/// money. Only that exact reset id is exempt from the `"credits"` ban.
 #[cfg(test)]
 pub fn assert_no_money(result: &ProviderResult) {
-    let text = format!("{result:?}");
-    for banned in ["spend", "credits", "balance", "currency", "usd", "BRL"] {
+    let text = format!("{result:?}").replace("\"codex-credits\"", "\"\"");
+    for banned in ["spend", "balance", "currency", "usd", "brl", "credits"] {
         assert!(
             !text.to_ascii_lowercase().contains(banned),
             "domain result leaked monetary field '{banned}': {text}"
@@ -796,7 +977,7 @@ pub fn antigravity_from_usage_json(stdout: &str, now: OffsetDateTime) -> Provide
             .chain(third_party_session)
             .collect(),
         last_success_at: now,
-        rate_limit_resets_available: None,
+        resets: Vec::new(),
     }
 }
 
@@ -817,6 +998,114 @@ mod tests {
                 assert!(message.contains("expired"), "message: {message}");
             }
             other => panic!("expected unauthenticated, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn claude_cedar_ember_grant_becomes_a_claimable_reset() {
+        let body =
+            include_bytes!("../../tests/fixtures/providers/claude/usage-with-cedar-ember.json");
+        let result = claude_from_usage_json(body, datetime!(2026-09-22 18:00:00 UTC), None, true);
+        match result {
+            ProviderResult::Ready { resets, .. } => {
+                assert_eq!(resets.len(), 1, "{resets:?}");
+                let reset = &resets[0];
+                assert_eq!(reset.id(), "cedar-ember:opus55-launch-promax-20260921");
+                assert_eq!(
+                    reset.label(),
+                    "Claude Opus 5.5 launch: one usage-limit reset for Pro and Max"
+                );
+                assert_eq!(reset.available(), 1);
+                assert_eq!(reset.total(), Some(1));
+                assert_eq!(reset.clears(), &["session".to_owned(), "weekly".to_owned()]);
+                assert!(reset.claimable());
+                assert!(reset.cooldown_until().is_none());
+                assert!(reset.expires_at().is_some());
+            }
+            other => panic!("expected ready, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn claude_cedar_ember_ineligible_yields_no_resets() {
+        let body = br#"{"cedar_ember":{"eligible":false,"grants":[{"id":"x","resets_left":1,"paused":false,"usable_now":true}]}}"#;
+        let result = claude_from_usage_json(body, datetime!(2026-09-22 18:00:00 UTC), None, true);
+        match result {
+            ProviderResult::Ready { resets, .. } => assert!(resets.is_empty(), "{resets:?}"),
+            other => panic!("expected ready, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn claude_cedar_ember_paused_grant_is_skipped() {
+        let body = br#"{"cedar_ember":{"eligible":true,"grants":[
+            {"id":"a","resets_left":1,"paused":true,"usable_now":true}
+        ]}}"#;
+        let result = claude_from_usage_json(body, datetime!(2026-09-22 18:00:00 UTC), None, true);
+        match result {
+            ProviderResult::Ready { resets, .. } => assert!(resets.is_empty(), "{resets:?}"),
+            other => panic!("expected ready, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn claude_malformed_reset_blocks_keep_the_windows_ready() {
+        for blocks in [
+            r#""cedar_ember":{"eligible":true,"grants":null}"#,
+            r#""cedar_ember":{"eligible":true,"grants":[{"id":"g","clears":null,"resets_left":1,"usable_now":true}]}"#,
+            r#""cedar_ember":{"eligible":true,"grants":[{"id":"g","paused":null,"resets_left":1,"usable_now":true}]}"#,
+            r#""cedar_ember":{"eligible":true,"grants":[{"id":123,"resets_left":1,"usable_now":true}]}"#,
+            r#""cedar_ember":{"eligible":true,"grants":[{"id":"g","resets_left":1.5,"usable_now":true}]}"#,
+            r#""juniper_tide":{"eligible":"yes","available":true}"#,
+            r#""cedar_ember":[],"juniper_tide":7"#,
+        ] {
+            let body = format!(
+                r#"{{"five_hour":{{"utilization":20.0,"resets_at":"2026-09-22T20:00:00Z"}},"seven_day":{{"utilization":40.0,"resets_at":"2026-09-25T12:00:00Z"}},{blocks}}}"#
+            );
+            let result = claude_from_usage_json(
+                body.as_bytes(),
+                datetime!(2026-09-22 18:00:00 UTC),
+                None,
+                true,
+            );
+            match result {
+                ProviderResult::Ready {
+                    windows, resets, ..
+                } => {
+                    let ids: Vec<&str> = windows.iter().map(|w| w.id()).collect();
+                    assert_eq!(ids, vec!["session", "weekly"], "{blocks}");
+                    assert!(resets.is_empty(), "{blocks}: {resets:?}");
+                }
+                other => panic!("{blocks}: expected ready, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn claude_juniper_tide_weekly_reset_maps_when_available() {
+        let body = br#"{"juniper_tide":{"eligible":true,"available":true,"weekly_resets_at":"2026-09-25T12:00:00Z","resets_per_week":1}}"#;
+        let result = claude_from_usage_json(body, datetime!(2026-09-22 18:00:00 UTC), None, true);
+        match result {
+            ProviderResult::Ready { resets, .. } => {
+                assert_eq!(resets.len(), 1);
+                assert_eq!(resets[0].id(), "juniper-tide");
+                assert_eq!(resets[0].label(), "Weekly reset");
+                assert_eq!(resets[0].available(), 1);
+                assert_eq!(resets[0].total(), Some(1));
+                assert_eq!(resets[0].clears(), &["session".to_owned()]);
+                assert!(resets[0].claimable());
+            }
+            other => panic!("expected ready, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn claude_juniper_tide_ineligible_yields_no_reset() {
+        let body = br#"{"juniper_tide":{"eligible":false,"available":false,"resets_per_week":1}}"#;
+        let result = claude_from_usage_json(body, datetime!(2026-09-22 18:00:00 UTC), None, true);
+        match result {
+            ProviderResult::Ready { resets, .. } => assert!(resets.is_empty(), "{resets:?}"),
+            other => panic!("expected ready, got {other:?}"),
         }
     }
 
@@ -919,6 +1208,22 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "credits")]
+    fn assert_no_money_still_bans_a_credits_field() {
+        let window = UsageWindow::try_new("session", "creditsRemaining", 10.0, 90.0, None)
+            .expect("valid window");
+        assert_no_money(&ProviderResult::Ready {
+            id: ProviderId::Codex,
+            name: "Codex".into(),
+            source: DataSource::Live,
+            plan: None,
+            windows: vec![window],
+            last_success_at: datetime!(2026-07-26 18:00:00 UTC),
+            resets: Vec::new(),
+        });
+    }
+
+    #[test]
     fn codex_discards_credits() {
         let body = br#"{"primary":{"usedPercent":30.0,"windowDurationMins":300,"resetsAt":1700000000},"credits":{"has_credits":true,"unlimited":false,"balance":"12.5"}}"#;
         let result = codex_from_rate_limits_json(body, datetime!(2026-07-26 18:00:00 UTC));
@@ -993,7 +1298,7 @@ mod tests {
             "individualLimit": {"remainingPercent": 40.0, "resetsAt": 1791000000},
             "extraBuckets": [{"limitId": "premium",
                 "primary": {"usedPercent": 10.0, "windowDurationMins": 10080, "resetsAt": 0}}],
-            "rateLimitResetsAvailable": 2
+            "codexCreditsAvailable": 2
         });
         let bytes = serde_json::to_vec(&json).expect("fixture json");
         let result = codex_from_rate_limits_json(&bytes, datetime!(2026-08-07 12:00:00 UTC));
@@ -1002,7 +1307,7 @@ mod tests {
             ProviderResult::Ready {
                 windows,
                 plan,
-                rate_limit_resets_available,
+                resets,
                 ..
             } => {
                 let ids: Vec<&str> = windows.iter().map(|w| w.id()).collect();
@@ -1010,9 +1315,27 @@ mod tests {
                 assert_eq!(windows[1].label(), "Premium (7d)");
                 assert_eq!(windows[2].label(), "Workspace limit");
                 assert!((windows[2].remaining_percent() - 40.0).abs() < 0.01);
-                assert_eq!(rate_limit_resets_available, Some(2));
+                assert_eq!(resets.len(), 1);
+                assert_eq!(resets[0].id(), "codex-credits");
+                assert_eq!(resets[0].label(), "Rate-limit resets");
+                assert_eq!(resets[0].available(), 2);
+                assert!(!resets[0].claimable());
                 assert_eq!(plan.as_ref().map(|p| p.label.as_str()), Some("Plus"));
             }
+            other => panic!("expected ready, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn codex_zero_reset_credits_produces_no_reset_entry() {
+        let json = serde_json::json!({
+            "primary": {"usedPercent": 10.0, "windowDurationMins": 300, "resetsAt": 0},
+            "codexCreditsAvailable": 0
+        });
+        let bytes = serde_json::to_vec(&json).expect("fixture json");
+        let result = codex_from_rate_limits_json(&bytes, datetime!(2026-08-07 12:00:00 UTC));
+        match result {
+            ProviderResult::Ready { resets, .. } => assert!(resets.is_empty()),
             other => panic!("expected ready, got {other:?}"),
         }
     }

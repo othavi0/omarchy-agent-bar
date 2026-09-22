@@ -43,7 +43,8 @@ TestCase {
       "components/SettingsFooter.qml",
       "components/SectionHeader.qml",
       "components/ConfirmDialog.qml",
-      "components/FocusController.qml"
+      "components/FocusController.qml",
+      "components/ResetsSection.qml"
     ]
   }
 

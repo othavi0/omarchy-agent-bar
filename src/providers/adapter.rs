@@ -53,6 +53,14 @@ pub trait HttpClient: Send + Sync {
         headers: &[(&str, &str)],
         max_body_bytes: usize,
     ) -> BoxFuture<'_, Result<HttpResponse, HttpError>>;
+
+    fn post(
+        &self,
+        url: &str,
+        headers: &[(&str, &str)],
+        body: Vec<u8>,
+        max_body_bytes: usize,
+    ) -> BoxFuture<'_, Result<HttpResponse, HttpError>>;
 }
 
 /// Capabilities exposed to provider adapters during collection.

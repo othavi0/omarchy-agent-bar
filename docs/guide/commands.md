@@ -150,6 +150,45 @@ handoff. Both forms print one stdout JSON line once the handoff is accepted:
 }
 ```
 
+## Reset
+
+```bash
+"$PLUGIN" reset claude <reset-id>
+```
+
+Claims one banked Claude usage reset (a `resets[].id` from `status`, such as
+`cedar-ember:opus55-launch-promax-20260921` or `juniper-tide`). The command
+fetches fresh usage first and claims the id only if that fresh response still
+lists it as `claimable`; it never retries the claim. stdout is exactly one
+JSON line:
+
+```json
+{
+  "schemaVersion": 1,
+  "operation": "reset",
+  "provider": "claude",
+  "resetId": "cedar-ember:opus55-launch-promax-20260921",
+  "result": "reset",
+  "resetsLeft": 0,
+  "cooldownUntil": null,
+  "clears": ["session", "weekly"]
+}
+```
+
+`result` is one of `reset`, `already_used`, `not_limited`, `cooldown`,
+`ineligible`, `unavailable`, `unauthenticated`, `network_error`,
+`provider_error`, or `unconfirmed`. Every one of them exits `0`, because they
+are typed data, not process failures. `unconfirmed` means the POST left the
+machine and the helper could not read a known result back, so the reset may
+have been consumed; the popup refreshes the provider to find out. `unavailable` means the claim cannot be made from this
+machine right now: the fresh usage response does not list the id as
+`claimable`, or `$HOME/.claude.json` has no valid
+`oauthAccount.organizationUuid`. Signing in again does not fix the second
+case. A reset id that fails validation, or that names no
+claim program (`codex-credits`), exits `3` (`VALIDATION`) before any
+filesystem or network access; a provider other than `claude` is
+a grammar error (exit `2`).
+
 ## Help and version
 
 ```bash

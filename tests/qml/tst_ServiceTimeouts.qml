@@ -563,4 +563,147 @@ TestCase {
     compare(JSON.stringify(s.visibleProviders),
         JSON.stringify(View.visibleProviders(s.snapshot, s.appliedSettings)))
   }
+
+  function startClaimWithPopupOpen() {
+    var s = createService()
+    s.beginCollection()
+    finishLane(s, "status", 0, Harness.claudeResetEnvelope())
+    s.requestPopup("monitor-a", "claude", "usage")
+    s.requestReset("claude", Harness.CLAUDE_RESET_ID)
+    s.confirmReset()
+    compare(s.lanes.reset.busy, true)
+    return s
+  }
+
+  function test_closing_during_a_reset_keeps_the_claim() {
+    var s = startClaimWithPopupOpen()
+
+    s.closePopup("monitor-a")
+    compare(s.resetBusy, true, "the claim stays visible as busy after close")
+
+    var statusRun = s.lanes.status.runId
+    finishLane(s, "reset", 0, Harness.claudeResetResult("reset"))
+
+    compare(s.lanes.status.runId, statusRun + 1, "the settled claim refreshes its provider")
+    var argv = s.lanes.status.process.command
+    compare(argv[argv.indexOf("provider") + 1], "claude")
+    verify(argv.indexOf("bypass") >= 0)
+    compare(s.resetUi.providerId, "claude")
+    compare(s.resetUi.outcome.result, "reset")
+    compare(s.resetBusy, false)
+  }
+
+  function test_dismissing_during_a_reset_keeps_the_claim() {
+    var s = startClaimWithPopupOpen()
+
+    s.dismissPopup()
+    var statusRun = s.lanes.status.runId
+    finishLane(s, "reset", 0, Harness.claudeResetResult("reset"))
+
+    compare(s.lanes.status.runId, statusRun + 1)
+    compare(s.resetUi.outcome.result, "reset")
+  }
+
+  function test_reopening_during_a_reset_keeps_the_claim_locked() {
+    var s = startClaimWithPopupOpen()
+    var resetRun = s.lanes.reset.runId
+    s.closePopup("monitor-a")
+    s.requestPopup("monitor-a", "claude", "usage")
+
+    compare(s.resetBusy, true, "the Use reset button binds to this and stays disabled")
+    compare(s.resetUi.providerId, "claude")
+    s.requestReset("claude", Harness.CLAUDE_RESET_ID)
+    compare(s.resetUi.confirmOpen, false, "no second confirm while the claim runs")
+    s.confirmReset()
+    compare(s.lanes.reset.runId, resetRun, "no second reset run")
+  }
+
+  function test_confirm_on_an_occupied_lane_closes_the_dialog() {
+    var s = startClaimWithPopupOpen()
+    var resetRun = s.lanes.reset.runId
+    s.resetUi = Core.resetUiOpenConfirm("claude", Harness.CLAUDE_RESET_ID)
+
+    s.confirmReset()
+
+    compare(s.resetUi.confirmOpen, false)
+    compare(s.resetBusy, true)
+    compare(s.lanes.reset.runId, resetRun)
+  }
+
+  function test_the_refresh_a_reset_fires_keeps_its_caption() {
+    var s = startClaimWithPopupOpen()
+    finishLane(s, "reset", 0, Harness.claudeResetResult("reset"))
+    verify(s.lanes.status.busy)
+
+    finishLane(s, "status", 0, Harness.claudeResetEnvelope([]))
+    verify(s.resetUi.outcome !== null, "the forced refresh must not erase the caption")
+    compare(s.resetUi.outcome.result, "reset")
+
+    s.kickStatus()
+    finishLane(s, "status", 0, Harness.claudeResetEnvelope([]))
+    compare(s.resetUi.outcome, null)
+  }
+
+  function test_a_poll_in_flight_at_settle_keeps_the_caption_until_after_the_forced_run() {
+    var s = startClaimWithPopupOpen()
+    s.kickStatus()
+    var pollRun = s.lanes.status.runId
+    finishLane(s, "reset", 0, Harness.claudeResetResult("reset"))
+    compare(s.lanes.status.runId, pollRun, "the forced run queues behind the poll")
+
+    finishLane(s, "status", 0, Harness.claudeResetEnvelope())
+    verify(s.resetUi.outcome !== null, "the poll that predates the claim leaves the caption")
+    compare(s.lanes.status.runId, pollRun + 1)
+    verify(s.lanes.status.process.command.indexOf("bypass") >= 0)
+
+    finishLane(s, "status", 0, Harness.claudeResetEnvelope([]))
+    verify(s.resetUi.outcome !== null)
+
+    s.kickStatus()
+    finishLane(s, "status", 0, Harness.claudeResetEnvelope([]))
+    compare(s.resetUi.outcome, null)
+  }
+
+  function test_closing_the_popup_clears_the_reset_caption() {
+    var s = startClaimWithPopupOpen()
+    finishLane(s, "reset", 0, Harness.claudeResetResult("reset"))
+    finishLane(s, "status", 0, Harness.claudeResetEnvelope([]))
+    s.closePopup("monitor-a")
+    compare(s.resetUi.outcome, null)
+  }
+
+  function test_the_reset_deadline_outlasts_the_helper_serial_budget() {
+    var s = createService()
+    compare(s.lanes.reset.timeoutMs, 45000,
+            "version probe, GET, and POST at 10 s each plus startup")
+  }
+
+  function test_a_timed_out_claim_reads_as_unconfirmed_and_refreshes() {
+    var s = createService()
+    s.resetTimeoutMs = 50
+    s.beginCollection()
+    finishLane(s, "status", 0, Harness.claudeResetEnvelope())
+    s.requestReset("claude", Harness.CLAUDE_RESET_ID)
+    var statusRun = s.lanes.status.runId
+    s.confirmReset()
+
+    tryVerify(function () { return s.resetUi.outcome !== null }, 500)
+    compare(s.resetUi.outcome.result, "unconfirmed")
+    compare(View.resetOutcomeText(s.resetUi.outcome, "hh:mm"),
+            "Could not confirm the reset. Refreshing.")
+    compare(s.lanes.status.runId, statusRun + 1)
+    compare(s.resetBusy, true, "the killed claim holds the lane until it exits")
+  }
+
+  function test_a_claim_that_exits_without_output_reads_as_unconfirmed() {
+    var s = startClaimWithPopupOpen()
+    finishLane(s, "reset", 1, "", "connection reset")
+    compare(s.resetUi.outcome.result, "unconfirmed")
+  }
+
+  function test_a_claim_with_unreadable_output_reads_as_rejected() {
+    var s = startClaimWithPopupOpen()
+    finishLane(s, "reset", 1, "{not-json")
+    compare(s.resetUi.outcome.result, "provider_error")
+  }
 }

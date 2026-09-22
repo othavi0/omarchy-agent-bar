@@ -1,6 +1,7 @@
 import QtQuick
 import QtTest
 import "../../CoreService.js" as Core
+import "../../CoreView.js" as View
 import "ServiceHarness.js" as Harness
 
 TestCase {
@@ -56,6 +57,7 @@ TestCase {
           remainingPercent: 90,
           resetsAt: null
         }],
+        resets: [],
         lastSuccessAt: "2026-07-26T18:42:00Z",
         error: null,
         action: null
@@ -338,5 +340,64 @@ TestCase {
     verify(nextReturn >= 0)
     if (nextFail >= 0)
       verify(nextReturn < nextFail)
+  }
+
+  function test_reset_flow_confirm_claim_settle_and_refresh() {
+    var s = createService()
+    s.beginCollection()
+    finishLane(s, "status", 0, Harness.claudeResetEnvelope())
+    s.requestPopup("mon-a", "claude", "usage")
+
+    s.requestReset("claude", Harness.CLAUDE_RESET_ID)
+    compare(s.resetUi.confirmOpen, true)
+    var provider = View.findProvider(s.snapshot, s.resetUi.providerId)
+    var rows = View.resetRows(provider, "MM/dd/yyyy", "hh:mm")
+    compare(rows[0].id, s.resetUi.resetId)
+    var model = View.resetConfirmModel(provider, rows[0])
+    compare(model.title, "Use reset?")
+    compare(model.message, "Claude: Launch reset (1/1). Clears session and weekly.")
+    compare(model.confirmText, "Use reset")
+
+    s.confirmReset()
+    compare(s.resetUi.confirmOpen, false)
+    compare(s.lanes.reset.busy, true)
+    compare(JSON.stringify(s.lanes.reset.process.command),
+            JSON.stringify(["/nonexistent", "reset", "claude", Harness.CLAUDE_RESET_ID]))
+
+    var statusRun = s.lanes.status.runId
+    finishLane(s, "reset", 0, Harness.claudeResetResult("reset"))
+    compare(s.resetUi.outcome.result, "reset")
+    compare(View.resetOutcomeText(s.resetUi.outcome, "hh:mm"), "Reset applied.")
+    compare(s.lanes.status.runId, statusRun + 1)
+    var argv = s.lanes.status.process.command
+    compare(argv[argv.indexOf("provider") + 1], "claude")
+    verify(argv.indexOf("bypass") >= 0)
+  }
+
+  function test_cancelling_the_reset_confirm_starts_nothing() {
+    var s = createService()
+    s.beginCollection()
+    finishLane(s, "status", 0, Harness.claudeResetEnvelope())
+    s.requestReset("claude", Harness.CLAUDE_RESET_ID)
+    s.closeResetConfirm()
+    compare(s.resetUi.confirmOpen, false)
+    s.confirmReset()
+    compare(s.lanes.reset.runId, 0)
+  }
+
+  function test_a_refresh_that_drops_the_target_closes_the_reset_confirm() {
+    var s = createService()
+    s.beginCollection()
+    finishLane(s, "status", 0, Harness.claudeResetEnvelope())
+    s.requestReset("claude", Harness.CLAUDE_RESET_ID)
+    s.kickStatus()
+    finishLane(s, "status", 0, Harness.claudeResetEnvelope())
+    compare(s.resetUi.confirmOpen, true, "a refresh that keeps the entry keeps the dialog")
+
+    s.kickStatus()
+    finishLane(s, "status", 0, Harness.claudeResetEnvelope([]))
+    compare(s.resetUi.confirmOpen, false)
+    s.confirmReset()
+    compare(s.lanes.reset.runId, 0)
   }
 }

@@ -16,7 +16,8 @@
       "windows": [],
       "lastSuccessAt": null,
       "error": null,
-      "action": null
+      "action": null,
+      "resets": []
     }
   ]
 }

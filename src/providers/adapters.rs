@@ -212,7 +212,7 @@ async fn grok_monthly_fallback(
                 source,
                 plan,
                 last_success_at,
-                rate_limit_resets_available,
+                resets,
                 ..
             },
         ) => ProviderResult::Ready {
@@ -222,7 +222,7 @@ async fn grok_monthly_fallback(
             plan: plan.or(monthly_plan),
             windows,
             last_success_at,
-            rate_limit_resets_available,
+            resets,
         },
         (_, credits) => credits,
     }
@@ -436,7 +436,8 @@ impl ProviderAdapter for CodexAdapter {
     }
 }
 
-pub const CLAUDE_USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
+pub const CLAUDE_USAGE_URL: &str =
+    "https://api.anthropic.com/api/oauth/usage?at_wall=1&skip_spend=1";
 
 pub struct ClaudeAdapter;
 
@@ -453,58 +454,40 @@ impl ProviderAdapter for ClaudeAdapter {
         discovery: &'a Discovery,
     ) -> BoxFuture<'a, ProviderResult> {
         Box::pin(async move {
-            let cred_path = context.env.home.join(".claude/.credentials.json");
-            let cred_bytes = match context.fs.read(&cred_path) {
-                Ok(b) => b,
-                Err(_) => {
-                    return unauthenticated(
-                        ProviderId::Claude,
-                        CLAUDE.display_name,
-                        "Claude is not authenticated.",
-                        login_available(discovery),
-                        CLAUDE.installation_url,
-                        false,
-                    );
-                }
-            };
-            let creds = match parse_claude_credentials(&cred_bytes) {
-                Some(v) => v,
-                None => {
-                    return unauthenticated(
-                        ProviderId::Claude,
-                        CLAUDE.display_name,
-                        "Claude is not authenticated.",
-                        login_available(discovery),
-                        CLAUDE.installation_url,
-                        false,
-                    );
-                }
-            };
-
-            // An expired session self-heals when Claude Code refreshes the
-            // token; report it as retryable so prior data is retained as stale.
-            let now_ms = context
-                .clock
-                .now_utc()
-                .unix_timestamp()
-                .saturating_mul(1000);
-            if creds.expires_at_ms.is_some_and(|exp| exp <= now_ms) {
-                return unauthenticated(
-                    ProviderId::Claude,
-                    CLAUDE.display_name,
-                    "Claude session expired. Open Claude Code to refresh it.",
-                    login_available(discovery),
-                    CLAUDE.installation_url,
-                    true,
-                );
-            }
-
-            let bearer = format!("Bearer {}", creds.token);
-            let headers = [
-                ("Authorization", bearer.as_str()),
-                ("anthropic-beta", "oauth-2025-04-20"),
-            ];
             let login = login_available(discovery);
+            let creds = match read_claude_credentials(
+                context.fs,
+                &context.env.home,
+                context.clock.now_utc(),
+            ) {
+                Ok(creds) => creds,
+                Err(ClaudeCredentialError::Missing) => {
+                    return unauthenticated(
+                        ProviderId::Claude,
+                        CLAUDE.display_name,
+                        "Claude is not authenticated.",
+                        login,
+                        CLAUDE.installation_url,
+                        false,
+                    );
+                }
+                // An expired session self-heals when Claude Code refreshes the
+                // token; report it as retryable so prior data is retained as stale.
+                Err(ClaudeCredentialError::Expired) => {
+                    return unauthenticated(
+                        ProviderId::Claude,
+                        CLAUDE.display_name,
+                        "Claude session expired. Open Claude Code to refresh it.",
+                        login,
+                        CLAUDE.installation_url,
+                        true,
+                    );
+                }
+            };
+
+            let version = probe_claude_version(context.process, discovery).await;
+            let request = ClaudeRequestHeaders::new(&creds, version.as_deref());
+            let headers = request.pairs();
             match super::retry::http_get_with_retry(
                 context.http,
                 &CLAUDE,
@@ -524,10 +507,84 @@ impl ProviderAdapter for ClaudeAdapter {
     }
 }
 
-struct ClaudeCredentials {
-    token: String,
-    plan: Option<Plan>,
-    expires_at_ms: Option<i64>,
+/// Runs the discovered `claude` executable's `--version` with the catalog's
+/// timeout, the same seam and guard shape as the Antigravity version probe.
+/// Any failure (no discovered executable, timeout, nonzero exit, unparsable
+/// output) is `None`, never a hard collection failure.
+pub(crate) async fn probe_claude_version(
+    process: &dyn super::process::ProcessRunner,
+    discovery: &Discovery,
+) -> Option<String> {
+    let exe = collection_exe(discovery)?;
+    let spec = ProcessSpec::new(exe, ["--version"])
+        .with_timeout(CLAUDE.timeout)
+        .with_max_output(CLAUDE.max_output_bytes)
+        .with_quiet_terminal();
+    let out = process.run(&spec).await.ok()?;
+    if out.timed_out || out.exit_code != Some(0) {
+        return None;
+    }
+    let (major, minor, patch) = parse_version_prefix(&out.stdout)?;
+    Some(format!("{major}.{minor}.{patch}"))
+}
+
+pub(crate) enum ClaudeCredentialError {
+    Missing,
+    Expired,
+}
+
+/// Reads `$HOME/.claude/.credentials.json` and applies the expiry precheck
+/// shared by collection and the reset claim.
+pub(crate) fn read_claude_credentials(
+    fs: &dyn crate::support::FileSystem,
+    home: &std::path::Path,
+    now: time::OffsetDateTime,
+) -> Result<ClaudeCredentials, ClaudeCredentialError> {
+    let bytes = fs
+        .read(&home.join(".claude/.credentials.json"))
+        .map_err(|_| ClaudeCredentialError::Missing)?;
+    let creds = parse_claude_credentials(&bytes).ok_or(ClaudeCredentialError::Missing)?;
+    let now_ms = now.unix_timestamp().saturating_mul(1000);
+    if creds.expires_at_ms.is_some_and(|exp| exp <= now_ms) {
+        return Err(ClaudeCredentialError::Expired);
+    }
+    Ok(creds)
+}
+
+/// The headers every Claude API request carries. The reset blocks
+/// (cedar_ember/juniper_tide) appear only when the request identifies a
+/// Claude Code client, so `User-Agent`/`x-app` ride along only with a probed
+/// version; the usage windows do not depend on them.
+pub(crate) struct ClaudeRequestHeaders {
+    bearer: String,
+    user_agent: Option<String>,
+}
+
+impl ClaudeRequestHeaders {
+    pub(crate) fn new(creds: &ClaudeCredentials, version: Option<&str>) -> Self {
+        Self {
+            bearer: format!("Bearer {}", creds.token),
+            user_agent: version.map(|v| format!("claude-cli/{v} (external, cli)")),
+        }
+    }
+
+    pub(crate) fn pairs(&self) -> Vec<(&str, &str)> {
+        let mut headers = vec![
+            ("Authorization", self.bearer.as_str()),
+            ("anthropic-beta", "oauth-2025-04-20"),
+        ];
+        if let Some(ua) = self.user_agent.as_deref() {
+            headers.push(("User-Agent", ua));
+            headers.push(("x-app", "cli"));
+        }
+        headers
+    }
+}
+
+pub(crate) struct ClaudeCredentials {
+    pub(crate) token: String,
+    pub(crate) plan: Option<Plan>,
+    pub(crate) expires_at_ms: Option<i64>,
 }
 
 fn parse_claude_credentials(bytes: &[u8]) -> Option<ClaudeCredentials> {
@@ -1328,6 +1385,7 @@ mod tests {
             ]),
             last_url: Mutex::new(None),
             last_headers: Mutex::new(Vec::new()),
+            last_body: Mutex::new(None),
         };
         let process = empty_process();
         let mut fs = MapFileSystem::default();
@@ -1395,6 +1453,167 @@ mod tests {
             }
             other => panic!("expected unauthenticated, got {other:?}"),
         }
+    }
+
+    fn claude_ctx<'a>(
+        env: &'a ExecutionEnvironment,
+        clock: &'a FixedClock,
+        fs: &'a MapFileSystem,
+        process: &'a ScriptedProcess,
+        http: &'a ScriptedHttpClient,
+    ) -> CollectionContext<'a> {
+        CollectionContext {
+            env,
+            clock,
+            fs,
+            process,
+            http,
+            plugin_root: None,
+        }
+    }
+
+    fn claude_creds_fs() -> MapFileSystem {
+        let mut fs = MapFileSystem::default();
+        fs.files.insert(
+            std::path::PathBuf::from("/home/u/.claude/.credentials.json"),
+            br#"{"claudeAiOauth":{"accessToken":"tok","subscriptionType":"pro"}}"#.to_vec(),
+        );
+        fs
+    }
+
+    #[tokio::test]
+    async fn claude_sends_client_headers_and_maps_resets_when_version_known() {
+        let body =
+            include_bytes!("../../tests/fixtures/providers/claude/usage-with-cedar-ember.json");
+        let http = ScriptedHttpClient::single(Ok(HttpResponse {
+            status: 200,
+            final_url: CLAUDE_USAGE_URL.into(),
+            body: body.to_vec(),
+        }));
+        let process = ScriptedProcess::one(fake_process_output(0, "2.1.280 (Claude Code)\n", ""));
+        let fs = claude_creds_fs();
+        let env = ExecutionEnvironment {
+            home: std::path::PathBuf::from("/home/u"),
+            path_dirs: vec![],
+            grok_home: None,
+        };
+        let clock = FixedClock(datetime!(2026-09-22 18:00:00 UTC));
+        let ctx = claude_ctx(&env, &clock, &fs, &process, &http);
+        let discovery = discovery_with_exe(Path::new("/usr/bin/claude"));
+        let result = CLAUDE_ADAPTER.collect(&ctx, &discovery).await;
+
+        assert_eq!(
+            http.last_url.lock().unwrap().as_deref(),
+            Some(CLAUDE_USAGE_URL)
+        );
+        let headers = http.last_headers.lock().unwrap().clone();
+        assert!(
+            headers
+                .iter()
+                .any(|(k, v)| k == "User-Agent" && v == "claude-cli/2.1.280 (external, cli)"),
+            "User-Agent missing: {headers:?}"
+        );
+        assert!(
+            headers.iter().any(|(k, v)| k == "x-app" && v == "cli"),
+            "x-app missing: {headers:?}"
+        );
+        match result {
+            ProviderResult::Ready { resets, .. } => {
+                assert_eq!(resets.len(), 1, "{resets:?}");
+                assert_eq!(resets[0].id(), "cedar-ember:opus55-launch-promax-20260921");
+                assert!(resets[0].claimable());
+            }
+            other => panic!("expected ready, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn claude_ineligible_reset_blocks_yield_empty_resets() {
+        let body = br#"{"five_hour":{"utilization":9.0},"cedar_ember":{"eligible":false},"juniper_tide":{"eligible":false,"available":false}}"#;
+        let http = ScriptedHttpClient::single(Ok(HttpResponse {
+            status: 200,
+            final_url: CLAUDE_USAGE_URL.into(),
+            body: body.to_vec(),
+        }));
+        let process = ScriptedProcess::one(fake_process_output(0, "2.1.280\n", ""));
+        let fs = claude_creds_fs();
+        let env = ExecutionEnvironment {
+            home: std::path::PathBuf::from("/home/u"),
+            path_dirs: vec![],
+            grok_home: None,
+        };
+        let clock = FixedClock(datetime!(2026-09-22 18:00:00 UTC));
+        let ctx = claude_ctx(&env, &clock, &fs, &process, &http);
+        let discovery = discovery_with_exe(Path::new("/usr/bin/claude"));
+        let result = CLAUDE_ADAPTER.collect(&ctx, &discovery).await;
+        match result {
+            ProviderResult::Ready { resets, .. } => assert!(resets.is_empty(), "{resets:?}"),
+            other => panic!("expected ready, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn claude_missing_version_still_collects_without_client_headers() {
+        let body = br#"{"five_hour":{"utilization":9.0}}"#;
+        let http = ScriptedHttpClient::single(Ok(HttpResponse {
+            status: 200,
+            final_url: CLAUDE_USAGE_URL.into(),
+            body: body.to_vec(),
+        }));
+        // No discovered executable: the version probe has nothing to run.
+        let process = ScriptedProcess::one(fake_process_output(0, "", ""));
+        let fs = claude_creds_fs();
+        let env = ExecutionEnvironment {
+            home: std::path::PathBuf::from("/home/u"),
+            path_dirs: vec![],
+            grok_home: None,
+        };
+        let clock = FixedClock(datetime!(2026-09-22 18:00:00 UTC));
+        let ctx = claude_ctx(&env, &clock, &fs, &process, &http);
+        let discovery = Discovery {
+            collection: CollectionAvailability::Missing,
+            login: LoginAvailability::Missing,
+        };
+        let result = CLAUDE_ADAPTER.collect(&ctx, &discovery).await;
+
+        let headers = http.last_headers.lock().unwrap().clone();
+        assert!(
+            !headers
+                .iter()
+                .any(|(k, _)| k == "User-Agent" || k == "x-app"),
+            "client identity headers must be absent without a parsed version: {headers:?}"
+        );
+        assert!(matches!(result, ProviderResult::Ready { .. }), "{result:?}");
+    }
+
+    #[tokio::test]
+    async fn claude_unparsable_version_still_collects_without_client_headers() {
+        let body = br#"{"five_hour":{"utilization":9.0}}"#;
+        let http = ScriptedHttpClient::single(Ok(HttpResponse {
+            status: 200,
+            final_url: CLAUDE_USAGE_URL.into(),
+            body: body.to_vec(),
+        }));
+        let process = ScriptedProcess::one(fake_process_output(0, "not-a-version", ""));
+        let fs = claude_creds_fs();
+        let env = ExecutionEnvironment {
+            home: std::path::PathBuf::from("/home/u"),
+            path_dirs: vec![],
+            grok_home: None,
+        };
+        let clock = FixedClock(datetime!(2026-09-22 18:00:00 UTC));
+        let ctx = claude_ctx(&env, &clock, &fs, &process, &http);
+        let discovery = discovery_with_exe(Path::new("/usr/bin/claude"));
+        let result = CLAUDE_ADAPTER.collect(&ctx, &discovery).await;
+
+        let headers = http.last_headers.lock().unwrap().clone();
+        assert!(
+            !headers
+                .iter()
+                .any(|(k, _)| k == "User-Agent" || k == "x-app"),
+            "client identity headers must be absent without a parsed version: {headers:?}"
+        );
+        assert!(matches!(result, ProviderResult::Ready { .. }), "{result:?}");
     }
 
     #[test]

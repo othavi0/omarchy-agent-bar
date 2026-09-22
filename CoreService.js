@@ -23,6 +23,19 @@ var ACTION_KINDS = {
   "view_installation": true
 }
 
+var RESET_RESULTS = {
+  "reset": true,
+  "already_used": true,
+  "not_limited": true,
+  "cooldown": true,
+  "ineligible": true,
+  "unavailable": true,
+  "unauthenticated": true,
+  "network_error": true,
+  "provider_error": true,
+  "unconfirmed": true
+}
+
 var PROVIDER_STATES = {
   "ready": true,
   "stale": true,
@@ -172,6 +185,48 @@ function isFinitePercent(n) {
   return typeof n === "number" && isFinite(n) && n >= 0 && n <= 100
 }
 
+function isNonNegNumber(n) {
+  return typeof n === "number" && isFinite(n) && n >= 0
+}
+
+function isNonNegIntOrNull(v) {
+  if (v === null)
+    return true
+  return typeof v === "number" && isFinite(v) && v >= 0 && Math.floor(v) === v
+}
+
+function isIsoOrNull(v) {
+  return v === null || typeof v === "string"
+}
+
+function validateReset(r) {
+  if (!r || typeof r !== "object")
+    return "reset not object"
+  if (typeof r.id !== "string" || !r.id.length)
+    return "invalid reset id"
+  if (typeof r.label !== "string" || !r.label.length)
+    return "invalid reset label"
+  if (!isNonNegNumber(r.available))
+    return "invalid reset available"
+  if (!isNonNegIntOrNull(r.total))
+    return "invalid reset total"
+  if (!Array.isArray(r.clears))
+    return "reset clears not array"
+  for (var i = 0; i < r.clears.length; i++) {
+    if (typeof r.clears[i] !== "string")
+      return "invalid reset clears entry"
+  }
+  if (!isIsoOrNull(r.expiresAt))
+    return "invalid reset expiresAt"
+  if (!isIsoOrNull(r.refillsAt))
+    return "invalid reset refillsAt"
+  if (!isIsoOrNull(r.cooldownUntil))
+    return "invalid reset cooldownUntil"
+  if (typeof r.claimable !== "boolean")
+    return "invalid reset claimable"
+  return null
+}
+
 function validateProvider(p) {
   if (!p || typeof p !== "object")
     return "provider not an object"
@@ -190,9 +245,137 @@ function validateProvider(p) {
     if (w.action && w.action.kind && !ACTION_KINDS[w.action.kind])
       return "invalid window action"
   }
+  if (!Array.isArray(p.resets))
+    return "resets not array"
+  for (var j = 0; j < p.resets.length; j++) {
+    var resetErr = validateReset(p.resets[j])
+    if (resetErr)
+      return resetErr
+  }
   if (p.action && p.action.kind && !ACTION_KINDS[p.action.kind])
     return "invalid action kind"
   return null
+}
+
+function resetArgv(helperPath, providerId, resetId) {
+  return [String(helperPath), "reset", String(providerId), String(resetId)]
+}
+
+function parseResetOutcome(stdout) {
+  var text = String(stdout || "").trim()
+  if (!text.length)
+    return { ok: false, reason: "empty stdout" }
+  var doc
+  try {
+    doc = JSON.parse(text)
+  } catch (e) {
+    return { ok: false, reason: "json parse failed" }
+  }
+  if (!doc || typeof doc !== "object")
+    return { ok: false, reason: "not an object" }
+  if (doc.schemaVersion !== 1)
+    return { ok: false, reason: "schemaVersion !== 1" }
+  if (doc.operation !== "reset")
+    return { ok: false, reason: "operation !== reset" }
+  if (!RESET_RESULTS[doc.result])
+    return { ok: false, reason: "invalid result" }
+  if (doc.resetsLeft !== null && !isNonNegIntOrNull(doc.resetsLeft))
+    return { ok: false, reason: "invalid resetsLeft" }
+  if (!isIsoOrNull(doc.cooldownUntil))
+    return { ok: false, reason: "invalid cooldownUntil" }
+  if (!Array.isArray(doc.clears))
+    return { ok: false, reason: "clears not array" }
+  for (var i = 0; i < doc.clears.length; i++) {
+    if (typeof doc.clears[i] !== "string")
+      return { ok: false, reason: "invalid clears entry" }
+  }
+  return {
+    ok: true,
+    outcome: {
+      provider: String(doc.provider || ""),
+      resetId: String(doc.resetId || ""),
+      result: String(doc.result),
+      resetsLeft: doc.resetsLeft === null ? null : Number(doc.resetsLeft),
+      cooldownUntil: doc.cooldownUntil === null ? null : String(doc.cooldownUntil),
+      clears: doc.clears.map(function (c) { return String(c) })
+    }
+  }
+}
+
+function unreadResetOutcome(result) {
+  return { result: result, resetsLeft: null, cooldownUntil: null, clears: [] }
+}
+
+// A killed or silent claim may still have been applied upstream, so it reads
+// as unconfirmed rather than rejected; only unreadable output is a rejection.
+function resetOutcomeFromLane(outcome) {
+  if (!outcome || outcome.timedOut || !String(outcome.stdout || "").trim().length)
+    return unreadResetOutcome("unconfirmed")
+  var parsed = parseResetOutcome(outcome.stdout)
+  return parsed.ok ? parsed.outcome : unreadResetOutcome("provider_error")
+}
+
+function resetUiIdle() {
+  return { confirmOpen: false, providerId: "", resetId: "", outcome: null }
+}
+
+function resetUiOpenConfirm(providerId, resetId) {
+  return {
+    confirmOpen: true,
+    providerId: String(providerId || ""),
+    resetId: String(resetId || ""),
+    outcome: null
+  }
+}
+
+function resetUiAwaiting(ui) {
+  return {
+    confirmOpen: false,
+    providerId: ui ? String(ui.providerId || "") : "",
+    resetId: ui ? String(ui.resetId || "") : "",
+    outcome: null
+  }
+}
+
+function resetUiSettled(target, outcome) {
+  return {
+    confirmOpen: false,
+    providerId: target ? String(target.providerId || "") : "",
+    resetId: target ? String(target.resetId || "") : "",
+    outcome: outcome || null
+  }
+}
+
+// A claim still in flight keeps its target across a popup close, so the
+// reopened popup shows it busy; only the caption and the dialog go away.
+function resetUiOnClose(ui, laneOccupied) {
+  return laneOccupied ? resetUiAwaiting(ui) : resetUiIdle()
+}
+
+function snapshotHasReset(snapshot, providerId, resetId) {
+  var providers = snapshot && Array.isArray(snapshot.providers) ? snapshot.providers : []
+  for (var i = 0; i < providers.length; i++) {
+    var p = providers[i]
+    if (!p || String(p.id) !== String(providerId) || !Array.isArray(p.resets))
+      continue
+    for (var j = 0; j < p.resets.length; j++) {
+      if (p.resets[j] && String(p.resets[j].id) === String(resetId))
+        return true
+    }
+  }
+  return false
+}
+
+function resetUiAfterSnapshot(ui, snapshot) {
+  if (ui && ui.confirmOpen && !snapshotHasReset(snapshot, ui.providerId, ui.resetId))
+    return resetUiIdle()
+  return ui
+}
+
+function resetUiClearOutcome(ui) {
+  if (!ui || !ui.outcome)
+    return ui || resetUiIdle()
+  return resetUiIdle()
 }
 
 function parseStatusEnvelope(stdout, expectedHelperVersion) {

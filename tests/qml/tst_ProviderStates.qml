@@ -587,17 +587,115 @@ TestCase {
         "Popup must drive ProviderView.active from its own open state")
   }
 
-  function test_reset_line_visible_only_when_positive() {
-    var withResets = { id: "codex", name: "Codex", state: "ready", windows: [],
-                        rateLimitResetsAvailable: 2 }
-    compare(Core.rateLimitResetsText(withResets), "↻ 2 rate-limit resets available")
-    var one = { id: "codex", name: "Codex", state: "ready", windows: [],
-                rateLimitResetsAvailable: 1 }
-    compare(Core.rateLimitResetsText(one), "↻ 1 rate-limit reset available")
-    var without = { id: "codex", name: "Codex", state: "ready", windows: [] }
-    compare(Core.rateLimitResetsText(without), "")
-    var zero = { id: "codex", name: "Codex", state: "ready", windows: [],
-                 rateLimitResetsAvailable: 0 }
-    compare(Core.rateLimitResetsText(zero), "")
+  function claudeResetsProvider(extraWindows) {
+    return {
+      id: "claude", name: "Claude", state: "ready",
+      windows: [
+        { id: "session", label: "Session (5h)", usedPercent: 10, remainingPercent: 90 },
+        { id: "weekly", label: "Weekly (7d)", usedPercent: 20, remainingPercent: 80 }
+      ].concat(extraWindows || []),
+      resets: [
+        { id: "cedar-ember:opus55-launch-promax-20260921",
+          label: "Claude Opus 5.5 launch: one usage-limit reset for Pro and Max",
+          available: 1, total: 1, clears: ["session", "weekly"],
+          expiresAt: "2026-10-22T16:00:00Z", refillsAt: null, cooldownUntil: null,
+          claimable: true },
+        { id: "juniper-tide", label: "Weekly reset",
+          available: 1, total: 1, clears: ["session"],
+          expiresAt: null, refillsAt: "2026-09-25T12:00:00Z", cooldownUntil: null,
+          claimable: true }
+      ]
+    }
+  }
+
+  function test_reset_rows_hidden_when_empty() {
+    var noResets = { id: "claude", name: "Claude", state: "ready", windows: [], resets: [] }
+    compare(Core.resetRows(noResets, "MM/dd/yyyy", "hh:mm").length, 0)
+    compare(Core.resetsSummary(noResets).visible, false)
+    compare(Core.resetsSummary(null).visible, false)
+  }
+
+  function test_reset_rows_fields() {
+    var p = claudeResetsProvider()
+    var rows = Core.resetRows(p, "MM/dd/yyyy", "hh:mm")
+    compare(rows.length, 2)
+    compare(rows[0].id, "cedar-ember:opus55-launch-promax-20260921")
+    compare(rows[0].clearsText, "session and weekly")
+    compare(rows[0].countText, "1/1")
+    compare(rows[0].dateText, "until " + Qt.formatDate(new Date(Date.parse("2026-10-22T16:00:00Z")), "MM/dd/yyyy"))
+    compare(rows[0].claimable, true)
+    verify(rows[0].accessibleName.indexOf("Claude Opus 5.5 launch") >= 0)
+    verify(rows[0].accessibleName.indexOf("1 of 1") >= 0)
+    compare(rows[1].id, "juniper-tide")
+    compare(rows[1].clearsText, "session")
+    compare(rows[1].dateText, "next " + Qt.formatDate(new Date(Date.parse("2026-09-25T12:00:00Z")), "MM/dd/yyyy"))
+  }
+
+  function test_reset_rows_codex_credits_no_total_no_date() {
+    var p = { id: "codex", name: "Codex", state: "ready", windows: [],
+              resets: [{ id: "codex-credits", label: "Rate-limit resets",
+                         available: 2, total: null, clears: [],
+                         expiresAt: null, refillsAt: null, cooldownUntil: null,
+                         claimable: false }] }
+    var rows = Core.resetRows(p, "MM/dd/yyyy", "hh:mm")
+    compare(rows.length, 1)
+    compare(rows[0].countText, "2")
+    compare(rows[0].clearsText, "")
+    compare(rows[0].dateText, "")
+    compare(rows[0].claimable, false)
+  }
+
+  function test_reset_rows_cooldown_uses_the_time_format_not_the_date_format() {
+    var p = { id: "claude", name: "Claude", state: "ready", windows: [],
+              resets: [{ id: "cedar-ember:x", label: "X",
+                         available: 0, total: 1, clears: ["session"],
+                         expiresAt: null, refillsAt: null,
+                         cooldownUntil: "2026-09-22T18:30:00Z", claimable: false }] }
+    var rows = Core.resetRows(p, "MM/dd/yyyy", "hh:mm")
+    compare(rows[0].dateText,
+        "cooldown " + Qt.formatTime(new Date(Date.parse("2026-09-22T18:30:00Z")), "hh:mm"))
+  }
+
+  function test_resets_summary_sums_available_and_finds_first_claimable() {
+    var p = claudeResetsProvider()
+    var summary = Core.resetsSummary(p)
+    compare(summary.visible, true)
+    compare(summary.availableTotal, 2)
+    compare(summary.claimableId, "cedar-ember:opus55-launch-promax-20260921")
+  }
+
+  function test_reset_outcome_text_table() {
+    compare(Core.resetOutcomeText({ result: "reset" }, "hh:mm"), "Reset applied.")
+    compare(Core.resetOutcomeText({ result: "already_used" }, "hh:mm"),
+            "This reset was already used.")
+    compare(Core.resetOutcomeText({ result: "not_limited" }, "hh:mm"),
+            "Not at the limit, nothing to reset.")
+    compare(Core.resetOutcomeText({ result: "ineligible" }, "hh:mm"),
+            "Reset not available right now.")
+    compare(Core.resetOutcomeText({ result: "unavailable" }, "hh:mm"),
+            "Reset not available right now.")
+    compare(Core.resetOutcomeText({ result: "unauthenticated" }, "hh:mm"),
+            "Sign in to Claude again.")
+    compare(Core.resetOutcomeText({ result: "network_error" }, "hh:mm"),
+            "Network error. Try again.")
+    compare(Core.resetOutcomeText({ result: "provider_error" }, "hh:mm"),
+            "Claude did not accept the reset.")
+    compare(Core.resetOutcomeText({ result: "unconfirmed" }, "hh:mm"),
+            "Could not confirm the reset. Refreshing.")
+    compare(Core.resetOutcomeText(null, "hh:mm"), "")
+    var cooldownMs = Date.parse("2026-09-22T18:30:00Z")
+    compare(Core.resetOutcomeText({ result: "cooldown", cooldownUntil: "2026-09-22T18:30:00Z" }, "hh:mm"),
+            "On cooldown until " + Qt.formatTime(new Date(cooldownMs), "hh:mm") + ".")
+  }
+
+  function test_reset_confirm_model_names_provider_label_and_clears() {
+    var p = claudeResetsProvider()
+    var rows = Core.resetRows(p, "MM/dd/yyyy", "hh:mm")
+    var model = Core.resetConfirmModel(p, rows[0])
+    compare(model.title, "Use reset?")
+    compare(model.confirmText, "Use reset")
+    verify(model.message.indexOf("Claude") >= 0)
+    verify(model.message.indexOf("1/1") >= 0)
+    verify(model.message.indexOf("session and weekly") >= 0)
   }
 }

@@ -46,6 +46,10 @@ If a refresh fails, the chip keeps the last good reading and the popup
 shows when it was taken. When a provider needs login or setup, the popup
 offers the matching action.
 
+When Claude has a banked usage reset available, its popup section gets a
+"Resets" row with a `Use reset` action; confirming claims it and refreshes
+the provider.
+
 | Action | Result |
 | --- | --- |
 | Left click | Open or close the popup |

@@ -222,7 +222,7 @@ fn normalize_to_rate_limits_json(
         .as_ref()
         .and_then(|c| c.available_count)
     {
-        doc.insert("rateLimitResetsAvailable".into(), serde_json::json!(n));
+        doc.insert("codexCreditsAvailable".into(), serde_json::json!(n));
     }
     if !extra.is_empty() {
         doc.insert("extraBuckets".into(), serde_json::Value::Array(extra));
@@ -540,7 +540,7 @@ mod tests {
         let bytes = normalize_to_rate_limits_json(&raw, Some("plus")).expect("normalized");
         let doc: serde_json::Value = serde_json::from_slice(&bytes).expect("json");
         assert_eq!(doc["individualLimit"]["remainingPercent"], 40.0);
-        assert_eq!(doc["rateLimitResetsAvailable"], 2);
+        assert_eq!(doc["codexCreditsAvailable"], 2);
     }
 
     #[test]

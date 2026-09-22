@@ -13,9 +13,12 @@ Item {
   property color foreground: Color.foreground
   property string fontFamily: Style.font.family
   property bool active: true
+  property bool resetBusy: false
+  property string resetOutcomeText: ""
 
   signal refreshRequested(string providerId)
   signal actionRequested(string providerId, string kind, var target)
+  signal resetRequested(string providerId, string resetId)
 
   property double nowMs: Date.now()
   property alias nowTickRunning: nowTimer.running
@@ -31,6 +34,9 @@ Item {
   readonly property var header: Core.headerModel(provider, refreshing)
   readonly property string mode: Core.contentMode(provider)
   readonly property var windows: Core.windowLayout(provider, displayMetric, nowMs)
+  readonly property var resetRows: Core.resetRows(provider,
+      Qt.locale().dateFormat(Locale.ShortFormat), Qt.locale().timeFormat(Locale.ShortFormat))
+  readonly property var resetsSummary: Core.resetsSummary(provider)
   readonly property string severity: Core.providerSeverity(provider)
   readonly property var actions: Core.stateActions(provider)
   readonly property bool showsAge: String(root.provider && root.provider.state || "") === "stale"
@@ -139,15 +145,21 @@ Item {
         }
       }
 
-      Text {
-        width: parent.width
-        visible: text.length > 0
-        text: Core.rateLimitResetsText(root.provider)
-        color: Util.alpha(root.foreground, 0.72)
-        font.family: root.fontFamily
-        font.pixelSize: Style.font.caption
-        textFormat: Text.PlainText
-        Accessible.name: text
+    }
+
+    ResetsSection {
+      width: parent.width
+      visible: root.mode === "windows" && root.resetsSummary.visible
+      rows: root.resetRows
+      availableTotal: root.resetsSummary.availableTotal
+      anyClaimable: !!root.resetsSummary.claimableId
+      busy: root.resetBusy
+      outcomeText: root.resetOutcomeText
+      foreground: root.foreground
+      fontFamily: root.fontFamily
+      onUseResetClicked: {
+        if (root.provider && root.provider.id && root.resetsSummary.claimableId)
+          root.resetRequested(String(root.provider.id), String(root.resetsSummary.claimableId))
       }
     }
 

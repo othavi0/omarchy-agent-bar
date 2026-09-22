@@ -42,7 +42,8 @@ Representative response:
       ],
       "lastSuccessAt": "2026-07-26T18:42:00Z",
       "error": null,
-      "action": null
+      "action": null,
+      "resets": []
     }
   ]
 }
