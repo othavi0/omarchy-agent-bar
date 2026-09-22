@@ -367,13 +367,50 @@ pub const UPDATE_COMMAND: &str =
     "omarchy plugin update othavi0.agent-bar --yes && omarchy-restart-shell";
 
 fn dispatch_update_apply() -> Result<(), CliFailure> {
+    use crate::plugin::update_apply::apply_update;
+    use crate::plugin::{resolve_absolute_executable, PluginPaths};
+    use crate::providers::TokioProcessRunner;
+    use crate::support::maintenance_gate::MaintenanceGate;
+
     let is_tty = io::stdin().is_terminal();
     let stdin = io::stdin();
     let mut locked_in = stdin.lock();
     let stderr = io::stderr();
     let mut locked_err = stderr.lock();
     confirm_update(is_tty, &mut locked_in, &mut locked_err)?;
-    Err(CliFailure::internal("update apply is not implemented yet"))
+    drop(locked_err);
+
+    let home = std::env::var_os("HOME")
+        .ok_or_else(|| CliFailure::plugin("HOME is required for update apply".to_string()))?;
+    let xdg_state = std::env::var_os("XDG_STATE_HOME").map(PathBuf::from);
+    let paths = PluginPaths::production(PathBuf::from(home), xdg_state);
+
+    let gate = MaintenanceGate::open(&paths.maintenance_lock)
+        .map_err(|e| CliFailure::plugin(format!("open maintenance lock: {e}")))?;
+    let _exclusive = gate
+        .lock_exclusive()
+        .map_err(|e| CliFailure::plugin(format!("exclusive maintenance lock: {e}")))?;
+
+    let omarchy =
+        resolve_absolute_executable("omarchy").map_err(|e| CliFailure::plugin(e.to_string()))?;
+
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|err| CliFailure::internal(err.to_string()))?;
+    let report = runtime
+        .block_on(apply_update(
+            &TokioProcessRunner,
+            &omarchy,
+            &paths.plugin_root,
+        ))
+        .map_err(|e| CliFailure::plugin(e.to_string()))?;
+    eprintln!("agent-bar: update apply: {}", report.result.as_str());
+    let line = report
+        .to_stdout_json()
+        .map_err(|e| CliFailure::internal(e.to_string()))?;
+    print!("{line}");
+    Ok(())
 }
 
 fn dispatch_update_interactive() -> Result<(), CliFailure> {

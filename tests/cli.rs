@@ -3,7 +3,7 @@ use std::process::Command as StdCommand;
 
 use agent_bar::cli::{
     parse, CacheMode, Command, ConfigCommand, ConfigInput, HelpTopic, NotificationMode, ProviderId,
-    StatusFormat, StatusOptions, UpdateCommand, GRAMMAR, SUCCESS, VALIDATION,
+    StatusFormat, StatusOptions, UpdateCommand, GRAMMAR, PLUGIN, SUCCESS, VALIDATION,
 };
 use assert_cmd::Command as CargoBin;
 use tempfile::tempdir;
@@ -498,6 +498,111 @@ fn binary_update_apply_rejects_bad_confirmation_before_any_side_effect() {
             tree_entries(dir.path())
         );
     }
+}
+
+const UPDATE_CONFIRMATION: &str =
+    r#"{"schemaVersion":1,"operation":"update","confirmed":true,"targetVersion":"10.7.0"}"#;
+
+fn update_apply_home(dir: &Path, version: &str) -> PathBuf {
+    let home = dir.join("home");
+    let root = home.join(".config/omarchy/plugins/othavi0.agent-bar");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(
+        root.join("bundle.json"),
+        format!(r#"{{"schemaVersion":1,"version":"{version}"}}"#),
+    )
+    .unwrap();
+    home
+}
+
+fn run_update_apply(home: &Path, path: &Path) -> std::process::Output {
+    let mut child = StdCommand::new(assert_cmd::cargo::cargo_bin("agent-bar"))
+        .args(["update", "apply"])
+        .env("HOME", home)
+        .env("XDG_STATE_HOME", home.join("state"))
+        .env("PATH", path)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    {
+        use std::io::Write as _;
+        let mut stdin = child.stdin.take().unwrap();
+        stdin.write_all(UPDATE_CONFIRMATION.as_bytes()).unwrap();
+    }
+    child.wait_with_output().unwrap()
+}
+
+#[test]
+fn binary_update_apply_reports_one_json_line_and_hides_plugin_manager_output() {
+    let dir = tempdir().unwrap();
+    let home = update_apply_home(dir.path(), "10.6.2");
+    let path_dir = dir.path().join("pathbin");
+    let argv_file = dir.path().join("omarchy-argv.bin");
+    write_executable(
+        &path_dir.join("omarchy"),
+        &format!(
+            r#"#!/bin/bash
+: > "{argv}"
+for a in "$@"; do printf '%s\0' "$a" >> "{argv}"; done
+printf 'prompt=%s\n' "$GIT_TERMINAL_PROMPT" >> "{argv}.env"
+read -r -t 1 line && printf 'stdin-open\n' >> "{argv}.env"
+echo 'Updated othavi0.agent-bar.'
+echo 'raw plugin manager noise' >&2
+printf '{{"schemaVersion":1,"version":"10.7.0"}}' > "$HOME/.config/omarchy/plugins/othavi0.agent-bar/bundle.json"
+exit 0
+"#,
+            argv = argv_file.display()
+        ),
+    );
+    let output = run_update_apply(&home, &path_dir);
+    assert_eq!(
+        output.status.code(),
+        Some(SUCCESS),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "{\"schemaVersion\":1,\"operation\":\"update\",\"result\":\"updated\",\"installedVersion\":\"10.7.0\",\"restartRequired\":true}\n"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!stderr.contains("noise"), "stderr={stderr}");
+    assert_eq!(
+        read_nul_argv(&argv_file),
+        ["plugin", "update", "othavi0.agent-bar", "--yes"]
+    );
+    let env = std::fs::read_to_string(dir.path().join("omarchy-argv.bin.env")).unwrap();
+    assert_eq!(env, "prompt=0\n");
+}
+
+#[test]
+fn binary_update_apply_failure_results_still_exit_zero() {
+    let dir = tempdir().unwrap();
+    let home = update_apply_home(dir.path(), "10.6.2");
+    let path_dir = dir.path().join("pathbin");
+    write_executable(
+        &path_dir.join("omarchy"),
+        "#!/bin/bash\necho \"omarchy-plugin-update: cannot fast-forward 'othavi0.agent-bar'; you have local changes in x\" >&2\nexit 1\n",
+    );
+    let output = run_update_apply(&home, &path_dir);
+    assert_eq!(output.status.code(), Some(SUCCESS));
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "{\"schemaVersion\":1,\"operation\":\"update\",\"result\":\"local_changes\",\"installedVersion\":\"10.6.2\",\"restartRequired\":false}\n"
+    );
+}
+
+#[test]
+fn binary_update_apply_without_omarchy_is_a_plugin_error() {
+    let dir = tempdir().unwrap();
+    let home = update_apply_home(dir.path(), "10.6.2");
+    let empty_path = dir.path().join("empty-path");
+    std::fs::create_dir_all(&empty_path).unwrap();
+    let output = run_update_apply(&home, &empty_path);
+    assert_eq!(output.status.code(), Some(PLUGIN));
+    assert!(output.stdout.is_empty());
 }
 
 #[test]
