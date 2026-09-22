@@ -6,7 +6,6 @@
 
 use std::path::Path;
 
-use serde::Deserialize;
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
@@ -99,15 +98,46 @@ pub struct ResetContext<'a> {
     pub http: &'a dyn HttpClient,
 }
 
-#[derive(Debug, Deserialize)]
-struct ClaimResponse {
-    result: String,
-    #[serde(default)]
-    resets_left: Option<u32>,
-    #[serde(default)]
-    cleared: Vec<String>,
-    #[serde(default)]
-    cooldown_until: Option<String>,
+/// Reads a 2xx claim response. The POST already had its side effect, so only
+/// `result` is required; every other field is read leniently and a
+/// malformed one is simply absent from the report.
+fn report_from_claim_body(body: &[u8]) -> ResetReport {
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(body) else {
+        return ResetReport::simple(ResetResult::ProviderError);
+    };
+    let Some(result) = value
+        .get("result")
+        .and_then(serde_json::Value::as_str)
+        .and_then(ResetResult::parse_claim_result)
+    else {
+        return ResetReport::simple(ResetResult::ProviderError);
+    };
+    let cleared: Vec<String> = value
+        .get("cleared")
+        .and_then(serde_json::Value::as_array)
+        .map(|keys| {
+            keys.iter()
+                .filter_map(serde_json::Value::as_str)
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default();
+    let timestamp = |key: &str| {
+        value
+            .get(key)
+            .and_then(serde_json::Value::as_str)
+            .and_then(|raw| OffsetDateTime::parse(raw, &Rfc3339).ok())
+            .map(|ts| ts.to_offset(time::UtcOffset::UTC))
+    };
+    ResetReport {
+        result,
+        resets_left: value
+            .get("resets_left")
+            .and_then(serde_json::Value::as_u64)
+            .and_then(|n| u32::try_from(n).ok()),
+        cooldown_until: timestamp("cooldown_until").or_else(|| timestamp("next_available_at")),
+        clears: claude_reset_clears(&cleared),
+    }
 }
 
 /// `sha2` over clock nanoseconds, pid, and the reset id, stamped with the
@@ -262,22 +292,7 @@ pub async fn claim_claude_reset(ctx: &ResetContext<'_>, reset_id: &str) -> Reset
         Err(_) => return ResetReport::simple(ResetResult::ProviderError),
     };
 
-    let Ok(claim) = serde_json::from_slice::<ClaimResponse>(&response.body) else {
-        return ResetReport::simple(ResetResult::ProviderError);
-    };
-    let Some(result) = ResetResult::parse_claim_result(&claim.result) else {
-        return ResetReport::simple(ResetResult::ProviderError);
-    };
-
-    ResetReport {
-        result,
-        resets_left: claim.resets_left,
-        cooldown_until: claim
-            .cooldown_until
-            .as_deref()
-            .and_then(|raw| OffsetDateTime::parse(raw, &Rfc3339).ok()),
-        clears: claude_reset_clears(&claim.cleared),
-    }
+    report_from_claim_body(&response.body)
 }
 
 #[cfg(test)]
@@ -624,6 +639,74 @@ mod tests {
             report.cooldown_until,
             Some(datetime!(2026-09-22 20:00:00 UTC))
         );
+    }
+
+    #[tokio::test]
+    async fn claim_response_optional_fields_are_read_leniently() {
+        let cases: [(&[u8], ResetReport); 3] = [
+            (
+                br#"{"result":"reset","resets_left":1.5,"cleared":null,"cooldown_until":7}"#,
+                ResetReport::simple(ResetResult::Reset),
+            ),
+            (
+                br#"{"result":"already_used","resets_left":-1,"cleared":["five_hour",3,"seven_day"]}"#,
+                ResetReport {
+                    result: ResetResult::AlreadyUsed,
+                    resets_left: None,
+                    cooldown_until: None,
+                    clears: vec!["session".to_owned(), "weekly".to_owned()],
+                },
+            ),
+            (
+                br#"{"result":"cooldown","resets_left":2,"cleared":"five_hour","next_available_at":"2026-09-22T20:00:00Z"}"#,
+                ResetReport {
+                    result: ResetResult::Cooldown,
+                    resets_left: Some(2),
+                    cooldown_until: Some(datetime!(2026-09-22 20:00:00 UTC)),
+                    clears: Vec::new(),
+                },
+            ),
+        ];
+        for (claim_body, expected) in cases {
+            let fs = creds_and_org_fs();
+            let env = test_env();
+            let clock = FixedClock(datetime!(2026-09-22 18:00:00 UTC));
+            let process = version_process("2.1.280");
+            let http = scripted_http(ok(CLAIMABLE_USAGE_BODY), ok(claim_body));
+            let ctx = ResetContext {
+                env: &env,
+                clock: &clock,
+                fs: &fs,
+                process: &process,
+                http: &http,
+            };
+            let report = claim_claude_reset(&ctx, "cedar-ember:g1").await;
+            assert_eq!(report, expected, "{}", String::from_utf8_lossy(claim_body));
+        }
+    }
+
+    #[tokio::test]
+    async fn claim_response_without_a_string_result_is_provider_error() {
+        for claim_body in [
+            &br#"{"resets_left":0}"#[..],
+            br#"{"result":null}"#,
+            br#"{"result":"exploded"}"#,
+        ] {
+            let fs = creds_and_org_fs();
+            let env = test_env();
+            let clock = FixedClock(datetime!(2026-09-22 18:00:00 UTC));
+            let process = version_process("2.1.280");
+            let http = scripted_http(ok(CLAIMABLE_USAGE_BODY), ok(claim_body));
+            let ctx = ResetContext {
+                env: &env,
+                clock: &clock,
+                fs: &fs,
+                process: &process,
+                http: &http,
+            };
+            let report = claim_claude_reset(&ctx, "cedar-ember:g1").await;
+            assert_eq!(report.result, ResetResult::ProviderError);
+        }
     }
 
     #[tokio::test]
