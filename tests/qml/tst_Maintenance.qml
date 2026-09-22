@@ -50,7 +50,135 @@ TestCase {
   function test_marketplace_url_and_update_command_text_exact() {
     compare(Core.marketplaceUrl(), "https://plugins.omarchy.org/plugin.html?id=othavi0.agent-bar")
     compare(Core.updateCommandText(),
-            "GIT_PAGER=cat omarchy plugin update othavi0.agent-bar && omarchy-restart-shell")
+            "omarchy plugin update othavi0.agent-bar --yes && omarchy-restart-shell")
+  }
+
+  function test_update_apply_argv_and_confirmation() {
+    compare(Core.updateApplyArgv("/p/bin/agent-bar").join(" "), "/p/bin/agent-bar update apply")
+    compare(Core.updateApplyArgv(""), null)
+    compare(JSON.stringify(Core.updateConfirmation("10.6.2")),
+            '{"schemaVersion":1,"operation":"update","confirmed":true,"targetVersion":"10.6.2"}')
+  }
+
+  function applyDoc(result, installed) {
+    return JSON.stringify({
+      schemaVersion: 1,
+      operation: "update",
+      result: result,
+      installedVersion: installed,
+      restartRequired: result === "updated"
+    }) + "\n"
+  }
+
+  function test_parse_update_apply_outcome_closed_set() {
+    var ok = Core.parseUpdateApplyOutcome(applyDoc("updated", "10.6.2"))
+    compare(ok.result, "updated")
+    compare(ok.installedVersion, "10.6.2")
+    compare(ok.restartRequired, true)
+    var kinds = ["up_to_date", "local_changes", "fetch_failed", "validation_failed", "timed_out", "failed"]
+    for (var i = 0; i < kinds.length; i++)
+      compare(Core.parseUpdateApplyOutcome(applyDoc(kinds[i], "10.6.1")).result, kinds[i])
+    compare(Core.parseUpdateApplyOutcome(applyDoc("exploded", "10.6.1")).result, "failed")
+    compare(Core.parseUpdateApplyOutcome("").result, "failed")
+    compare(Core.parseUpdateApplyOutcome("not json").result, "failed")
+    compare(Core.parseUpdateApplyOutcome(JSON.stringify({ schemaVersion: 2, operation: "update", result: "updated" })).result, "failed")
+    compare(Core.parseUpdateApplyOutcome(JSON.stringify({ schemaVersion: 1, operation: "uninstall", result: "updated" })).result, "failed")
+    compare(Core.parseUpdateApplyOutcome("").restartRequired, false)
+  }
+
+  function test_update_apply_outcome_from_lane_maps_failures() {
+    compare(Core.updateApplyOutcomeFromLane({ exitCode: 0, timedOut: false, stdout: applyDoc("updated", "10.6.2") }).result, "updated")
+    compare(Core.updateApplyOutcomeFromLane({ exitCode: 3, timedOut: false, stdout: applyDoc("updated", "10.6.2") }).result, "failed")
+    compare(Core.updateApplyOutcomeFromLane({ exitCode: 1, timedOut: true, stdout: "" }).result, "failed")
+  }
+
+  function test_update_apply_message_table() {
+    function msg(result, installed) {
+      return Core.updateApplyMessage({ result: result, installedVersion: installed || "", restartRequired: result === "updated" }, "10.6.1")
+    }
+    compare(msg("updated", "10.6.2"), "10.6.2 installed. Restart the shell to load it.")
+    compare(msg("up_to_date"), "Agent Bar is up to date.")
+    compare(msg("local_changes"),
+            "The plugin folder has local changes. Run git status in ~/.config/omarchy/plugins/othavi0.agent-bar.")
+    compare(msg("fetch_failed"), "Could not reach GitHub. Try again.")
+    compare(msg("validation_failed"), "The update failed validation and was rolled back. You are still on 10.6.1.")
+    compare(msg("timed_out"), "The update timed out. You are still on 10.6.1.")
+    compare(msg("failed"), "The update did not finish. You are still on 10.6.1.")
+    compare(msg("validation_failed", "10.6.0"), "The update failed validation and was rolled back. You are still on 10.6.0.")
+  }
+
+  function test_update_confirm_model() {
+    var m = Core.updateConfirmModel("10.6.2")
+    compare(m.title, "Update to 10.6.2?")
+    compare(m.message, "Omarchy fetches the release, validates it, and installs it. The bar keeps working until you restart the shell.")
+    compare(m.confirmText, "Update")
+    compare(m.cancelText, "Cancel")
+  }
+
+  function availableUi() {
+    return Core.maintenanceUiFromCheck(Core.maintenanceUiIdle("10.3.1"), checkFixture("available.json"), 0, "10.3.1")
+  }
+
+  function test_update_confirm_opens_only_with_a_target() {
+    compare(Core.maintenanceUiOpenUpdateConfirm(Core.maintenanceUiIdle("10.3.1")).updateConfirmOpen, false)
+    var open = Core.maintenanceUiOpenUpdateConfirm(availableUi())
+    compare(open.updateConfirmOpen, true)
+    compare(open.phase, "update_available")
+    var closed = Core.maintenanceUiCloseUpdateConfirm(open)
+    compare(closed.updateConfirmOpen, false)
+    compare(closed.phase, "update_available")
+  }
+
+  function test_update_transitions_to_restart_required() {
+    var ui = Core.maintenanceUiUpdating(Core.maintenanceUiOpenUpdateConfirm(availableUi()))
+    compare(ui.phase, "updating")
+    compare(ui.updateConfirmOpen, false)
+    compare(ui.message, "Updating\u2026 this takes a few seconds.")
+    compare(ui.updateCommand, "omarchy plugin update othavi0.agent-bar --yes && omarchy-restart-shell")
+    var done = Core.maintenanceUiFromUpdateApply(ui, Core.parseUpdateApplyOutcome(applyDoc("updated", "10.4.0")))
+    compare(done.phase, "restart_required")
+    compare(done.installedVersion, "10.3.1")
+    compare(done.targetVersion, "10.4.0")
+    compare(done.message, "10.4.0 installed. Restart the shell to load it.")
+    compare(done.updateCommand, "")
+  }
+
+  function test_update_transitions_to_up_to_date() {
+    var ui = Core.maintenanceUiUpdating(availableUi())
+    var done = Core.maintenanceUiFromUpdateApply(ui, Core.parseUpdateApplyOutcome(applyDoc("up_to_date", "10.3.1")))
+    compare(done.phase, "up_to_date")
+    compare(done.message, "Agent Bar is up to date.")
+    compare(done.targetVersion, "")
+    compare(done.releaseNotesUrl, "")
+    compare(done.updateCommand, "")
+  }
+
+  function test_update_failure_keeps_target_and_fallback() {
+    var ui = Core.maintenanceUiUpdating(availableUi())
+    var done = Core.maintenanceUiFromUpdateApply(ui, Core.parseUpdateApplyOutcome(applyDoc("fetch_failed", "10.3.1")))
+    compare(done.phase, "update_failed")
+    compare(done.message, "Could not reach GitHub. Try again.")
+    compare(done.targetVersion, "10.4.0")
+    compare(done.releaseNotesUrl, "https://github.com/othavi0/omarchy-agent-bar/releases/tag/v10.4.0")
+    compare(done.updateCommand, "omarchy plugin update othavi0.agent-bar --yes && omarchy-restart-shell")
+    compare(Core.maintenanceUiOpenUpdateConfirm(done).updateConfirmOpen, true)
+    var failed = Core.maintenanceUiFromUpdateApply(ui, Core.parseUpdateApplyOutcome("garbage"))
+    compare(failed.message, "The update did not finish. You are still on 10.3.1.")
+  }
+
+  function test_update_hold_phases() {
+    compare(Core.maintenanceUiHoldsUpdate(Core.maintenanceUiUpdating(availableUi())), true)
+    compare(Core.maintenanceUiHoldsUpdate(availableUi()), false)
+    compare(Core.maintenanceUiHoldsUpdate(Core.maintenanceUiIdle("1")), false)
+    var restart = Core.maintenanceUiFromUpdateApply(Core.maintenanceUiUpdating(availableUi()),
+        Core.parseUpdateApplyOutcome(applyDoc("updated", "10.4.0")))
+    compare(Core.maintenanceUiHoldsUpdate(restart), true)
+  }
+
+  function test_restart_pending_state_never_detaches() {
+    var hold = Core.maintenanceRestartPending()
+    compare(hold.blocked, true)
+    compare(Core.maintenanceCanDetach(hold, false), false)
   }
 
   function test_uninstall_confirmation_json() {
@@ -74,8 +202,9 @@ TestCase {
     compare(ui.installedVersion, "10.3.1")
     compare(ui.targetVersion, "10.4.0")
     compare(ui.releaseNotesUrl, "https://github.com/othavi0/omarchy-agent-bar/releases/tag/v10.4.0")
-    compare(ui.message, "Update to 10.4.0 is available. Run this in a terminal:")
-    compare(ui.updateCommand, "GIT_PAGER=cat omarchy plugin update othavi0.agent-bar && omarchy-restart-shell")
+    compare(ui.message, "10.4.0 is available.")
+    compare(ui.updateCommand, "omarchy plugin update othavi0.agent-bar --yes && omarchy-restart-shell")
+    compare(ui.updateConfirmOpen, false)
   }
 
   function test_update_check_up_to_date() {
@@ -162,7 +291,18 @@ TestCase {
     compare(un.payload.purgeSettingsAndBackups, true)
   }
 
-  function test_only_uninstall_is_a_known_intention_kind() {
+  function test_update_intention_carries_the_confirmation() {
+    var ui = Core.maintenanceUiIdle("10.0.0")
+    ui.targetVersion = "10.1.0"
+    var up = Core.maintenanceIntention("update", ui)
+    compare(up.kind, "update")
+    compare(up.targetVersion, "10.1.0")
+    compare(JSON.stringify(up.payload),
+            '{"schemaVersion":1,"operation":"update","confirmed":true,"targetVersion":"10.1.0"}')
+    compare(Core.maintenanceIntention("update", Core.maintenanceUiIdle("10.0.0")), null)
+  }
+
+  function test_only_uninstall_and_update_are_known_intention_kinds() {
     var ui = Core.maintenanceUiIdle("10.0.0")
     ui.targetVersion = "10.1.0"
     compare(Core.maintenanceIntention("reinstall", ui), null)

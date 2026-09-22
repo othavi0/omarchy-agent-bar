@@ -229,10 +229,9 @@ TestCase {
     verify(s.appliedSettings !== null)
   }
 
-  // UX-042: a manual check only paints the read-only status; the plugin
-  // never queues a handoff, touches pendingMaintenanceIntention, or runs
-  // the command itself. The command sits in ui.updateCommand for the user
-  // to copy into a terminal.
+  // UX-042: a check only paints the status. Nothing installs until the
+  // user confirms the update dialog; the fallback command sits in
+  // ui.updateCommand for a terminal.
   function test_manual_check_finds_an_update_stays_read_only() {
     var s = createService()
     bootstrapSettings(s)
@@ -243,7 +242,7 @@ TestCase {
     compare(s.maintenanceState.blocked, false)
     compare(s.lanes.maintenanceHandoff.busy, false)
     compare(s.maintenanceUi.updateCommand,
-        "GIT_PAGER=cat omarchy plugin update othavi0.agent-bar && omarchy-restart-shell")
+        "omarchy plugin update othavi0.agent-bar --yes && omarchy-restart-shell")
   }
 
   function test_handoff_waiting_on_status_starts_when_status_finishes() {
