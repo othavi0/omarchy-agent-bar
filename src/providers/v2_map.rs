@@ -811,13 +811,12 @@ pub(crate) fn format_plan_label(raw: &str) -> String {
         .join(" ")
 }
 
-/// `"credits"` is deliberately absent from this list: JSON-022C/D name a
-/// quota-reset count `codex-credits`, which is data, not money, and
-/// `JSON-022B` continues to ban actual monetary fields below.
+/// JSON-022C/D name a quota-reset count `codex-credits`, which is data, not
+/// money. Only that exact reset id is exempt from the `"credits"` ban.
 #[cfg(test)]
 pub fn assert_no_money(result: &ProviderResult) {
-    let text = format!("{result:?}");
-    for banned in ["spend", "balance", "currency", "usd", "BRL"] {
+    let text = format!("{result:?}").replace("\"codex-credits\"", "\"\"");
+    for banned in ["spend", "balance", "currency", "usd", "brl", "credits"] {
         assert!(
             !text.to_ascii_lowercase().contains(banned),
             "domain result leaked monetary field '{banned}': {text}"
@@ -1154,6 +1153,22 @@ mod tests {
             }
             other => panic!("expected ready, got {other:?}"),
         }
+    }
+
+    #[test]
+    #[should_panic(expected = "credits")]
+    fn assert_no_money_still_bans_a_credits_field() {
+        let window = UsageWindow::try_new("session", "creditsRemaining", 10.0, 90.0, None)
+            .expect("valid window");
+        assert_no_money(&ProviderResult::Ready {
+            id: ProviderId::Codex,
+            name: "Codex".into(),
+            source: DataSource::Live,
+            plan: None,
+            windows: vec![window],
+            last_success_at: datetime!(2026-07-26 18:00:00 UTC),
+            resets: Vec::new(),
+        });
     }
 
     #[test]
