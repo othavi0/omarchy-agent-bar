@@ -1359,6 +1359,7 @@ mod tests {
             ]),
             last_url: Mutex::new(None),
             last_headers: Mutex::new(Vec::new()),
+            last_body: Mutex::new(None),
         };
         let process = empty_process();
         let mut fs = MapFileSystem::default();

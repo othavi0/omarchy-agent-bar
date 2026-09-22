@@ -63,6 +63,7 @@ mod tests {
             ]),
             last_url: std::sync::Mutex::new(None),
             last_headers: std::sync::Mutex::new(Vec::new()),
+            last_body: std::sync::Mutex::new(None),
         };
         let result = http_get_with_retry(&http, &CLAUDE, "https://x/", &[], 1024).await;
         assert!(result.is_ok(), "expected retry to succeed: {result:?}");
@@ -81,6 +82,7 @@ mod tests {
             ]),
             last_url: std::sync::Mutex::new(None),
             last_headers: std::sync::Mutex::new(Vec::new()),
+            last_body: std::sync::Mutex::new(None),
         };
         let result = http_get_with_retry(&http, &CLAUDE, "https://x/", &[], 1024).await;
         assert!(matches!(result, Err(HttpError::RedirectRefused(_))));
@@ -100,6 +102,7 @@ mod tests {
             ]),
             last_url: std::sync::Mutex::new(None),
             last_headers: std::sync::Mutex::new(Vec::new()),
+            last_body: std::sync::Mutex::new(None),
         };
         let result = http_get_with_retry(&http, &CLAUDE, "https://x/", &[], 1024).await;
         assert!(matches!(result, Err(HttpError::Network(_))));

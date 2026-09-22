@@ -424,6 +424,16 @@ mod tests {
         ) -> BoxFuture<'_, Result<HttpResponse, HttpError>> {
             Box::pin(async { Err(HttpError::Network("noop".into())) })
         }
+
+        fn post(
+            &self,
+            _url: &str,
+            _headers: &[(&str, &str)],
+            _body: Vec<u8>,
+            _max_body_bytes: usize,
+        ) -> BoxFuture<'_, Result<HttpResponse, HttpError>> {
+            Box::pin(async { Err(HttpError::Network("noop".into())) })
+        }
     }
 
     struct RejectingHttp;
@@ -432,6 +442,23 @@ mod tests {
             &self,
             url: &str,
             _headers: &[(&str, &str)],
+            _max_body_bytes: usize,
+        ) -> BoxFuture<'_, Result<HttpResponse, HttpError>> {
+            let final_url = url.to_owned();
+            Box::pin(async move {
+                Ok(HttpResponse {
+                    status: 401,
+                    final_url,
+                    body: br#"{"error":"unauthorized"}"#.to_vec(),
+                })
+            })
+        }
+
+        fn post(
+            &self,
+            url: &str,
+            _headers: &[(&str, &str)],
+            _body: Vec<u8>,
             _max_body_bytes: usize,
         ) -> BoxFuture<'_, Result<HttpResponse, HttpError>> {
             let final_url = url.to_owned();
@@ -996,6 +1023,16 @@ mod tests {
                     body: br#"{"creditUsagePercent": 10.0}"#.to_vec(),
                 })
             })
+        }
+
+        fn post(
+            &self,
+            _url: &str,
+            _headers: &[(&str, &str)],
+            _body: Vec<u8>,
+            _max_body_bytes: usize,
+        ) -> BoxFuture<'_, Result<HttpResponse, HttpError>> {
+            Box::pin(async { Err(HttpError::Network("SleepHttp has no post fixture".into())) })
         }
     }
 
