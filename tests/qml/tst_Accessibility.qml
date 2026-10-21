@@ -98,7 +98,6 @@ TestCase {
   function test_state_cues_not_color_only() {
     verify(Core.chipStateCue({ state: "cli_missing" }).length > 0)
     verify(Core.chipStateCue({ state: "network_error" }).length > 0)
-    verify(Core.stateTitle({ state: "network_error", windows: [] }).length > 0)
     compare(Core.stateQualifier("stale"), "stale")
     compare(Core.chipCueLabel({ state: "stale", windows: [] }), "")
   }

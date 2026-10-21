@@ -58,7 +58,6 @@ TestCase {
   function test_stale_retains_windows_and_label() {
     var p = firstProvider("valid-stale.json")
     compare(Core.overviewRowKind(p), "reading")
-    compare(Core.stateTitle(p), "")
     compare(Core.stateBody(p), "")
     verify(Core.errorMessage(p).length > 0)
     compare(String(p.action && p.action.kind || ""), "retry")
@@ -510,39 +509,31 @@ TestCase {
 
   function test_state_copy_cli_missing() {
     var p = { id: "grok", name: "Grok", state: "cli_missing", windows: [], error: null }
-    compare(Core.stateTitle(p), "Grok CLI is not installed")
     compare(Core.stateBody(p), "Agent Bar reads the quota through it.")
   }
 
   function test_state_copy_unauthenticated() {
     var p = { id: "claude", name: "Claude", state: "unauthenticated", windows: [], error: null }
-    compare(Core.stateTitle(p), "Not signed in to Claude")
     compare(Core.stateBody(p), "Signing in opens the official Claude CLI.")
   }
 
   function test_state_copy_rate_limited() {
     var p = { id: "codex", name: "Codex", state: "rate_limited", windows: [], error: null }
-    compare(Core.stateTitle(p), "Codex hit a rate limit")
     compare(Core.stateBody(p), "Try again in a few minutes.")
   }
 
   function test_state_copy_network_error() {
     var p = { id: "grok", name: "Grok", state: "network_error", windows: [], error: null }
-    compare(Core.stateTitle(p), "Cannot reach Grok")
     compare(Core.stateBody(p), "Check your connection.")
   }
 
-  function test_state_copy_provider_error_and_unknown() {
+  function test_state_copy_provider_error() {
     var pe = { id: "grok", name: "Grok", state: "provider_error", windows: [], error: null }
-    compare(Core.stateTitle(pe), "Grok returned no limits")
     compare(Core.stateBody(pe), "")
-    var unk = { id: "claude", name: "Claude", state: "weird", windows: [], error: null }
-    compare(Core.stateTitle(unk), "Claude state is unknown")
   }
 
   function test_state_copy_ready_no_quota() {
     var p = { id: "claude", name: "Claude", state: "ready", windows: [], error: null }
-    compare(Core.stateTitle(p), "Claude reports no quota")
     compare(Core.stateBody(p), "This plan does not publish a usage percentage.")
   }
 

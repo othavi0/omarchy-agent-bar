@@ -335,30 +335,6 @@ function emptyWindowsMessage() {
   return "This plan does not publish a usage percentage."
 }
 
-function stateTitle(provider) {
-  if (!provider)
-    return ""
-  var name = plainText(provider.name || providerDisplayName(provider.id))
-  var s = String(provider.state || "")
-  if (s === "loading")
-    return ""
-  if (presentsReading(s) && (!provider.windows || provider.windows.length === 0))
-    return name + " reports no quota"
-  if (presentsReading(s))
-    return ""
-  if (s === "cli_missing")
-    return name + " CLI is not installed"
-  if (s === "unauthenticated")
-    return "Not signed in to " + name
-  if (s === "rate_limited")
-    return name + " hit a rate limit"
-  if (s === "network_error")
-    return "Cannot reach " + name
-  if (s === "provider_error")
-    return name + " returned no limits"
-  return name + " state is unknown"
-}
-
 function stateBody(provider) {
   if (!provider)
     return ""
