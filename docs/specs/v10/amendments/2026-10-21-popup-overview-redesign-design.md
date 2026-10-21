@@ -158,7 +158,8 @@ reset: `elapsed = clamp(1 - (resetsAt - now) / windowMinutes, 0, 1)`.
   at `lastSuccessAt`. The row head's accessible description reads
   `{N}% of the window has passed.`
 - `UX-081`: the pace line applies only to ready rows. Candidates are the
-  windows that show a tick. The projection is linear (`projected = used /
+  windows that show a tick and whose reset is still ahead; a window past its
+  reset holds the old period's reading. The projection is linear (`projected = used /
   elapsed`) and is labelled `At this pace`. Durations use the countdown
   format of "resets in" (`1h 6m`, `26m`). `full` reads `empty` under the
   remaining metric. The line names its window (`{label} is ...`) only when
@@ -167,7 +168,7 @@ reset: `elapsed = clamp(1 - (resetsAt - now) / windowMinutes, 0, 1)`.
   | Case | When | Copy |
   | --- | --- | --- |
   | Full now | a candidate is at 100 % used | alert glyph, `Full now` or `{label} is full now` |
-  | Runs out | a candidate projects to 100 % or more | alert glyph, `At this pace full in ~{X}, {Y} before reset`, for the soonest to fill |
+  | Runs out | a candidate projects to 100 % or more | alert glyph, `At this pace full in ~{X}, {Y} before reset`, for the soonest to fill; `, at reset` when {Y} rounds under a minute |
   | Lasts | every candidate projects under 100 % | check glyph, `Lasts to reset, {label} ends near {N}% used` (or `{N}% left`), for the highest projection |
   | Too early | no candidate, but some window has an elapsed fraction | clock glyph, `Too early to project, under 10% of the window has passed.` |
   | None | no window has both a length and a reset | no line |

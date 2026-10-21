@@ -911,6 +911,10 @@ function paceModel(provider, lines, primaryId, metric, nowMs) {
   var candidates = []
   var timed = false
   for (var i = 0; i < lines.length; i++) {
+    // A window past its reset holds the old period's reading; it has
+    // nothing to project.
+    if (!(parseIsoMs(lines[i].resetsAt) > nowMs))
+      continue
     if (lines[i].elapsed !== null)
       timed = true
     if (lines[i].tickPercent >= 0 && lines[i].usedPercent !== null)
@@ -970,14 +974,14 @@ function paceModel(provider, lines, primaryId, metric, nowMs) {
   }
 
   if (soonest) {
-    var resetMin = (parseIsoMs(soonest.resetsAt) - nowMs) / 60000
+    var margin = (parseIsoMs(soonest.resetsAt) - nowMs) / 60000 - soonestMin
     return {
       kind: "runsOut",
       glyph: Tokens.GLYPH_ALERT,
       critical: soonest.critical,
       text: "At this pace " + prefixOf(soonest),
       strong: full + " in ~" + paceDuration(soonestMin),
-      rest: ", " + paceDuration(Math.max(0, resetMin - soonestMin)) + " before reset",
+      rest: Math.round(margin) < 1 ? ", at reset" : ", " + paceDuration(margin) + " before reset",
       key: key
     }
   }

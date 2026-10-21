@@ -477,4 +477,20 @@ TestCase {
     compare(rowOf(model(F.normal(), "used"), "codex").alert, false)
     compare(rowOf(model(F.critical(), "used"), "claude").alert, true)
   }
+
+  function test_pace_edges_at_and_past_reset() {
+    var exact = withProviders([
+      F.provider("claude", "Claude", "ready", [F.win("session", "Session (5h)", 50, 300, 150)])
+    ])
+    var pace = rowOf(model(exact, "used"), "claude").pace
+    compare(pace.kind, "runsOut")
+    compare(pace.strong, "full in ~2h 30m")
+    compare(pace.rest, ", at reset", "a zero margin reads at reset, not 1m before")
+
+    var past = withProviders([
+      F.provider("claude", "Claude", "ready", [F.win("session", "Session (5h)", 100, 300, -5)])
+    ])
+    compare(rowOf(model(past, "used"), "claude").pace, null,
+            "a window past its reset has nothing to project")
+  }
 }
