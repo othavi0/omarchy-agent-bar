@@ -177,6 +177,12 @@ TestCase {
     if (s.uninstall) {
       service.openUninstallConfirm()
       verify(service.maintenanceUi.uninstallConfirmOpen, "the uninstall dialog is open")
+      var dialogs = ViewHarness.findAll(popup, function (item) {
+        return item.scrimColor !== undefined && item.opened === true
+      })
+      compare(dialogs.length, 1, "one open confirm dialog")
+      verify(Qt.colorEqual(dialogs[0].scrimColor, Commons.Color.menu.scrim),
+             "the dialog dims with the theme scrim, got " + dialogs[0].scrimColor)
     }
     compare(popup.isOpen, true)
     compare(String(Commons.Color.background), String(Qt.color(Palette.themePalette(s.mode).background)))
