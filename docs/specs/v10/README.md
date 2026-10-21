@@ -123,6 +123,14 @@ parts of `UX-075`, `UX-077`, `UX-079`, `UX-081`, and `A11Y-024`, and
 amends `UX-020C`, which no longer shows a severity tag:
 [docs/specs/v10/amendments/2026-10-21-remove-overview-headline-design.md](amendments/2026-10-21-remove-overview-headline-design.md).
 
+The popup drawer design ("Gaveta"), approved 2026-10-21, separates the
+provider rows with a band of popup floor, marks the open row with an accent
+tint, lip, rail, and a chevron, and lays the open row's detail out as a
+recessed drawer whose sections share one left column and one right edge,
+with borderless tonal `Use reset` and `Refresh` buttons of one width. It
+amends `UX-020B`, `UX-077`, `UX-079`, `UX-082`, `UX-083`, and `UX-086`:
+[docs/specs/v10/amendments/2026-10-21-popup-drawer-design.md](amendments/2026-10-21-popup-drawer-design.md).
+
 ## Product statement
 
 Agent Bar v10 is an Omarchy Quattro Quickshell plugin. Its only graphical

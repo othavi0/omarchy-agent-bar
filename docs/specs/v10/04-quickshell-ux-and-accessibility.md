@@ -69,6 +69,13 @@ literal UI.
   `UX-079`, the tightest exception in `UX-081`, and the `tightest` word in
   `A11Y-024`. No row names another provider's window. See
   `docs/specs/v10/amendments/2026-10-21-remove-overview-headline-design.md`.
+- `UX-077`, `UX-079`, `UX-082`, `UX-083`, and `UX-086` (amended 2026-10-21,
+  "Gaveta"): rows are slabs separated by a band of popup floor, the head
+  ends with a chevron that points down on the open row, and the open row's
+  detail is a recessed drawer whose sections share one left column, one
+  right edge, equal padding, and control-height rows. `Use reset` and
+  `Refresh` are borderless tonal twins of one width. See
+  `docs/specs/v10/amendments/2026-10-21-popup-drawer-design.md`.
 
 - `UX-013` (superseded 2026-10-21 by `UX-075`): The left rail is visually
   separate and uses provider icons only. There is no rail.
@@ -133,9 +140,12 @@ literal UI.
   hours. A critical non-lead window still drives severity (`UX-020C`); it
   never takes the number. See
   `docs/specs/v10/amendments/2026-09-04-session-window-leads-design.md`.
-- `UX-020B` (amended 2026-09-10, 2026-10-21): The selected or open row head
-  uses the neutral `Style.normalFill` plate. No accent edge tick; Settings
-  has no idle selected-looking border.
+- `UX-020B` (amended 2026-09-10, 2026-10-21): The row slab takes an accent
+  tint under an open head (15 %) and a lighter one under a selected head
+  (7 %). The open row adds an accent lip under its head and an accent rail
+  on its left edge, spanning the head and the drawer. Settings has no idle
+  selected-looking border. See
+  `docs/specs/v10/amendments/2026-10-21-popup-drawer-design.md`.
 - `UX-021`: The popup opens on the monitor that received the interaction.
 - `UX-022`: Only one agent-bar popup is visible across all monitors.
 - `UX-023`: Moving the popup to another monitor preserves selected provider
