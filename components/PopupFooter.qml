@@ -5,7 +5,8 @@ import qs.Ui
 import "Tokens.js" as Tokens
 
 // UX-083: the Settings entry plus static key hints. Only the button takes
-// focus; the hints are read-only.
+// focus; the hints are read-only. The footer is a slab under the same band of
+// popup floor that separates the provider rows.
 Rectangle {
   id: root
   objectName: "popupFooter"
@@ -17,6 +18,8 @@ Rectangle {
   signal settingsRequested()
 
   readonly property color tertiary: Util.alpha(root.foreground, Tokens.TEXT_TERTIARY)
+  readonly property var tones: Tokens.surfaces(Commons.Color.popups.background, root.foreground)
+  readonly property int bandHeight: band.height + rule.height
   readonly property var hints: [
     { key: "↑↓", label: "provider" },
     { key: "r", label: "refresh" },
@@ -29,23 +32,33 @@ Rectangle {
 
   width: parent ? parent.width : implicitWidth
   implicitHeight: Math.max(settingsButton.implicitHeight, hintRow.implicitHeight)
-      + Style.space(16) + rule.height
+      + Style.space(16) + root.bandHeight
   height: implicitHeight
-  color: Style.normalFill
+  color: root.tones.slab
   bottomLeftRadius: root.innerRadius
   bottomRightRadius: root.innerRadius
+
+  Rectangle {
+    id: band
+    objectName: "rowBand"
+    width: parent.width
+    height: Style.space(4)
+    color: root.tones.floor
+  }
 
   PanelSeparator {
     id: rule
     objectName: "edgeRule"
+    y: band.height
     width: parent.width
     foreground: root.foreground
+    strength: Tokens.RIM
   }
 
   Button {
     id: settingsButton
     x: Style.space(8)
-    y: rule.height + Math.round((root.height - rule.height - height) / 2)
+    y: root.bandHeight + Math.round((root.height - root.bandHeight - height) / 2)
     text: "Settings"
     iconText: Tokens.GLYPH_SETTINGS
     focusable: true
@@ -63,7 +76,7 @@ Rectangle {
     id: hintRow
     anchors.right: parent.right
     anchors.rightMargin: Style.spacing.popupPadding
-    y: rule.height + Math.round((root.height - rule.height - height) / 2)
+    y: root.bandHeight + Math.round((root.height - root.bandHeight - height) / 2)
     spacing: Style.space(4)
     Accessible.ignored: true
 

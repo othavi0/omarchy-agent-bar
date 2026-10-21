@@ -5,8 +5,10 @@ import qs.Commons as Commons
 import qs.Ui
 import "Tokens.js" as Tokens
 
-// UX-077/078: one provider. The head is the accordion toggle; the detail
-// shows only while the row is open. Every field comes from the row model.
+// UX-077/078: one provider, drawn as a slab. The head is the accordion
+// toggle and its chevron turns down while the drawer below it is open; an
+// accent rail spans both. A band of popup floor ends every row but the last.
+// Every field comes from the row model.
 Item {
   id: root
   objectName: "providerRow"
@@ -31,6 +33,13 @@ Item {
   readonly property var action: root.row && root.row.action ? root.row.action : null
   readonly property int bigIcon: Math.round(Style.font.iconLarge * Tokens.ROW_ICON_SCALE)
   readonly property color tertiary: Util.alpha(root.foreground, Tokens.TEXT_TERTIARY)
+  readonly property bool open: !!(root.row && root.row.open)
+  readonly property bool selected: !!(root.row && root.row.selected)
+  readonly property var tones: Tokens.surfaces(Commons.Color.popups.background, root.foreground)
+  readonly property color headTone: root.open
+      ? Tokens.mix(root.tones.slab, Commons.Color.accent, Tokens.HEAD_OPEN)
+      : (root.selected ? Tokens.mix(root.tones.slab, Commons.Color.accent, Tokens.HEAD_SELECTED)
+                       : root.tones.slab)
 
   width: parent ? parent.width : implicitWidth
   implicitHeight: body.implicitHeight
@@ -49,14 +58,15 @@ Item {
     return out
   }
 
-  // UX-020B: the selected or open row, detail included, sits on the normal
-  // fill; a closed head shows the hover fill under the pointer.
+  // UX-020B: the slab takes an accent tint under an open head and a lighter
+  // one under a selected head; a closed head shows the hover fill under the
+  // pointer.
   Rectangle {
     objectName: "rowPlate"
     anchors.fill: parent
     topLeftRadius: root.topRadius
     topRightRadius: root.topRadius
-    color: root.row && (root.row.selected || root.row.open) ? Style.normalFill : "transparent"
+    color: root.headTone
   }
 
   Column {
@@ -141,6 +151,7 @@ Item {
 
           Text {
             id: nameText
+            objectName: "rowName"
             Layout.fillWidth: true
             text: root.row ? root.row.name : ""
             color: root.foreground
@@ -155,7 +166,7 @@ Item {
           Text {
             Layout.fillWidth: true
             text: root.row ? root.row.plan : ""
-            color: root.tertiary
+            color: root.open ? Util.alpha(root.foreground, Tokens.TEXT_SECONDARY) : root.tertiary
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
             elide: Text.ElideRight
@@ -293,12 +304,21 @@ Item {
             id: actionButton
             visible: root.statusKind && !!root.action
             Layout.alignment: Qt.AlignRight
+            height: Style.spacing.controlHeight
             text: root.action ? root.action.label : ""
-            iconText: root.action && root.action.kind === "view_installation" ? Tokens.GLYPH_EXTERNAL : ""
-            bordered: true
+            iconText: root.action && root.action.kind === "view_installation"
+                ? Tokens.GLYPH_EXTERNAL
+                : (root.action && root.action.kind === "login" ? Tokens.GLYPH_USER : "")
+            bordered: false
             focusable: true
+            horizontalPadding: Style.space(12)
+            fontSize: Style.font.bodySmall
             foreground: root.foreground
             fontFamily: root.fontFamily
+            background: Tokens.mix(root.headTone, Commons.Color.accent, Tokens.PRIMARY_REST)
+            color: actionButton.hot || actionButton.activeFocus
+                ? Tokens.mix(root.headTone, Commons.Color.accent, Tokens.PRIMARY_HOT)
+                : actionButton.background
             Accessible.name: text
             function focusActivate() {
               if (root.action)
@@ -308,18 +328,62 @@ Item {
             onClicked: focusActivate()
           }
         }
+
+        Item {
+          objectName: "rowChevron"
+          Layout.preferredWidth: Style.font.icon
+          Layout.preferredHeight: Style.font.icon
+          Layout.alignment: Qt.AlignVCenter
+          rotation: root.open ? Tokens.CHEVRON_OPEN_DEGREES : 0
+
+          Text {
+            anchors.centerIn: parent
+            visible: !!(root.row && root.row.openable)
+            text: Tokens.GLYPH_CHEVRON
+            color: root.open || root.selected ? Commons.Color.accent : root.tertiary
+            font.family: Style.font.family
+            font.pixelSize: Style.font.icon
+            textFormat: Text.PlainText
+            Accessible.ignored: true
+          }
+        }
+      }
+
+      Rectangle {
+        objectName: "rowLip"
+        visible: root.open
+        anchors.bottom: parent.bottom
+        width: parent.width
+        height: Style.space(2)
+        color: Commons.Color.accent
       }
     }
 
-    RowDetail {
-      id: detail
+    Rectangle {
+      objectName: "drawerWell"
       width: parent.width
+      height: detail.height
       visible: !!(root.row && root.row.open)
-      row: root.row
-      foreground: root.foreground
-      fontFamily: root.fontFamily
-      onRefreshRequested: root.refreshRequested(root.rowId)
-      onResetRequested: function (resetId) { root.resetRequested(root.rowId, resetId) }
+      color: root.tones.well
+
+      RowDetail {
+        id: detail
+        width: parent.width
+        row: root.row
+        well: root.tones.well
+        foreground: root.foreground
+        fontFamily: root.fontFamily
+        onRefreshRequested: root.refreshRequested(root.rowId)
+        onResetRequested: function (resetId) { root.resetRequested(root.rowId, resetId) }
+      }
+    }
+
+    Rectangle {
+      objectName: "rowBand"
+      width: parent.width
+      height: Style.space(4)
+      visible: !root.last
+      color: root.tones.floor
     }
 
     PanelSeparator {
@@ -327,6 +391,15 @@ Item {
       width: parent.width
       visible: !root.last
       foreground: root.foreground
+      strength: Tokens.RIM
     }
+  }
+
+  Rectangle {
+    objectName: "rowRail"
+    visible: root.open
+    width: Style.space(3)
+    height: head.height + detail.height
+    color: Commons.Color.accent
   }
 }

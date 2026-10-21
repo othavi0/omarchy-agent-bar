@@ -1,10 +1,12 @@
 import QtQuick
 import QtTest
 import qs.Commons
+import qs.Commons as Commons
 import "../../CoreView.js" as Core
 import "ServiceHarness.js" as ServiceHarness
 import "ViewHarness.js" as ViewHarness
 import "OverviewFixtures.js" as F
+import "TestPalette.js" as Palette
 
 TestCase {
   id: testCase
@@ -310,8 +312,9 @@ TestCase {
     openRealPopup()
     var body = one(popup, "popupBody")
     verify(body.width > 0)
-    var rules = byName(popup, "edgeRule").filter(function (r) { return visibleIn(r, popup) })
-    verify(rules.length >= 5, "rows, detail lines and footer each draw a rule: " + rules.length)
+    var rules = byName(popup, "edgeRule").concat(byName(popup, "drawerRule"), byName(popup, "rowBand"))
+        .filter(function (r) { return visibleIn(r, popup) })
+    verify(rules.length >= 5, "bands, rims, drawer hairlines and the footer each run edge to edge: " + rules.length)
     for (var i = 0; i < rules.length; i++)
       assertFullBleed(rules[i], body, "rule " + i)
     assertFullBleed(one(popup, "popupFooter"), body, "the footer")
@@ -730,6 +733,135 @@ TestCase {
       compare(one(rows()[0], "rowPlate").topLeftRadius, 0, "the banner owns the corners")
     } finally {
       Style.cornerRadius = saved
+    }
+  }
+
+  // Gaveta: rows are slabs split by a band thicker than any rule inside the
+  // open drawer, and the drawer's sections are split by full-bleed hairlines.
+  function test_drawer_band_outweighs_the_hairlines() {
+    openRealPopup()
+    var body = one(popup, "popupBody")
+    var list = rows()
+    for (var r = 0; r < list.length - 1; r++) {
+      var band = one(list[r], "rowBand")
+      verify(visibleIn(band, popup), list[r].row.id + " ends in a band")
+      assertFullBleed(band, body, list[r].row.id + " band")
+    }
+    compare(visibleIn(one(list[list.length - 1], "rowBand"), popup), false,
+            "the footer draws the last band")
+    var rules = byName(detailOf("claude"), "drawerRule").filter(function (r) { return visibleIn(r, popup) })
+    compare(rules.length, 3, "pace, windows, reset and actions are four sections with three rules")
+    for (var i = 0; i < rules.length; i++) {
+      assertFullBleed(rules[i], body, "drawer rule " + i)
+      verify(one(list[0], "rowBand").height > rules[i].height,
+             "the band (" + one(list[0], "rowBand").height + ") outweighs a hairline (" + rules[i].height + ")")
+    }
+  }
+
+  function test_chevron_follows_the_open_row() {
+    openRealPopup()
+    tryCompare(one(rowById("claude"), "rowChevron"), "rotation", 90, 1000, "the open row points down")
+    compare(one(rowById("codex"), "rowChevron").rotation, 0, "a closed row points right")
+    verify(visibleIn(one(rowById("codex"), "rowChevron"), popup))
+    headOf("codex").focusActivate()
+    settle()
+    tryCompare(one(rowById("codex"), "rowChevron"), "rotation", 90, 1000)
+    tryCompare(one(rowById("claude"), "rowChevron"), "rotation", 0, 1000)
+  }
+
+  function leftOf(item) {
+    return Math.round(item.mapToItem(one(popup, "popupBody"), 0, 0).x)
+  }
+
+  function rightOf(item) {
+    return Math.round(item.mapToItem(one(popup, "popupBody"), item.width, 0).x)
+  }
+
+  function test_drawer_sections_share_one_column_and_one_edge() {
+    openRealPopup()
+    var row = rowById("claude")
+    var detail = detailOf("claude")
+    var column = leftOf(one(row, "rowName"))
+    var starts = [one(detail, "paceGlyph"), one(detail, "resetLabel"), one(detail, "updatedClock")]
+        .concat(byName(detail, "windowLabel"))
+    compare(byName(detail, "windowLabel").length, 2)
+    for (var i = 0; i < starts.length; i++)
+      compare(leftOf(starts[i]), column, starts[i].objectName + " starts under the provider name")
+
+    var edge = rightOf(one(row, "rowChevron"))
+    var ends = [one(detail, "refreshButton"), one(detail, "paceKey")].concat(byName(detail, "windowReset"))
+    for (var e = 0; e < ends.length; e++)
+      compare(rightOf(ends[e]), edge, ends[e].objectName + " ends on the chevron's edge")
+
+    var labels = byName(detail, "windowLabel")
+    var metersStart = leftOf(byName(detail, "windowMeter")[0])
+    compare(leftOf(one(detail, "resetFacts")), metersStart, "the reset facts start where the meters start")
+    for (var w = 0; w < labels.length; w++)
+      verify(labels[w].height >= Style.spacing.controlHeight, "a window row is one control tall")
+    compare(labels[1].mapToItem(detail, 0, 0).y - labels[0].mapToItem(detail, 0, 0).y, labels[0].height,
+            "window rows stack with no gap")
+  }
+
+  function test_action_buttons_are_tonal_twins() {
+    openRealPopup()
+    var detail = detailOf("claude")
+    var use = one(detail, "useResetButton")
+    var refresh = one(detail, "refreshButton")
+    compare(use.bordered, false, "Use reset has no outline")
+    compare(refresh.bordered, false, "Refresh has no outline")
+    compare(use.width, refresh.width, "both buttons share one width")
+    compare(use.height, refresh.height)
+    compare(refresh.height, Style.spacing.controlHeight)
+    compare(Math.round(use.mapToItem(detail, use.width, 0).x) + Style.space(8),
+            Math.round(refresh.mapToItem(detail, 0, 0).x), "one gap between the twins")
+    verify(!Qt.colorEqual(use.color, refresh.color), "the claimable reset is the tinted primary")
+    verify(Qt.colorEqual(refresh.color, refresh.background), "Refresh rests on its tonal fill")
+    var width = refresh.width
+    popup.onRefresh("claude")
+    tryCompare(service, "refreshing", true, 1000)
+    compare(refresh.text, "Refreshing")
+    compare(refresh.width, width, "Refreshing does not resize the button")
+    var clock = one(detail, "updatedClock")
+    compare(Math.round(clock.mapToItem(detail, 0, clock.height / 2).y),
+            Math.round(refresh.mapToItem(detail, 0, refresh.height / 2).y),
+            "Updated sits on the buttons' centre line")
+  }
+
+  function test_status_row_action_is_tonal() {
+    openRealPopup(F.problems(), "used", "codex")
+    var install = ViewHarness.buttonsWithText(rowById("codex"), ["Install guide"])
+    compare(install.length, 1)
+    compare(install[0].bordered, false, "the head action drops the outline too")
+  }
+
+  function luma(c) {
+    return 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b
+  }
+
+  function test_well_is_recessed_in_every_theme_data() {
+    return [{ tag: "dark", mode: "dark" }, { tag: "light", mode: "light" }, { tag: "white", mode: "white" }]
+  }
+
+  function test_well_is_recessed_in_every_theme(data) {
+    var c = Commons.Color
+    var saved = { foreground: String(c.foreground), background: String(c.background),
+                  accent: String(c.accent), urgent: String(c.urgent), muted: String(c.muted),
+                  popups: { background: String(c.popups.background), border: String(c.popups.border) } }
+    var p = Palette.themePalette(data.mode)
+    try {
+      c.foreground = p.foreground; c.background = p.background; c.accent = p.accent
+      c.urgent = p.urgent; c.muted = p.muted
+      c.popups.background = p.popups.background; c.popups.border = p.popups.border
+      openRealPopup()
+      var well = one(rowById("claude"), "drawerWell").color
+      var slab = one(rowById("codex"), "rowPlate").color
+      var band = one(rowById("claude"), "rowBand").color
+      verify(luma(well) < luma(slab), data.tag + ": the well (" + well + ") sits below the slab (" + slab + ")")
+      verify(luma(band) <= luma(well), data.tag + ": the band (" + band + ") is the floor under the well (" + well + ")")
+    } finally {
+      c.foreground = saved.foreground; c.background = saved.background; c.accent = saved.accent
+      c.urgent = saved.urgent; c.muted = saved.muted
+      c.popups.background = saved.popups.background; c.popups.border = saved.popups.border
     }
   }
 }
