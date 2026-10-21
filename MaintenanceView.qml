@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Layouts
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "CoreMaintenance.js" as Core
 import "components"
@@ -10,9 +11,12 @@ Item {
   id: root
 
   property var agentService: null
-  property color foreground: Color.foreground
+  property color foreground: Commons.Color.foreground
   property string fontFamily: Style.font.family
   property bool settingsLocked: true
+  // The view sits inside the Settings inset; section rules reach the
+  // popup border through this bleed (UX-084).
+  property int edgeBleed: 0
 
   readonly property var ui: agentService && agentService.maintenanceUi
       ? agentService.maintenanceUi
@@ -41,6 +45,14 @@ Item {
   width: parent ? parent.width : implicitWidth
   implicitHeight: body.implicitHeight
 
+  // commandField stays out: its focus sets editorOwnsFocus, which stands the
+  // key catcher down and would trap Tab.
+  function collectFocusTargets() {
+    var all = [checkButton, updateButton, restartButton, laterButton, notesButton,
+               marketplaceButton, uninstallButton]
+    return all.filter(function (item) { return item.visible })
+  }
+
   Column {
     id: body
     width: parent.width
@@ -52,6 +64,7 @@ Item {
 
       SectionHeader {
         text: "Version"
+        bleed: root.edgeBleed
         foreground: root.foreground
         fontFamily: root.fontFamily
       }
@@ -83,7 +96,7 @@ Item {
             width: parent.width
             visible: !root.restartRequired && ui.message && ui.message.length > 0
             text: ui.message
-            color: root.failed ? Color.urgent : Util.alpha(root.foreground, Tokens.TEXT_TERTIARY)
+            color: root.failed ? Commons.Color.urgent : Util.alpha(root.foreground, Tokens.TEXT_TERTIARY)
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
             wrapMode: Text.WordWrap
@@ -94,6 +107,7 @@ Item {
         }
 
         Button {
+          id: checkButton
           visible: root.showsCheck
           text: root.checking ? "Checking\u2026" : "Check for updates"
           bordered: true
@@ -115,9 +129,9 @@ Item {
         width: parent.width
         height: bannerText.implicitHeight + Style.space(14)
         radius: Style.cornerRadius
-        color: Style.selectedFillFor(root.foreground, Color.accent)
+        color: Style.selectedFillFor(root.foreground, Commons.Color.accent)
         border.width: Style.spacing.hairline
-        border.color: Color.accent
+        border.color: Commons.Color.accent
 
         Text {
           id: bannerText
@@ -265,6 +279,7 @@ Item {
       SectionHeader {
         text: "Danger zone"
         danger: true
+        bleed: root.edgeBleed
         foreground: root.foreground
         fontFamily: root.fontFamily
       }
@@ -290,7 +305,7 @@ Item {
           focusable: true
           enabled: !root.blocked && !root.maintenanceBusy
           opacity: uninstallButton.enabled ? 1.0 : Tokens.LOCKED
-          foreground: Color.urgent
+          foreground: Commons.Color.urgent
           fontFamily: root.fontFamily
           Accessible.name: "Uninstall Agent Bar"
           onClicked: {

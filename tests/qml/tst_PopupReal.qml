@@ -422,4 +422,147 @@ TestCase {
     })
     verify(ticks.length >= 1, "the primary meter carries the pace tick")
   }
+  function openSettingsView(env) {
+    openRealPopup(env)
+    popup.openSettings()
+    ServiceHarness.finishLane(service, "settingsRead", 0, JSON.stringify(F.settings("used")))
+    settle()
+    compare(popup.view, "settings")
+    compare(service.settingsState.phase, "clean")
+    return popup
+  }
+
+  function settingsRowFor(id) {
+    var found = byName(popup, "settingsProviderRow").filter(function (r) {
+      return r.providerId === id && visibleIn(r, popup)
+    })
+    compare(found.length, 1, "exactly one Settings row for " + id)
+    return found[0]
+  }
+
+  function visibleTexts(root) {
+    return ViewHarness.findAll(root, function (item) {
+      return item.textFormat !== undefined && visibleIn(item, popup) && String(item.text).length > 0
+    }).map(function (t) { return String(t.text) })
+  }
+
+  function liveFocusNamesAfterRebuild(expectedFirst) {
+    tryVerify(function () {
+      var names = focusNames()
+      return names.length > 0 && names[0] === expectedFirst
+    }, 1000, "the focus order rebuilt: " + JSON.stringify(focusNames()))
+    return focusNames()
+  }
+
+  function test_settings_focus_order() {
+    openSettingsView()
+    var tabs = ["Back to usage", "Providers", "General", "About"]
+    tryVerify(function () { return focusNames().length > tabs.length }, 1000,
+              "the Providers body joins the focus order: " + JSON.stringify(focusNames()))
+    compare(JSON.stringify(focusNames()), JSON.stringify(tabs.concat([
+      "Claude on the bar", "Move Claude down",
+      "Codex on the bar", "Move Codex up", "Move Codex down",
+      "Grok on the bar", "Move Grok up", "Move Grok down",
+      "Antigravity on the bar", "Move Antigravity up",
+      "Restore defaults"
+    ])))
+
+    popup.settingsTab = "general"
+    var fc = one(popup, "focusController")
+    tryVerify(function () { return fc.liveTargets().indexOf(one(popup, "metricGroup")) >= 0 }, 1000,
+              "the General body joins the focus order")
+    var general = fc.liveTargets().slice(tabs.length)
+    compare(general.length, 5)
+    compare(general[0], one(popup, "metricGroup"))
+    compare(general[1], one(popup, "intervalField").field)
+    compare(general[2], one(popup, "notificationsToggle"))
+    compare(general[3], one(popup, "reminderField").field)
+    compare(String(general[4].Accessible.name), "Restore defaults")
+
+    service.setNotificationsEnabled(false)
+    tryVerify(function () { return fc.liveTargets().indexOf(one(popup, "reminderField").field) < 0 },
+              1000, "the reminder field leaves the order while notifications are off")
+
+    popup.settingsTab = "about"
+    tryVerify(function () { return focusNames().indexOf("Check for updates") >= 0 }, 1000,
+              "the About body joins the focus order: " + JSON.stringify(focusNames()))
+    var about = focusNames()
+    compare(JSON.stringify(about.slice(0, tabs.length)), JSON.stringify(tabs))
+    compare(about[tabs.length], "Check for updates")
+    compare(about[tabs.length + 1], "Uninstall Agent Bar")
+  }
+
+  function test_settings_focus_follows_a_moved_row() {
+    openSettingsView()
+    tryVerify(function () { return focusNames().indexOf("Move Codex up") >= 0 }, 1000)
+    var fc = one(popup, "focusController")
+    var up = fc.liveTargets()[focusNames().indexOf("Move Codex up")]
+    verify(fc.focusItem(up))
+    fc.activate()
+    tryVerify(function () {
+      return fc.current && String(fc.current.Accessible.name) === "Move Codex down"
+    }, 1000, "focus stays on the moved row: " + (fc.current ? fc.current.Accessible.name : "none"))
+    verify(fc.current.activeFocus)
+    compare(service.settingsDraft.providers[0].id, "codex")
+  }
+
+  function test_settings_edges() {
+    openSettingsView()
+    settingsRowFor("antigravity").enableToggled()
+    settle()
+    var body = one(popup, "popupBody")
+    var tabs = ["providers", "general", "about"]
+    for (var t = 0; t < tabs.length; t++) {
+      popup.settingsTab = tabs[t]
+      settle()
+      var rules = byName(popup, "edgeRule").filter(function (r) { return visibleIn(r, popup) })
+      verify(rules.length >= 4, tabs[t] + ": header, sections and footer draw rules: " + rules.length)
+      for (var i = 0; i < rules.length; i++)
+        assertFullBleed(rules[i], body, tabs[t] + " rule " + i)
+      assertFullBleed(one(popup, "settingsFooter"), body, tabs[t] + " footer")
+    }
+    popup.settingsTab = "providers"
+    settle()
+    var settingsRows = byName(popup, "settingsProviderRow").filter(function (r) {
+      return visibleIn(r, popup)
+    })
+    compare(settingsRows.length, 4)
+    for (var r = 0; r < settingsRows.length; r++)
+      assertFullBleed(settingsRows[r], body, settingsRows[r].providerId + " Settings row")
+    var footer = one(popup, "settingsFooter")
+    compare(footer.mapToItem(body, 0, 0).y + footer.height, body.height,
+            "the Settings footer meets the bottom border")
+  }
+
+  function test_settings_plan_once_and_status() {
+    var env = F.problems()
+    env.providers[0] = F.claudeReady(76, 92)
+    env.providers[1].plan = { id: "plus", label: "Plus" }
+    openSettingsView(env)
+    var claude = visibleTexts(settingsRowFor("claude")).join(" ")
+    compare(claude.split("Max").length - 1, 1, "the plan prints once: " + claude)
+    var codex = visibleTexts(settingsRowFor("codex")).join(" ")
+    verify(codex.indexOf("Not installed") >= 0, codex)
+    compare(codex.indexOf("Plus"), -1, "a status replaces the plan: " + codex)
+
+    var footer = one(popup, "settingsFooter")
+    verify(visibleTexts(footer).indexOf("No changes") >= 0, visibleTexts(footer))
+    service.setDisplayMetric("remaining")
+    settle()
+    verify(visibleTexts(footer).indexOf("1 unsaved change") >= 0, visibleTexts(footer))
+  }
+
+  function test_settings_back_without_rail() {
+    openSettingsView(F.normal())
+    settingsRowFor("grok").enableToggled()
+    settle()
+    var draft = JSON.stringify(service.settingsDraft)
+    var selected = popup.selectedId
+    one(popup, "settingsHeader").backRequested()
+    settle()
+    compare(popup.view, "usage")
+    compare(popup.selectedId, selected)
+    compare(JSON.stringify(service.settingsDraft), draft, "Back keeps the unsaved draft")
+    compare(rowById(selected).row.open, true, "Back reopens the selected row")
+  }
 }

@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Layouts
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "CoreView.js" as Core
 import "CoreSettings.js" as Settings
@@ -11,7 +12,7 @@ Item {
   id: root
 
   property var agentService: null
-  property color foreground: Color.foreground
+  property color foreground: Commons.Color.foreground
   property string fontFamily: Style.font.family
   property string tab: "providers"
   property bool editorOwnsFocus: (intervalField && intervalField.field
@@ -69,34 +70,106 @@ Item {
     return 120
   }
 
+  // UX-084: the view spans the popup; text and controls carry this inset and
+  // the rows and section rules run to the border.
+  readonly property int inset: Style.spacing.popupPadding
+  readonly property int edgeGap: Style.space(12)
+
+  // A change here rebuilds the popup focus order: the tab, the provider
+  // rows (the Repeaters rebuild their delegates on every draft change), the
+  // reminder field and the About buttons.
+  readonly property string focusShape: [
+    root.tab, root.phase, root.loadFailed, root.locked, root.notificationsOn,
+    root.sectionIds(root.sections.shown), root.sectionIds(root.sections.hidden),
+    maintenanceView.ui.phase, maintenanceView.notesAvailable
+  ].join("|")
+
+  // The row control the keyboard last acted on. A move or a toggle rebuilds
+  // the rows, so focus returns to that control on the moved row.
+  property var focusAnchor: null
+
   width: parent ? parent.width : implicitWidth
-  implicitHeight: col.implicitHeight
+  implicitHeight: col.implicitHeight + root.edgeGap * 2
 
-  function iconUrl(id) {
-    return Core.iconUrl(id)
+  function sectionIds(list) {
+    var ids = []
+    for (var i = 0; i < list.length; i++)
+      ids.push(list[i].id)
+    return ids.join(",")
   }
 
-  function providerStatus(id) {
-    return Core.settingsProviderStatus(Core.findProvider(root.snapshot, id))
+  function providerDetail(id) {
+    var provider = Core.findProvider(root.snapshot, id)
+    var status = Core.settingsProviderStatus(provider)
+    if (status.length)
+      return status
+    return Core.plainText(Core.planBadge(provider))
   }
 
-  // The Back button and the tabs live in SettingsHeader, which the popup
-  // pins above this view.
+  function rowsOf(repeater) {
+    var out = []
+    for (var i = 0; i < repeater.count; i++) {
+      var row = repeater.itemAt(i)
+      if (row)
+        out.push(row)
+    }
+    return out
+  }
+
+  function anchorRow(providerId, control) {
+    root.focusAnchor = { id: String(providerId), control: control }
+  }
+
+  // Returns the anchored control on its rebuilt row, once.
+  function anchoredFocusTarget() {
+    var anchor = root.focusAnchor
+    root.focusAnchor = null
+    if (!anchor || root.tab !== "providers")
+      return null
+    var rows = rowsOf(shownRepeater).concat(rowsOf(hiddenRepeater))
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].providerId !== anchor.id)
+        continue
+      // A row moved to an end loses that chevron; the other one is nearest.
+      var order = [anchor.control, anchor.control === "up" ? "down" : "up", "switch"]
+      for (var j = 0; j < order.length; j++) {
+        var target = rows[i].focusTarget(order[j])
+        if (target.visible && target.enabled)
+          return target
+      }
+      return null
+    }
+    return null
+  }
+
   function collectFocusTargets() {
     var out = []
     if (root.loadFailed)
       out.push(restartShellButton)
+    if (root.tab === "providers") {
+      var rows = rowsOf(shownRepeater).concat(rowsOf(hiddenRepeater))
+      for (var i = 0; i < rows.length; i++)
+        out = out.concat(rows[i].collectFocusTargets())
+    } else if (root.tab === "general") {
+      out.push(metricGroup, intervalField.field, notificationsToggle)
+      if (root.notificationsOn)
+        out.push(reminderField.field)
+    } else if (root.tab === "about") {
+      out = out.concat(maintenanceView.collectFocusTargets())
+    }
     return out
   }
 
   Column {
     id: col
+    y: root.edgeGap
     width: parent.width
     spacing: Style.spacing.huge
 
     Column {
       visible: root.loading || root.loadFailed
-      width: parent.width
+      x: root.inset
+      width: parent.width - root.inset * 2
       spacing: Style.space(8)
 
       Text {
@@ -114,7 +187,7 @@ Item {
         width: parent.width
         wrapMode: Text.WordWrap
         text: "Settings could not be loaded. Restart the shell and try again."
-        color: Color.urgent
+        color: Commons.Color.urgent
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
         textFormat: Text.PlainText
@@ -151,9 +224,11 @@ Item {
 
       Column {
         width: parent.width
-        spacing: Style.space(2)
 
         SectionHeader {
+          x: root.inset
+          width: parent.width - root.inset * 2
+          bleed: root.inset
           text: "On the bar"
           count: String(root.sections.shown.length)
           foreground: root.foreground
@@ -161,7 +236,9 @@ Item {
         }
 
         Text {
-          bottomPadding: Style.space(4)
+          x: root.inset
+          topPadding: Style.space(6)
+          bottomPadding: Style.space(2)
           text: "The bar shows them in this order."
           color: Util.alpha(root.foreground, Tokens.TEXT_TERTIARY)
           font.family: root.fontFamily
@@ -170,6 +247,7 @@ Item {
         }
 
         Repeater {
+          id: shownRepeater
           model: root.sections.shown
 
           SettingsProviderRow {
@@ -177,8 +255,7 @@ Item {
             width: parent.width
             providerId: modelData.id
             displayName: Core.providerDisplayName(modelData.id)
-            statusText: root.providerStatus(modelData.id)
-            iconSource: root.iconUrl(modelData.id)
+            detailText: root.providerDetail(modelData.id)
             enabled: true
             locked: root.locked
             canMoveUp: modelData.canMoveUp
@@ -186,14 +263,17 @@ Item {
             foreground: root.foreground
             fontFamily: root.fontFamily
             onEnableToggled: {
+              root.anchorRow(providerId, "switch")
               if (root.agentService)
                 root.agentService.setProviderEnabled(providerId, false)
             }
             onMoveUp: {
+              root.anchorRow(providerId, "up")
               if (root.agentService)
                 root.agentService.moveProvider(providerId, -1)
             }
             onMoveDown: {
+              root.anchorRow(providerId, "down")
               if (root.agentService)
                 root.agentService.moveProvider(providerId, 1)
             }
@@ -204,9 +284,11 @@ Item {
       Column {
         visible: root.sections.hidden.length > 0
         width: parent.width
-        spacing: Style.space(2)
 
         SectionHeader {
+          x: root.inset
+          width: parent.width - root.inset * 2
+          bleed: root.inset
           text: "Hidden"
           count: String(root.sections.hidden.length)
           foreground: root.foreground
@@ -214,6 +296,7 @@ Item {
         }
 
         Repeater {
+          id: hiddenRepeater
           model: root.sections.hidden
 
           SettingsProviderRow {
@@ -221,14 +304,14 @@ Item {
             width: parent.width
             providerId: modelData.id
             displayName: Core.providerDisplayName(modelData.id)
-            statusText: root.providerStatus(modelData.id)
-            iconSource: root.iconUrl(modelData.id)
+            detailText: root.providerDetail(modelData.id)
             enabled: false
             locked: root.locked
             movable: false
             foreground: root.foreground
             fontFamily: root.fontFamily
             onEnableToggled: {
+              root.anchorRow(providerId, "switch")
               if (root.agentService)
                 root.agentService.setProviderEnabled(providerId, true)
             }
@@ -239,7 +322,8 @@ Item {
 
     Column {
       visible: root.tab === "general"
-      width: parent.width
+      x: root.inset
+      width: parent.width - root.inset * 2
       spacing: Style.spacing.huge
       opacity: root.locked ? Tokens.LOCKED : 1.0
       enabled: !root.locked && visible
@@ -249,6 +333,7 @@ Item {
         spacing: Style.space(8)
 
         SectionHeader {
+          bleed: root.inset
           text: "Bar shows"
           foreground: root.foreground
           fontFamily: root.fontFamily
@@ -259,6 +344,9 @@ Item {
           spacing: Style.space(8)
 
           ButtonGroup {
+            id: metricGroup
+            objectName: "metricGroup"
+            Accessible.name: "Bar shows"
             options: [
               { value: "remaining", label: "Remaining" },
               { value: "used", label: "Used" }
@@ -297,7 +385,7 @@ Item {
 
               Image {
                 anchors.verticalCenter: parent.verticalCenter
-                source: root.previewProvider ? root.iconUrl(root.previewProvider.id) : ""
+                source: root.previewProvider ? Core.iconUrl(root.previewProvider.id) : ""
                 width: Style.bar.iconSize
                 height: Style.bar.iconSize
                 sourceSize.width: Style.bar.iconSize
@@ -330,6 +418,7 @@ Item {
         spacing: Style.space(8)
 
         SectionHeader {
+          bleed: root.inset
           text: "Refresh and alerts"
           foreground: root.foreground
           fontFamily: root.fontFamily
@@ -350,6 +439,7 @@ Item {
 
           NumberField {
             id: intervalField
+            objectName: "intervalField"
             fieldWidth: Style.space(88)
             value: root.intervalSec
             from: 30
@@ -376,8 +466,11 @@ Item {
         }
 
         Toggle {
+          id: notificationsToggle
+          objectName: "notificationsToggle"
           width: parent.width
           label: "Notifications"
+          Accessible.name: "Notifications"
           description: "Warn me before a quota runs out."
           checked: root.notificationsOn
           foreground: root.foreground
@@ -405,6 +498,7 @@ Item {
 
           NumberField {
             id: reminderField
+            objectName: "reminderField"
             fieldWidth: Style.space(88)
             value: root.reminderMinutes
             from: 15
@@ -436,7 +530,9 @@ Item {
       id: maintenanceView
       visible: root.tab === "about"
       enabled: visible
-      width: parent.width
+      x: root.inset
+      width: parent.width - root.inset * 2
+      edgeBleed: root.inset
       agentService: root.agentService
       settingsLocked: root.locked
       foreground: root.foreground

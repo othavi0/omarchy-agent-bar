@@ -403,10 +403,11 @@ TestCase {
 
   function test_settings_row_has_icon_name_chevrons() {
     var src = read("components/SettingsProviderRow.qml")
-    verify(src.indexOf("Image") >= 0)
+    verify(src.indexOf("ProviderIcon {") >= 0, "the row draws its mark with ProviderIcon")
+    verify(src.indexOf("sourceSize") < 0, "no row-local icon size")
     verify(src.indexOf("displayName") >= 0)
-    verify(src.indexOf("󰅃") >= 0)
-    verify(src.indexOf("󰅀") >= 0)
+    verify(src.indexOf("Tokens.GLYPH_UP") >= 0)
+    verify(src.indexOf("Tokens.GLYPH_DOWN") >= 0)
     verify(src.indexOf("enableToggled") >= 0)
   }
 

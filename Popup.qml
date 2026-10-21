@@ -253,6 +253,12 @@ KeyboardPanel {
       list = list.concat(settingsFooter.collectFocusTargets())
     focusController.setTargets(list)
     focusPendingRow()
+    if (root.view === "settings" && contentLoader.item
+        && typeof contentLoader.item.anchoredFocusTarget === "function") {
+      var anchored = contentLoader.item.anchoredFocusTarget()
+      if (anchored)
+        focusController.focusItem(anchored)
+    }
   }
 
   // Deferred so the rows and the Loader finish building first. The popup
@@ -425,6 +431,7 @@ KeyboardPanel {
 
         SettingsHeader {
           id: settingsHeader
+          objectName: "settingsHeader"
           width: parent.width
           visible: root.view === "settings"
           tab: root.settingsTab
@@ -449,9 +456,7 @@ KeyboardPanel {
         anchors.left: parent.left
         anchors.right: parent.right
         contentWidth: width
-        contentHeight: contentLoader.item
-            ? contentLoader.item.implicitHeight + contentLoader.y * 2
-            : 0
+        contentHeight: contentLoader.item ? contentLoader.item.implicitHeight : 0
         clip: true
         boundsBehavior: Flickable.StopAtBounds
         flickableDirection: Flickable.VerticalFlick
@@ -473,15 +478,20 @@ KeyboardPanel {
             focusController.clampScroll()
         }
 
-        // The Settings body still relies on the popup for its inset; the
-        // usage rows run edge to edge.
+        // Both bodies run edge to edge and carry their own inset.
         Loader {
           id: contentLoader
-          x: root.view === "settings" ? Style.spacing.popupPadding : 0
-          y: root.view === "settings" ? Style.space(12) : 0
-          width: contentFlick.width - x * 2
+          width: contentFlick.width
           sourceComponent: root.view === "settings" ? settingsContent : providerContent
           onLoaded: root.scheduleFocusRebuild()
+        }
+
+        Connections {
+          target: contentLoader.item
+          ignoreUnknownSignals: true
+          function onFocusShapeChanged() {
+            root.scheduleFocusRebuild()
+          }
         }
       }
 
@@ -490,7 +500,7 @@ KeyboardPanel {
         anchors.bottom: parent.bottom
         width: parent.width
         implicitHeight: root.view === "settings"
-            ? (settingsFooter.shown ? settingsFooter.implicitHeight + Style.spacing.popupPadding : 0)
+            ? settingsFooter.implicitHeight
             : popupFooter.implicitHeight
         height: implicitHeight
 
@@ -507,13 +517,10 @@ KeyboardPanel {
 
         SettingsFooter {
           id: settingsFooter
-          anchors.left: parent.left
-          anchors.right: parent.right
           anchors.bottom: parent.bottom
-          anchors.leftMargin: Style.spacing.popupPadding
-          anchors.rightMargin: Style.spacing.popupPadding
-          anchors.bottomMargin: Style.spacing.popupPadding
+          width: parent.width
           active: root.view === "settings"
+          innerRadius: root.innerRadius
           agentService: root.agentService
           foreground: Commons.Color.foreground
           fontFamily: Style.font.family
