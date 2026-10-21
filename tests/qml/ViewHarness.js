@@ -23,6 +23,18 @@ function createView(repoRoot, relPath, parent, testCase, props) {
   return view
 }
 
+// Loads the unmodified view through the engine. Its qs.Commons and qs.Ui
+// imports resolve to tests/qml/modules, so the runner needs
+// `-import tests/qml/modules`.
+function createReal(repoRoot, relPath, parent, testCase, props) {
+  var component = Qt.createComponent("file://" + repoRoot + "/" + relPath)
+  testCase.verify(component.status === 1 /* Component.Ready */,
+                  relPath + " compiles against tests/qml/modules: " + component.errorString())
+  var view = component.createObject(parent, props || {})
+  testCase.verify(view !== null, relPath + " creates: " + component.errorString())
+  return view
+}
+
 function findAll(item, predicate, out) {
   var found = out || []
   if (!item)

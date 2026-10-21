@@ -105,11 +105,15 @@ QML/plugin changes also run:
   ./*.qml components/*.qml
 omarchy plugin validate .
 # PATH qmltestrunner is Qt5 and fails SILENTLY (errors only in journald) —
-# the Qt6 binary path and both env vars below are mandatory
+# the Qt6 binary path and both env vars below are mandatory.
+# tests/qml/modules holds the stub qs.Commons and qs.Ui modules that let
+# tests load the real plugin views; screenshots save into target/.
+mkdir -p target/v10-ui-evidence
 QT_QPA_PLATFORM=offscreen QML_XHR_ALLOW_FILE_READ=1 QT_LOGGING_TO_CONSOLE=1 \
   /usr/lib/qt6/bin/qmltestrunner \
   -input tests/qml \
   -import /usr/share/omarchy/shell \
+  -import tests/qml/modules \
   -import . \
   -o -,txt
 ```

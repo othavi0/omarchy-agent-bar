@@ -1,0 +1,11 @@
+module qs.Ui
+Button 1.0 Button.qml
+ButtonGroup 1.0 ButtonGroup.qml
+KeyboardPanel 1.0 KeyboardPanel.qml
+NumberField 1.0 NumberField.qml
+PanelActionButton 1.0 PanelActionButton.qml
+PanelKeyCatcher 1.0 PanelKeyCatcher.qml
+PanelSeparator 1.0 PanelSeparator.qml
+PanelToolTip 1.0 PanelToolTip.qml
+Toggle 1.0 Toggle.qml
+ToggleSwitch 1.0 ToggleSwitch.qml
