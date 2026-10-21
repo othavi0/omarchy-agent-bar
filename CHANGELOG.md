@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [10.7.3] - 2026-10-21
+
+### Changed
+
+- docs(spec): record the open row frame
+- feat(popup): frame the open row, drop the rail
+
 ## [10.7.2] - 2026-10-21
 
 ### Changed
