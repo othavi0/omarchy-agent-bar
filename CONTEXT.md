@@ -13,8 +13,8 @@ The single logical Agent Bar popup. It opens on one monitor and shows either
 the overview or Settings.
 
 **Overview**
-The popup view that lists every shown provider as a row under a headline band
-that names the tightest window.
+The popup view that lists every shown provider as a row. It starts with the
+rows; each row describes only its own provider.
 
 **Provider row**
 One provider in the overview. Its head shows the icon, name, plan, primary

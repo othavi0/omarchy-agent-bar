@@ -1,7 +1,8 @@
 # Popup overview redesign ("Ritmo")
 
 Date: 2026-10-21
-Status: approved
+Status: approved; the headline band and the `Tightest` tag are superseded
+by `2026-10-21-remove-overview-headline-design.md`
 Supersedes in part: UX-004, UX-006, UX-013, UX-014, UX-015, UX-016,
 UX-017, UX-018, UX-019, UX-020B, UX-020D, UX-024, UX-025, UX-028
 (placement only), UX-070, UX-071, UX-072, UX-073 (placement only),
@@ -75,14 +76,14 @@ false`.
 `[C]`, `[X]`, and `[S]` stand for the provider icons and the settings
 glyph; `!` stands for the alert glyph. The letters are not literal UI.
 
-- `UX-075`: the usage view holds, top to bottom, the banners, the headline
+- `UX-075` (band removed by `2026-10-21-remove-overview-headline-design.md`): the usage view holds, top to bottom, the banners, the headline
   band, one row per enabled provider in settings order, and a footer. Every
   band, rule, row fill, and footer runs edge to edge, and text carries its
   own indent. There is no close control: Escape and an outside click close
   the popup. The width intention is `Style.space(520)`. Only the rows list
   scrolls; the banners, the band, and the footer stay fixed. The popup
   resizes to fit an expanded row with no animation (`UX-020`, `A11Y-013`).
-- `UX-076`: the headline band names the tightest window: the highest
+- `UX-076` (superseded by `2026-10-21-remove-overview-headline-design.md`): the headline band names the tightest window: the highest
   `usedPercent` across ready and stale providers, ties going to settings
   order and then to delivered window order. This election is separate from
   the per-row primary of `UX-020D`.
@@ -100,7 +101,8 @@ glyph; `!` stands for the alert glyph. The letters are not literal UI.
   and the value over its unit word (`used` or `left`), with the plan and a
   sub line under them. The primary window follows the `UX-020D` election,
   so `UX-002` holds and the chip numeral equals the row value. The sub line
-  follows the no-repeat rule:
+  follows the no-repeat rule (the `Tightest` tag is superseded by
+  `2026-10-21-remove-overview-headline-design.md`):
   - a ready row whose primary is the tightest shows the window label and a
     `Tightest` tag in place of its reset text;
   - any other ready row shows `{label} · resets in {X}`, or the label alone
@@ -132,7 +134,8 @@ glyph; `!` stands for the alert glyph. The letters are not literal UI.
   2. the other windows, each with a thin meter, its value, and `resets in
      X` (plus the local clock time when the reset is under 24 hours away,
      never a day name), or the `Tightest` tag when that window is the
-     tightest;
+     tightest (the tag is superseded by
+     `2026-10-21-remove-overview-headline-design.md`);
   3. the reset fact lines (the `UX-071` facts: label, count, which windows
      it clears, and one date, with no button), then the result caption of
      `UX-073`;
@@ -163,7 +166,8 @@ reset: `elapsed = clamp(1 - (resetsAt - now) / windowMinutes, 0, 1)`.
   elapsed`) and is labelled `At this pace`. Durations use the countdown
   format of "resets in" (`1h 6m`, `26m`). `full` reads `empty` under the
   remaining metric. The line names its window (`{label} is ...`) only when
-  that window is neither the row primary nor the tightest.
+  that window is neither the row primary nor the tightest (the tightest
+  exception is superseded by `2026-10-21-remove-overview-headline-design.md`).
 
   | Case | When | Copy |
   | --- | --- | --- |
@@ -235,7 +239,8 @@ reset: `elapsed = clamp(1 - (resetsAt - now) / windowMinutes, 0, 1)`.
 - `A11Y-024`: the row head is a button with `Accessible.expandable`,
   `Accessible.expanded`, and an accessible name that spells out the
   provider, the value and unit, the severity word, the sub line, and
-  `tightest` when it applies. The tick's meaning goes in
+  `tightest` when it applies (the `tightest` word is superseded by
+  `2026-10-21-remove-overview-headline-design.md`). The tick's meaning goes in
   `Accessible.description`.
 - `A11Y-025`: the usage focus order is the banner actions, then for each
   row its head (not for loading rows), its row action when present, and for
@@ -259,7 +264,7 @@ reset: `elapsed = clamp(1 - (resetsAt - now) / windowMinutes, 0, 1)`.
 | `UX-019` | Full-width provider sections; Settings rules to the right edge. | Every band, rule, row fill, and footer runs edge to edge, Settings included. |
 | `UX-020A` | Every window row shows a usage track. | Unchanged, and the meter carries the pace tick (`UX-080`). |
 | `UX-020B` | Rail plate for the slot that owns the content. | The selected or open row head uses `Style.normalFill`. |
-| `UX-020C` | The header shows the `Critical` or `Low` tag. | The severity tag moves to the band (`UX-076`). Thresholds and the chip cue rule are unchanged. |
+| `UX-020C` | The header shows the `Critical` or `Low` tag. | The severity tag moves to the band (`UX-076`). Thresholds and the chip cue rule are unchanged. Superseded by `2026-10-21-remove-overview-headline-design.md`: no tag. |
 | `UX-020D` | One lead window; the rest are compact rows. | The lead becomes the row primary (`UX-077`); the rest move to the detail (`UX-079`). The election is unchanged. |
 | `UX-024`, `UX-025` | Selection and scroll persist; a new open resets to the top. | `UX-078`. |
 | `UX-028` | `Updated <age>` caption in the pane; header refresh. | `Updated <age>` lives in the stale sub line, and in the action line only for rows that are not stale, so it never shows twice; Refresh lives in the action line. The stale rendering rule itself stays: no cue, no error text, same severity colour, no "Offline" wording. |

@@ -38,17 +38,15 @@ verified Quattro-native glyphs or explicit English text labels.
 ## Popup layout
 
 Amended 2026-10-21: the rail and the single-provider pane are replaced by
-a headline band, one row per enabled provider with an accordion detail,
-and a footer. See
-`docs/specs/v10/amendments/2026-10-21-popup-overview-redesign-design.md`.
+one row per enabled provider with an accordion detail, and a footer. The
+popup starts directly with the rows; there is no headline band. See
+`docs/specs/v10/amendments/2026-10-21-popup-overview-redesign-design.md`
+and `docs/specs/v10/amendments/2026-10-21-remove-overview-headline-design.md`.
 
 ```text
 +--------------------------------------------------+
-| [C] Tightest: Claude session 76% used ·          |
-|     resets in 1h 32m                             |
-+--------------------------------------------------+
 | [C] Claude      [========|==  ]   76%            |
-|     Max         Session (5h) [Tightest]   used   |
+|     Max         Session (5h) · resets in 1h 32m  |
 |     Open row detail: pace line, other windows,   |
 |     reset facts, Updated <age> [Use reset] [R]   |
 +--------------------------------------------------+
@@ -62,10 +60,15 @@ and a footer. See
 glyph. `[R]` represents the native refresh glyph; these letters are not
 literal UI.
 
-- `UX-075` to `UX-086` (added 2026-10-21): usage view layout, headline
-  band, row anatomy, accordion, row detail, pace tick, pace line, status
-  rows, footer, Settings band and edges, chip alert glyph, and tokens. See
+- `UX-075` to `UX-086` (added 2026-10-21): usage view layout, row anatomy,
+  accordion, row detail, pace tick, pace line, status rows, footer,
+  Settings band and edges, chip alert glyph, and tokens. See
   `docs/specs/v10/amendments/2026-10-21-popup-overview-redesign-design.md`.
+- `UX-076` (superseded 2026-10-21): the headline band that named the
+  tightest window is removed, with the `Tightest` tag in `UX-077` and
+  `UX-079`, the tightest exception in `UX-081`, and the `tightest` word in
+  `A11Y-024`. No row names another provider's window. See
+  `docs/specs/v10/amendments/2026-10-21-remove-overview-headline-design.md`.
 
 - `UX-013` (superseded 2026-10-21 by `UX-075`): The left rail is visually
   separate and uses provider icons only. There is no rail.
@@ -82,9 +85,9 @@ literal UI.
 - `UX-016` (amended 2026-10-21): The provider header is removed; see
   `UX-076`, `UX-077`, and `UX-079`. The former text: the provider header
   does not repeat the provider icon.
-- `UX-017` (amended 2026-10-21): The header is removed; the band carries
-  severity (`UX-076`), the row carries the name and plan (`UX-077`), and the
-  open row's action line carries the update age and refresh (`UX-079`).
+- `UX-017` (amended 2026-10-21): The header is removed; the row carries the
+  name, the plan, and the severity glyph (`UX-077`), and the open row's
+  action line carries the update age and refresh (`UX-079`).
   The former text: the header shows the provider name, the plan tag, severity when
   present, and the provider refresh control. Connection state is implied
   structurally (windows render only when a reading exists) and update age
@@ -104,12 +107,12 @@ literal UI.
   horizontal usage track filled by the displayed metric (used or remaining),
   in both the row primary and the detail windows, so secondary windows stay
   comparable. The meter carries the pace tick (`UX-080`).
-- `UX-020C` (amended 2026-09-04, 2026-10-21): Severity is computed from
+- `UX-020C` (amended 2026-09-04, 2026-10-21 twice): Severity is computed from
   `usedPercent`, independent of the displayed metric, using the notification
   thresholds: at or above 95 the window is Critical, at or above 90 it is
-  Warning. The headline band (`UX-076`; formerly the popup header) shows a
-  severity tag reading `Critical` or `Low` when the provider
-  has one, a critical window renders its numeral and track in the urgent
+  Warning. The popup shows no severity tag: the row head's accessible name
+  carries `critical` or `low` when the provider has one
+  (`docs/specs/v10/amendments/2026-10-21-remove-overview-headline-design.md`), a critical window renders its numeral and track in the urgent
   theme colour whether it is the lead or a compact row, and a ready provider
   with a critical window shows the alert glyph (`UX-085`) on its bar chip; the cue's
   accessible name carries the word `critical` even when the chip numeral

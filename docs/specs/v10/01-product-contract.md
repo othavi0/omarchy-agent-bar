@@ -87,7 +87,7 @@ Notifications: enabled
 1. The bar shows one compact chip per enabled provider.
 2. Left-clicking a chip opens the consolidated popup with that provider's
    row open (amended 2026-10-21, `docs/specs/v10/amendments/2026-10-21-popup-overview-redesign-design.md`).
-3. The popup names the tightest window across providers, then lists one row
+3. The popup lists one row
    per enabled provider with its plan, primary window, and typed
    error/action state. The open row shows the pace line, the other windows,
    reset times, and the last-success age as a neutral caption while a

@@ -309,7 +309,6 @@ The table is product data, not an example:
 │   ├── ProviderChip.qml
 │   ├── ProviderIcon.qml
 │   ├── UsageMeter.qml
-│   ├── OverviewBand.qml
 │   ├── OverviewList.qml
 │   ├── ProviderRow.qml
 │   ├── RowDetail.qml
@@ -318,8 +317,7 @@ The table is product data, not an example:
 │   ├── StateMessage.qml
 │   ├── SettingsProviderRow.qml
 │   ├── ConfirmDialog.qml
-│   ├── FocusController.qml
-│   └── HeaderTag.qml
+│   └── FocusController.qml
 └── icons/
     ├── claude.png
     ├── codex.png
