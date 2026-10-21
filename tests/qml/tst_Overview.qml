@@ -461,4 +461,20 @@ TestCase {
     compare(lines[0].windowMinutes, 300)
     compare(Core.windowDisplayLines(F.grokReady(), "used", F.FIXED_NOW)[0].windowMinutes, null)
   }
+
+  function test_critical_side_window_raises_the_row_alert() {
+    var env = withProviders([
+      F.provider("claude", "Claude", "ready", [F.win("session", "Session (5h)", 98, 300, 30)]),
+      F.provider("codex", "Codex", "ready", [
+        F.win("session", "Session (5h)", 10, 300, 200),
+        F.win("weekly", "Weekly (7d)", 97, 10080, 600)
+      ])
+    ])
+    var codex = rowOf(model(env, "used"), "codex")
+    compare(codex.valueText, "10%")
+    compare(codex.critical, false, "the value keeps the main window's colour")
+    compare(codex.alert, true, "a critical side window still flags the row")
+    compare(rowOf(model(F.normal(), "used"), "codex").alert, false)
+    compare(rowOf(model(F.critical(), "used"), "claude").alert, true)
+  }
 }

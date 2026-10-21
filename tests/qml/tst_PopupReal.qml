@@ -674,4 +674,17 @@ TestCase {
     compare(popup.selectedId, "codex", "Down steps from the shown row")
     compare(rowById("codex").row.open, true)
   }
+
+  function test_collapsed_row_shows_a_critical_side_window() {
+    openRealPopup(F.envelope([
+      F.provider("claude", "Claude", "ready", [F.win("session", "Session (5h)", 98, 300, 30)]),
+      F.provider("codex", "Codex", "ready", [
+        F.win("session", "Session (5h)", 10, 300, 200),
+        F.win("weekly", "Weekly (7d)", 97, 10080, 600)
+      ])
+    ]))
+    compare(rowById("codex").row.open, false)
+    var alert = one(rowById("codex"), "rowAlert")
+    verify(visibleIn(alert, popup), "the collapsed row shows the alert glyph")
+  }
 }

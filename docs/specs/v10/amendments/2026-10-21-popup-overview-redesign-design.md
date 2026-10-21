@@ -108,6 +108,9 @@ glyph; `!` stands for the alert glyph. The letters are not literal UI.
   - a stale row shows `{label} · Updated {age}` (`UX-028`) and no tag.
 
   The detail lists only the other windows; the primary never repeats there.
+  A critical window anywhere in the row puts the alert glyph before the
+  value, as the bar chip cue does (`UX-085`). The value turns urgent only
+  when the primary itself is critical.
 - `UX-078`: the rows form an accordion.
   - At most one row is open: the selected one, unless the user collapsed
     it.

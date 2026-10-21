@@ -1110,6 +1110,7 @@ function overviewRow(provider, metric, nowMs, tightest, ui) {
     valueText: valueText,
     unitText: unitText,
     critical: reading && primary.critical,
+    alert: severityWord === "critical",
     severityWord: severityWord,
     subText: subText,
     subTag: subTag,

@@ -252,8 +252,11 @@ Item {
             Layout.alignment: Qt.AlignRight
             spacing: Style.space(4)
 
+            // Any critical window raises the glyph, the main one or not, as
+            // on the bar chip.
             Text {
-              visible: root.critical
+              objectName: "rowAlert"
+              visible: !!(root.row && root.row.alert)
               anchors.verticalCenter: parent.verticalCenter
               text: Tokens.GLYPH_ALERT
               color: Commons.Color.urgent
