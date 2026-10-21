@@ -265,7 +265,7 @@ reset: `elapsed = clamp(1 - (resetsAt - now) / windowMinutes, 0, 1)`.
 | `UX-018` | One provider's content at a time. | `UX-075`, `UX-078`: every provider is a row; one row's detail is open. |
 | `UX-019` | Full-width provider sections; Settings rules to the right edge. | Every band, rule, row fill, and footer runs edge to edge, Settings included. |
 | `UX-020A` | Every window row shows a usage track. | Unchanged, and the meter carries the pace tick (`UX-080`). |
-| `UX-020B` | Rail plate for the slot that owns the content. | The selected or open row head uses `Style.normalFill`. Amended by `2026-10-21-popup-drawer-design.md`: an accent tint, lip, and rail. |
+| `UX-020B` | Rail plate for the slot that owns the content. | The selected or open row head uses `Style.normalFill`. Amended by `2026-10-21-popup-drawer-design.md`: an accent tint and a frame of top and bottom lines. |
 | `UX-020C` | The header shows the `Critical` or `Low` tag. | The severity tag moves to the band (`UX-076`). Thresholds and the chip cue rule are unchanged. Superseded by `2026-10-21-remove-overview-headline-design.md`: no tag. |
 | `UX-020D` | One lead window; the rest are compact rows. | The lead becomes the row primary (`UX-077`); the rest move to the detail (`UX-079`). The election is unchanged. |
 | `UX-024`, `UX-025` | Selection and scroll persist; a new open resets to the top. | `UX-078`. |
