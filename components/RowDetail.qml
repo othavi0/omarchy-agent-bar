@@ -223,37 +223,15 @@ Column {
 
       Repeater {
         model: root.windows.length
-        Item {
+        Text {
           required property int index
-          readonly property var line: root.windows[index]
-          readonly property bool tightest: !!(line && line.isTightest)
           Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
-          implicitWidth: tightest ? tightTag.implicitWidth : resetText.implicitWidth
-          implicitHeight: tightest ? tightTag.implicitHeight : resetText.implicitHeight
-
-          Text {
-            id: resetText
-            visible: !parent.tightest
-            anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
-            text: parent.line ? parent.line.resetCellText : ""
-            color: root.tertiary
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.bodySmall
-            textFormat: Text.PlainText
-            Accessible.ignored: true
-          }
-
-          HeaderTag {
-            id: tightTag
-            visible: parent.tightest
-            anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
-            label: "Tightest"
-            kind: parent.line && parent.line.critical ? "urgent" : "accent"
-            foreground: root.foreground
-            fontFamily: root.fontFamily
-          }
+          text: root.windows[index] ? root.windows[index].resetCellText : ""
+          color: root.tertiary
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.bodySmall
+          textFormat: Text.PlainText
+          Accessible.ignored: true
         }
       }
     }

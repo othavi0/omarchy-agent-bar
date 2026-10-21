@@ -6,7 +6,6 @@ var TRACK = 0.12
 var DIMMED = 0.45
 var LOCKED = 0.55
 var THIN_FILL = 0.6
-var URGENT_FILL = 0.16
 var URGENT_RULE = 0.55
 
 var ROW_ICON_SCALE = 1.2

@@ -48,9 +48,8 @@ Each `BarWidget.qml` exists per monitor and owns:
   ownership);
 - rendering derived from the shared service.
 
-The consolidated popup shows an overview: a headline band naming the
-tightest window, one accordion row per shown provider with its primary meter
-and a pace tick, and a footer that opens Settings. The card fits its content,
+The consolidated popup shows an overview: one accordion row per shown
+provider with its primary meter and a pace tick, and a footer that opens Settings. The card fits its content,
 and only the rows (or the Settings body) scroll, and only on overflow.
 Widgets do not own polling, provider state, settings persistence, or cache.
 

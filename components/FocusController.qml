@@ -158,7 +158,7 @@ Item {
     return false
   }
 
-  // Pinned targets (banners, band, footers) sit outside the Flickable; only
+  // Pinned targets (banners, footers) sit outside the Flickable; only
   // a target inside the scrolled content may move it.
   function ensureVisible(item) {
     if (!flickable || !item || !scrolledBy(item))

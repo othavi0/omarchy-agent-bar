@@ -13,6 +13,7 @@ Item {
 
   property var row: null
   property bool last: false
+  property int topRadius: 0
   property color foreground: Commons.Color.foreground
   property string fontFamily: Style.font.family
 
@@ -51,7 +52,10 @@ Item {
   // UX-020B: the selected or open row, detail included, sits on the normal
   // fill; a closed head shows the hover fill under the pointer.
   Rectangle {
+    objectName: "rowPlate"
     anchors.fill: parent
+    topLeftRadius: root.topRadius
+    topRightRadius: root.topRadius
     color: root.row && (root.row.selected || root.row.open) ? Style.normalFill : "transparent"
   }
 
@@ -65,7 +69,10 @@ Item {
       height: Math.max(grid.implicitHeight, Style.spacing.popupRowHeight) + Style.space(24)
 
       Rectangle {
+        objectName: "rowHover"
         anchors.fill: parent
+        topLeftRadius: root.topRadius
+        topRightRadius: root.topRadius
         visible: headMouse.containsMouse && !!root.row && root.row.openable && !root.row.open
         color: Style.hoverFill
       }
@@ -100,7 +107,10 @@ Item {
         }
 
         Rectangle {
+          objectName: "rowFocusRing"
           anchors.fill: parent
+          topLeftRadius: root.topRadius
+          topRightRadius: root.topRadius
           color: "transparent"
           border.color: Commons.Color.accent
           border.width: Style.spacing.hairline
@@ -203,28 +213,16 @@ Item {
             }
           }
 
-          Flow {
+          Text {
             visible: root.reading
             Layout.fillWidth: true
-            spacing: Style.space(6)
-
-            Text {
-              width: Math.min(implicitWidth, parent.width)
-              text: root.row ? root.row.subText : ""
-              color: root.tertiary
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.bodySmall
-              wrapMode: Text.WordWrap
-              textFormat: Text.PlainText
-              Accessible.ignored: true
-            }
-
-            HeaderTag {
-              label: root.row ? root.row.subTag : ""
-              kind: root.critical ? "urgent" : "accent"
-              foreground: root.foreground
-              fontFamily: root.fontFamily
-            }
+            text: root.row ? root.row.subText : ""
+            color: root.tertiary
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+            wrapMode: Text.WordWrap
+            textFormat: Text.PlainText
+            Accessible.ignored: true
           }
 
           Text {

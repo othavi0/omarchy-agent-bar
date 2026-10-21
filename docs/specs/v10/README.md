@@ -103,8 +103,8 @@ percentage still shows the dash (`PROD-031`):
 [docs/specs/v10/amendments/2026-09-21-grok-empty-reading-design.md](amendments/2026-09-21-grok-empty-reading-design.md).
 
 The popup overview redesign, approved 2026-10-21, replaces the provider
-rail and the single-provider pane with a headline band that names the
-tightest window, one row per enabled provider with an accordion detail,
+rail and the single-provider pane with one row per enabled provider with
+an accordion detail,
 and a footer with the Settings button and key hints. Each window gains
 `windowMinutes` (`JSON-020A`, `CACHE-001B`) so the open row can show a
 pace tick and a linear pace line. Stale rows keep `UX-028`. The design adds
@@ -115,6 +115,13 @@ screenshot inventory; and supersedes `UX-004`, `UX-006`, `UX-013` to
 `UX-015`, `UX-018`, `UX-024`, `UX-025`, and the placement in `UX-070` to
 `UX-073`:
 [docs/specs/v10/amendments/2026-10-21-popup-overview-redesign-design.md](amendments/2026-10-21-popup-overview-redesign-design.md).
+
+The overview headline removal, approved 2026-10-21, deletes the headline
+band and the `Tightest` tag, so the popup starts with the rows and each row
+describes only its own provider. It supersedes `UX-076` and the tightest
+parts of `UX-075`, `UX-077`, `UX-079`, `UX-081`, and `A11Y-024`, and
+amends `UX-020C`, which no longer shows a severity tag:
+[docs/specs/v10/amendments/2026-10-21-remove-overview-headline-design.md](amendments/2026-10-21-remove-overview-headline-design.md).
 
 ## Product statement
 
@@ -156,7 +163,8 @@ application, an AUR product, or a cargo-binstall product.
    [2026-09-22 banked usage resets](amendments/2026-09-22-usage-resets-design.md),
    [2026-09-22 update apply in the popup](amendments/2026-09-22-update-apply-in-popup-design.md),
    [2026-09-22 update apply detached](amendments/2026-09-22-update-apply-detached-design.md),
-   [2026-10-21 popup overview redesign](amendments/2026-10-21-popup-overview-redesign-design.md).
+   [2026-10-21 popup overview redesign](amendments/2026-10-21-popup-overview-redesign-design.md),
+   [2026-10-21 overview headline removed](amendments/2026-10-21-remove-overview-headline-design.md).
 
    [2026-09-15 Codex app-server only](amendments/2026-09-15-codex-app-server-only-design.md).
 
