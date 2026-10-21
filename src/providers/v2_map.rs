@@ -395,8 +395,18 @@ fn codex_extra_bucket_label(sanitized: &str, window_minutes: Option<i64>) -> Str
     let name = format_plan_label(sanitized);
     match window_minutes {
         Some(10080) => format!("{name} (7d)"),
-        Some(mins) => format!("{name} ({mins}m)"),
+        Some(mins) => format!("{name} ({})", duration_label(mins)),
         None => name,
+    }
+}
+
+fn duration_label(minutes: i64) -> String {
+    if minutes % 1440 == 0 {
+        format!("{}d", minutes / 1440)
+    } else if minutes % 60 == 0 {
+        format!("{}h", minutes / 60)
+    } else {
+        format!("{minutes}m")
     }
 }
 
@@ -404,7 +414,7 @@ fn codex_window_identity(window_minutes: Option<i64>, ordinal: usize) -> (String
     match window_minutes {
         Some(10080) => ("weekly".into(), LABEL_WEEKLY.into()),
         Some(300) => ("session".into(), LABEL_SESSION.into()),
-        Some(n) if n > 0 => (format!("other:{n}:{ordinal}"), format!("{n}m")),
+        Some(n) if n > 0 => (format!("other:{n}:{ordinal}"), duration_label(n)),
         _ => {
             if ordinal == 1 {
                 ("session".into(), LABEL_SESSION.into())
@@ -1305,6 +1315,24 @@ mod tests {
                 assert!(plan.is_some());
             }
             other => panic!("expected ready, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn codex_other_duration_labels_use_the_largest_whole_unit() {
+        for (minutes, label) in [(43200, "30d"), (120, "2h"), (1440, "1d"), (90, "90m")] {
+            let body = format!(
+                r#"{{"primary":{{"used_percent":10.0,"window_minutes":{minutes},"resets_at":1785628013}}}}"#
+            );
+            let result =
+                codex_from_rate_limits_json(body.as_bytes(), datetime!(2026-07-26 18:00:00 UTC));
+            match result {
+                ProviderResult::Ready { windows, .. } => {
+                    assert_eq!(windows[0].id(), format!("other:{minutes}:1"));
+                    assert_eq!(windows[0].label(), label);
+                }
+                other => panic!("expected ready, got {other:?}"),
+            }
         }
     }
 
