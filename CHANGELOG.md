@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [11.0.0] - 2026-10-21
+
+### Changed
+
+- chore: release 11.0.0
+
 ## [10.7.3] - 2026-10-21
 
 ### Changed
