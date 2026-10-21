@@ -580,7 +580,6 @@ TestCase {
     var files = [
       "CoreView.js",
       "components/ProviderChip.qml",
-      "components/OverviewBand.qml",
       "components/OverviewList.qml",
       "components/ProviderRow.qml",
       "components/RowDetail.qml",

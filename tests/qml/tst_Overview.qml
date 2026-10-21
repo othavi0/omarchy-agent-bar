@@ -46,104 +46,20 @@ TestCase {
     return F.envelope(providers)
   }
 
-  function test_tightest_picks_highest_used_across_providers() {
-    compare(model(F.normal(), "used").tightest, { providerId: "claude", windowId: "session" })
-
-    var noSessionPreference = withProviders([
-      F.provider("claude", "Claude", "ready", [F.win("session", "Session (5h)", 40, 300, 92)]),
-      F.provider("codex", "Codex", "ready", [
-        F.win("session", "Session (5h)", 5, 300, 250),
-        F.win("weekly", "Weekly (7d)", 90, 10080, 7320)
-      ])
-    ])
-    compare(model(noSessionPreference, "used").tightest, { providerId: "codex", windowId: "weekly" })
-
-    var tieAcrossProviders = withProviders([
-      F.provider("claude", "Claude", "ready", [F.win("session", "Session (5h)", 50, 300, 92)]),
-      F.provider("codex", "Codex", "ready", [F.win("session", "Session (5h)", 50, 300, 250)])
-    ])
-    compare(model(tieAcrossProviders, "used").tightest, { providerId: "claude", windowId: "session" })
-
-    var tieInsideProvider = withProviders([
-      F.provider("claude", "Claude", "ready", [
-        F.win("session", "Session (5h)", 10, 300, 92),
-        F.win("weekly", "Weekly (7d)", 60, 10080, 4080),
-        F.win("weekly-model:fable", "Fable", 60, 10080, 4080)
-      ])
-    ])
-    compare(model(tieInsideProvider, "used").tightest, { providerId: "claude", windowId: "weekly" })
-
-    compare(model(F.stale(), "used").tightest, { providerId: "codex", windowId: "session" })
-
-    var errored = F.normal()
-    errored.providers[0].state = "rate_limited"
-    compare(model(errored, "used").tightest, { providerId: "grok", windowId: "monthly" })
-
-    compare(model(F.problems(), "used").tightest, null)
-    compare(model(null, "used").tightest, null)
-  }
-
-  function test_headline_copy_and_tags() {
-    var h = model(F.normal(), "used").headline
-    compare(h.providerId, "claude")
-    compare(h.providerName, "Claude")
-    compare("Tightest: " + h.providerName + " " + h.windowWord + " " + h.percentText
-            + " " + h.unitText + " · " + h.resetText,
-            "Tightest: Claude session 76% used · resets in 1h 32m")
-    compare(h.tagText, "")
-    compare(h.critical, false)
-    compare(h.accessibleName, "Tightest: Claude session 76% used, resets in 1h 32m")
-
-    var left = model(F.normal(), "remaining").headline
-    compare(left.percentText, "24%")
-    compare(left.unitText, "left")
-
-    var hot = model(F.critical(), "used").headline
-    compare(hot.tagText, "Critical")
-    compare(hot.critical, true)
-    compare(hot.severity, "critical")
-    compare(hot.accessibleName, "Tightest: Claude session 96% used, critical, resets in 38m")
-
-    var levels = [[92, "Low", false], [94, "Low", false], [95, "Critical", true], [89, "", false]]
-    for (var i = 0; i < levels.length; i++) {
-      var env = withProviders([F.claudeReady(levels[i][0], 92)])
-      var lh = model(env, "used").headline
-      compare(lh.tagText, levels[i][1], levels[i][0] + "% tag")
-      compare(lh.critical, levels[i][2], levels[i][0] + "% critical")
+  function test_overview_elects_no_tightest_window() {
+    var fixtures = [F.normal(), F.critical(), F.stale(), F.problems(), F.providerError(),
+                    F.nopct(), F.early(), F.full(), null]
+    var metrics = ["used", "remaining"]
+    for (var f = 0; f < fixtures.length; f++) {
+      for (var m = 0; m < metrics.length; m++) {
+        var om = model(fixtures[f], metrics[m])
+        compare(JSON.stringify(Object.keys(om).sort()),
+                JSON.stringify(["metric", "openId", "rows", "selectedId", "unitText"]),
+                "fixture " + f + " " + metrics[m] + " carries no headline")
+        compare(/tightest/i.test(JSON.stringify(om)), false,
+                "fixture " + f + " " + metrics[m] + " names no tightest window")
+      }
     }
-    var low = model(withProviders([F.claudeReady(92, 92)]), "used").headline
-    compare(low.accessibleName, "Tightest: Claude session 92% used, low, resets in 1h 32m")
-
-    var noReset = withProviders([
-      F.provider("claude", "Claude", "ready", [F.win("session", "Session (5h)", 50, 300, null)])
-    ])
-    var nh = model(noReset, "used").headline
-    compare(nh.resetText, "")
-    compare(nh.accessibleName, "Tightest: Claude session 50% used")
-
-    var past = withProviders([
-      F.provider("claude", "Claude", "ready", [F.win("session", "Session (5h)", 50, 300, -3)])
-    ])
-    compare(model(past, "used").headline.resetText, "resets now")
-
-    compare(model(F.problems(), "used").headline, null)
-  }
-
-  function test_window_word_uses_id_not_label() {
-    var env = withProviders([
-      F.provider("claude", "Claude", "ready", [F.win("session", "Anything", 50, 300, 92)])
-    ])
-    compare(model(env, "used").headline.windowWord, "session")
-
-    var weekly = withProviders([
-      F.provider("claude", "Claude", "ready", [F.win("weekly", "Weekly (7d)", 50, 10080, 92)])
-    ])
-    compare(model(weekly, "used").headline.windowWord, "weekly")
-
-    var gemini = withProviders([
-      F.provider("antigravity", "Antigravity", "ready", [F.win("gemini-5h", "Gemini · 5h", 50, 300, 92)])
-    ])
-    compare(model(gemini, "used").headline.windowWord, "Gemini · 5h")
   }
 
   function test_row_primary_matches_chip() {
@@ -172,33 +88,28 @@ TestCase {
     var claude = rowOf(m, "claude")
     compare(claude.kind, "reading")
     compare(claude.primary.id, "session")
-    compare(claude.subText, "Session (5h)")
-    compare(claude.subTag, "Tightest")
+    compare(claude.subText, "Session (5h) · resets in 1h 32m")
     compare(claude.windows.map(function (w) { return w.id }), ["weekly", "weekly-model:fable"])
-    compare(claude.accessibleName, "Claude, 76% used, Session (5h), tightest")
+    compare(claude.accessibleName, "Claude, 76% used, Session (5h) · resets in 1h 32m")
 
     var codex = rowOf(m, "codex")
     compare(codex.subText, "Session (5h) · resets in 4h 10m")
-    compare(codex.subTag, "")
     compare(codex.accessibleName, "Codex, 2% used, Session (5h) · resets in 4h 10m")
 
     var hot = rowOf(model(F.critical(), "used"), "claude")
-    compare(hot.accessibleName, "Claude, 96% used, critical, Session (5h), tightest")
+    compare(hot.accessibleName, "Claude, 96% used, critical, Session (5h) · resets in 38m")
 
-    var weeklyTightest = withProviders([
+    var weeklyHighest = withProviders([
       F.provider("claude", "Claude", "ready", [
         F.win("session", "Session (5h)", 76, 300, 92),
         F.win("weekly", "Weekly (7d)", 97, 10080, 4080)
       ])
     ])
-    var row = rowOf(model(weeklyTightest, "used"), "claude")
+    var row = rowOf(model(weeklyHighest, "used"), "claude")
     compare(row.primary.id, "session")
-    compare(row.subTag, "")
     compare(row.subText, "Session (5h) · resets in 1h 32m")
-    var weekly = windowOf(row, "weekly")
-    compare(weekly.isTightest, true)
-    compare(weekly.resetCellText, "")
-    compare(row.primary.isTightest, false)
+    compare(windowOf(row, "weekly").resetCellText, "resets in 2d 20h",
+            "the fullest window shows its reset like any other window")
   }
 
   function test_reset_cell_clock_only_under_a_day() {
@@ -224,7 +135,6 @@ TestCase {
     compare(codex.critical, true)
     compare(codex.valueText, "96%")
     compare(codex.subText, "Session (5h) · Updated 14m ago")
-    compare(codex.subTag, "")
     compare(codex.updatedText, "", "the subline already shows the age, so the open detail does not repeat it")
     compare(codex.statusWord, "")
     compare(codex.dimIcon, false)

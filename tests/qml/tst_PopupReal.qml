@@ -238,7 +238,7 @@ TestCase {
     openRealPopup()
     tryVerify(function () { return focusNames().length > 0 }, 1000)
     compare(JSON.stringify(focusNames()), JSON.stringify([
-      "Claude, 76% used, Session (5h), tightest",
+      "Claude, 76% used, Session (5h) · resets in 1h 32m",
       "Use reset",
       "Refresh",
       "Codex, 2% used, Session (5h) · resets in 4h 10m",
@@ -251,7 +251,7 @@ TestCase {
     settle()
     tryVerify(function () { return focusNames().length === 5 }, 1000,
               "a collapsed row contributes its head only: " + JSON.stringify(focusNames()))
-    compare(focusNames()[0], "Claude, 76% used, Session (5h), tightest")
+    compare(focusNames()[0], "Claude, 76% used, Session (5h) · resets in 1h 32m")
     compare(focusNames()[1], "Codex, 2% used, Session (5h) · resets in 4h 10m")
   }
 
@@ -311,10 +311,9 @@ TestCase {
     var body = one(popup, "popupBody")
     verify(body.width > 0)
     var rules = byName(popup, "edgeRule").filter(function (r) { return visibleIn(r, popup) })
-    verify(rules.length >= 6, "band, rows, detail lines and footer each draw a rule: " + rules.length)
+    verify(rules.length >= 5, "rows, detail lines and footer each draw a rule: " + rules.length)
     for (var i = 0; i < rules.length; i++)
       assertFullBleed(rules[i], body, "rule " + i)
-    assertFullBleed(one(popup, "overviewBand"), body, "the band")
     assertFullBleed(one(popup, "popupFooter"), body, "the footer")
     var list = rows()
     for (var r = 0; r < list.length; r++)
@@ -325,16 +324,13 @@ TestCase {
     openRealPopup()
     var body = one(popup, "popupBody")
     var flick = one(popup, "contentFlick")
-    var band = one(popup, "overviewBand")
     var footer = one(popup, "popupFooter")
     popup.maxContentHeight = 200
     settle()
     verify(flick.interactive, "the rows overflow a short popup")
-    var bandY = band.mapToItem(body, 0, 0).y
     var footerY = footer.mapToItem(body, 0, 0).y
     flick.contentY = 40
     settle()
-    compare(band.mapToItem(body, 0, 0).y, bandY)
     compare(footer.mapToItem(body, 0, 0).y, footerY)
     compare(footerY + footer.height, body.height, "the footer is pinned to the bottom")
 
@@ -398,15 +394,23 @@ TestCase {
     compare(refresh.enabled, true, "Refresh stays enabled")
   }
 
-  function test_headline_band_names_the_tightest_window() {
+  function test_popup_starts_with_the_rows() {
     openRealPopup(F.critical())
-    var band = one(popup, "overviewBand")
-    compare(band.Accessible.name, "Tightest: Claude session 96% used, critical, resets in 38m")
-    var texts = ViewHarness.findAll(band, function (item) {
-      return item.textFormat !== undefined && item.visible && String(item.text).length > 0
+    var body = one(popup, "popupBody")
+    compare(byName(popup, "overviewBand").length, 0, "no headline band")
+    var first = rows()[0]
+    compare(first.row.id, "claude")
+    compare(first.mapToItem(body, 0, 0).y, 0, "the first row meets the top border")
+    var texts = ViewHarness.findAll(popup, function (item) {
+      return item.textFormat !== undefined && visibleIn(item, popup) && String(item.text).length > 0
     }).map(function (t) { return String(t.text) })
-    verify(texts.indexOf("Critical") >= 0, "the band carries the Critical tag: " + texts)
-    compare(one(band, "edgeRule").visible, true)
+    verify(texts.indexOf("Session (5h) · resets in 38m") >= 0,
+           "the fullest row reads its own reset: " + texts)
+    var tight = ViewHarness.findAll(popup, function (item) {
+      return /tightest/i.test(String(item.text === undefined ? "" : item.text))
+          || /tightest/i.test(String(item.Accessible.name))
+    })
+    compare(tight.length, 0, "nothing names a tightest window")
   }
 
   function test_pace_line_renders_the_projection() {
@@ -701,6 +705,29 @@ TestCase {
       verify(popup.innerRadius > 0)
       compare(banner.topLeftRadius, popup.innerRadius, "the banner fill stays inside the rounded border")
       compare(banner.topRightRadius, popup.innerRadius)
+    } finally {
+      Style.cornerRadius = saved
+    }
+  }
+
+  function test_first_row_follows_the_card_corners() {
+    var saved = Style.cornerRadius
+    Style.cornerRadius = 12
+    try {
+      openRealPopup()
+      verify(popup.innerRadius > 0)
+      var plate = one(rows()[0], "rowPlate")
+      compare(plate.topLeftRadius, popup.innerRadius, "the open row fill stays inside the rounded border")
+      compare(plate.topRightRadius, popup.innerRadius)
+      compare(one(rows()[0], "rowHover").topLeftRadius, popup.innerRadius)
+      compare(one(rows()[0], "rowFocusRing").topRightRadius, popup.innerRadius,
+              "the focus ring of the first row follows the border too")
+      compare(one(rows()[1], "rowPlate").topLeftRadius, 0, "only the first row meets the border")
+
+      service.restartPendingVersion = "10.7.0"
+      settle()
+      verify(one(popup, "restartBanner").visible)
+      compare(one(rows()[0], "rowPlate").topLeftRadius, 0, "the banner owns the corners")
     } finally {
       Style.cornerRadius = saved
     }

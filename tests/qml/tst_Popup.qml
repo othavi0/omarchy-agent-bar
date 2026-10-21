@@ -153,7 +153,6 @@ TestCase {
     var src = read("Popup.qml")
     verify(src.indexOf("KeyboardPanel") >= 0)
     verify(src.indexOf("PanelKeyCatcher") >= 0)
-    verify(src.indexOf("OverviewBand {") >= 0)
     verify(src.indexOf("OverviewList {") >= 0)
     verify(src.indexOf("PopupFooter {") >= 0)
     verify(src.indexOf("SettingsHeader {") >= 0)
@@ -177,20 +176,6 @@ TestCase {
     verify(body.indexOf('label: "Restart shell"') >= 0)
     verify(body.indexOf("root.agentService.restartShell()") >= 0)
     verify(src.indexOf("stalledMessage.collectFocusTargets()") >= 0)
-  }
-
-  function test_header_tag_kinds() {
-    var tag = read("components/HeaderTag.qml")
-    verify(tag.indexOf('property string kind: "neutral"') >= 0)
-    verify(tag.indexOf('root.kind === "urgent"') >= 0)
-    verify(tag.indexOf('root.kind === "accent"') >= 0)
-    verify(tag.indexOf("Color.urgent") >= 0)
-    verify(tag.indexOf("Style.selectedAccentFill") >= 0)
-    verify(tag.indexOf("Tokens.URGENT_FILL") >= 0)
-    verify(tag.indexOf("radius: Style.cornerRadius") >= 0)
-    verify(tag.indexOf("Font.AllUppercase") >= 0)
-    verify(tag.indexOf("Qt.rgba(") < 0)
-    verify(tag.indexOf("property bool urgent") < 0, "kind replaces the urgent flag")
   }
 
   function test_no_meta_footer() {
@@ -239,7 +224,6 @@ TestCase {
   function popupSourceFiles() {
     return [
       "Popup.qml",
-      "components/OverviewBand.qml",
       "components/OverviewList.qml",
       "components/ProviderRow.qml",
       "components/RowDetail.qml",
@@ -247,7 +231,6 @@ TestCase {
       "components/ProviderIcon.qml",
       "components/PopupFooter.qml",
       "components/SettingsHeader.qml",
-      "components/HeaderTag.qml",
       "components/StateMessage.qml",
       "components/RestartBanner.qml"
     ]
@@ -340,9 +323,7 @@ TestCase {
       "BarWidget.qml",
       "components/ConfirmDialog.qml",
       "components/FocusController.qml",
-      "components/HeaderTag.qml",
       "components/ProviderChip.qml",
-      "components/OverviewBand.qml",
       "components/OverviewList.qml",
       "components/ProviderRow.qml",
       "components/RowDetail.qml",
@@ -391,6 +372,22 @@ TestCase {
                 "components/UsageWindow.qml", "components/ResetsSection.qml"]
     for (var g = 0; g < gone.length; g++)
       compare(read(gone[g]), "", gone[g] + " is deleted")
+  }
+
+  // The headline band and the Tightest tag are gone; no row names another
+  // provider's window.
+  function test_headline_and_tightest_tag_are_gone() {
+    var files = popupSourceFiles().concat(["CoreView.js"])
+    var dead = ["OverviewBand", "HeaderTag", "headline", "subTag", "isTightest",
+                "electTightest", "severityTagText", "Tightest"]
+    for (var i = 0; i < files.length; i++) {
+      var source = read(files[i])
+      verify(source.length > 0, files[i] + " exists")
+      for (var d = 0; d < dead.length; d++)
+        verify(source.indexOf(dead[d]) < 0, files[i] + " still references " + dead[d])
+    }
+    compare(read("components/OverviewBand.qml"), "", "OverviewBand.qml is deleted")
+    compare(read("components/HeaderTag.qml"), "", "HeaderTag.qml is deleted")
   }
 
   function test_absolute_clock_humaniser_is_gone() {

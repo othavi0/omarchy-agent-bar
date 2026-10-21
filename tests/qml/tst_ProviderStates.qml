@@ -188,12 +188,6 @@ TestCase {
     compare(Core.severityLevel("nope"), "")
   }
 
-  function test_severity_tag_words() {
-    compare(Core.severityTagText("critical"), "Critical")
-    compare(Core.severityTagText("warning"), "Low")
-    compare(Core.severityTagText(""), "")
-  }
-
   function test_provider_severity_is_the_worst_window() {
     compare(Core.providerSeverity(null), "")
     compare(Core.providerSeverity({ windows: [] }), "")

@@ -98,8 +98,8 @@ KeyboardPanel {
     return parts.join("|")
   }
 
-  // With padding 0 the band and footers meet the border, so their corners
-  // follow the card radius minus the border width.
+  // With padding 0 the top block and footers meet the border, so their
+  // corners follow the card radius minus the border width.
   readonly property int innerRadius: Math.max(0, Style.cornerRadius - verticalContentInset / 2)
 
   readonly property int measuredBodyHeight: header.implicitHeight
@@ -384,7 +384,7 @@ KeyboardPanel {
       }
     }
 
-    // UX-075: banners, the band and the footers stay pinned; only the rows
+    // UX-075: banners and the footers stay pinned; only the rows
     // (or the Settings body) scroll. Everything runs edge to edge and each
     // block carries its own text inset.
     Item {
@@ -452,16 +452,6 @@ KeyboardPanel {
               root.agentService.restartShell()
           }
           onVisibleChanged: root.scheduleFocusRebuild()
-        }
-
-        OverviewBand {
-          id: overviewBand
-          width: parent.width
-          visible: root.view !== "settings"
-          headline: root.overview.headline
-          innerRadius: stalledMessage.visible || restartBanner.visible ? 0 : root.innerRadius
-          foreground: Commons.Color.foreground
-          fontFamily: Style.font.family
         }
 
         SettingsHeader {
@@ -583,6 +573,7 @@ KeyboardPanel {
     OverviewList {
       width: contentLoader.width
       overview: root.overview
+      topRadius: stalledMessage.visible || restartBanner.visible ? 0 : root.innerRadius
       foreground: Commons.Color.foreground
       fontFamily: Style.font.family
       onToggleRequested: function (id) { root.toggleRow(id) }

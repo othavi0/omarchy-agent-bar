@@ -30,14 +30,12 @@ TestCase {
       "SettingsView.qml",
       "MaintenanceView.qml",
       "components/ProviderChip.qml",
-      "components/HeaderTag.qml",
       "components/StateMessage.qml",
       "components/SettingsProviderRow.qml",
       "components/SettingsFooter.qml",
       "components/SectionHeader.qml",
       "components/ConfirmDialog.qml",
       "components/RestartBanner.qml",
-      "components/OverviewBand.qml",
       "components/OverviewList.qml",
       "components/ProviderRow.qml",
       "components/RowDetail.qml",
@@ -57,7 +55,7 @@ TestCase {
   function test_tokens_values() {
     var alphas = {
       TEXT_SECONDARY: 0.72, TEXT_TERTIARY: 0.55, TRACK: 0.12, DIMMED: 0.45,
-      LOCKED: 0.55, THIN_FILL: 0.6, URGENT_FILL: 0.16, URGENT_RULE: 0.55,
+      LOCKED: 0.55, THIN_FILL: 0.6, URGENT_RULE: 0.55,
       ROW_ICON_SCALE: 1.2, NAME_COLUMN_EMS: 8.5, VALUE_COLUMN_EMS: 3.6,
       PACE_MIN_ELAPSED: 0.1
     }

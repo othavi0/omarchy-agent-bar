@@ -116,14 +116,6 @@ function severityLevel(usedPercent) {
   return ""
 }
 
-function severityTagText(level) {
-  if (level === "critical")
-    return "Critical"
-  if (level === "warning")
-    return "Low"
-  return ""
-}
-
 function providerSeverity(provider) {
   if (!provider || !Kernel.isArrayLike(provider.windows))
     return ""
@@ -778,67 +770,6 @@ function unitWord(metric) {
   return metric === "used" ? "used" : "left"
 }
 
-// Highest usedPercent across providers that present a reading. Ties keep the
-// first provider in display order, then the first window in delivered order.
-// Unlike electLeadIndex, a session window gets no preference here.
-function electTightest(providers, metric, nowMs) {
-  var best = null
-  var bestUsed = -Infinity
-  var list = Kernel.isArrayLike(providers) ? providers : []
-  for (var i = 0; i < list.length; i++) {
-    var p = list[i]
-    if (!p || !presentsReading(p.state))
-      continue
-    var lines = windowDisplayLines(p, metric, nowMs)
-    for (var j = 0; j < lines.length; j++) {
-      if (lines[j].usedPercent === null || lines[j].usedPercent <= bestUsed)
-        continue
-      bestUsed = lines[j].usedPercent
-      best = { providerId: String(p.id), windowId: lines[j].id }
-    }
-  }
-  return best
-}
-
-function headlineModel(providers, tightest, metric, nowMs) {
-  if (!tightest)
-    return null
-  var provider = null
-  for (var i = 0; i < providers.length; i++) {
-    if (providers[i] && String(providers[i].id) === tightest.providerId)
-      provider = providers[i]
-  }
-  var lines = windowDisplayLines(provider, metric, nowMs)
-  var line = null
-  for (var j = 0; j < lines.length; j++) {
-    if (lines[j].id === tightest.windowId)
-      line = lines[j]
-  }
-  if (!provider || !line)
-    return null
-  var name = plainText(provider.name || providerDisplayName(provider.id))
-  var word = line.id === "session" || line.id === "weekly" ? line.id : line.label
-  var resetText = line.resetCountdown.length ? line.resetPhrase + " " + line.resetCountdown : ""
-  var tagText = severityTagText(line.severity)
-  var accessible = "Tightest: " + name + " " + word + " " + line.percentText + " " + unitWord(metric)
-  if (tagText.length)
-    accessible += ", " + tagText.toLowerCase()
-  if (resetText.length)
-    accessible += ", " + resetText
-  return {
-    providerId: tightest.providerId,
-    providerName: name,
-    windowWord: word,
-    percentText: line.percentText,
-    unitText: unitWord(metric),
-    severity: line.severity,
-    critical: line.severity === "critical",
-    tagText: tagText,
-    resetText: resetText,
-    accessibleName: accessible
-  }
-}
-
 var DAY_MS = 86400000
 
 function overviewResetCellText(line, nowMs, timeFormat) {
@@ -854,7 +785,7 @@ function overviewResetCellText(line, nowMs, timeFormat) {
   return text
 }
 
-function overviewWindow(line, provider, tightest, metric, nowMs, timeFormat) {
+function overviewWindow(line, provider, metric, nowMs, timeFormat) {
   var resetMs = parseIsoMs(line.resetsAt)
   var elapsed = null
   if (line.windowMinutes !== null && isFinite(resetMs))
@@ -863,13 +794,10 @@ function overviewWindow(line, provider, tightest, metric, nowMs, timeFormat) {
   if (String(provider.state || "") === "ready" && elapsed !== null
       && elapsed >= Tokens.PACE_MIN_ELAPSED)
     tick = Math.round((metric === "used" ? elapsed : 1 - elapsed) * 100)
-  var isTightest = !!tightest && tightest.providerId === String(provider.id)
-      && tightest.windowId === line.id
   line.critical = line.severity === "critical"
   line.elapsed = elapsed
   line.tickPercent = tick
-  line.isTightest = isTightest
-  line.resetCellText = isTightest ? "" : overviewResetCellText(line, nowMs, timeFormat)
+  line.resetCellText = overviewResetCellText(line, nowMs, timeFormat)
   return line
 }
 
@@ -912,7 +840,7 @@ function paceModel(provider, lines, primaryId, metric, nowMs) {
   }
 
   function prefixOf(w) {
-    return w.id === primaryId || w.isTightest ? "" : w.label + " is "
+    return w.id === primaryId ? "" : w.label + " is "
   }
 
   for (var f = 0; f < candidates.length; f++) {
@@ -1013,7 +941,7 @@ function overviewResetLines(provider, dateFormat, timeFormat) {
   return out
 }
 
-function overviewRow(provider, metric, nowMs, tightest, ui) {
+function overviewRow(provider, metric, nowMs, ui) {
   var id = String(provider.id || "")
   var state = String(provider.state || "")
   var name = plainText(provider.name || providerDisplayName(id))
@@ -1021,7 +949,7 @@ function overviewRow(provider, metric, nowMs, tightest, ui) {
   var timeFormat = ui.timeFormat
   var layout = windowLayout(provider, metric, nowMs)
   for (var i = 0; i < layout.lines.length; i++)
-    overviewWindow(layout.lines[i], provider, tightest, metric, nowMs, timeFormat)
+    overviewWindow(layout.lines[i], provider, metric, nowMs, timeFormat)
   var primary = layout.lead
   var reading = kind === "reading"
 
@@ -1029,14 +957,11 @@ function overviewRow(provider, metric, nowMs, tightest, ui) {
   var updatedText = ago.length ? "Updated " + ago : ""
 
   var subText = ""
-  var subTag = ""
   if (reading) {
     subText = primary.label
     if (state === "stale") {
       if (updatedText.length)
         subText += " · " + updatedText
-    } else if (primary.isTightest) {
-      subTag = "Tightest"
     } else if (primary.resetCountdown.length) {
       subText += " · " + primary.resetPhrase + " " + primary.resetCountdown
     }
@@ -1065,8 +990,6 @@ function overviewRow(provider, metric, nowMs, tightest, ui) {
     if (severityWord.length)
       accessibleName += ", " + severityWord
     accessibleName += ", " + subText
-    if (subTag.length)
-      accessibleName += ", tightest"
   } else if (kind === "loading") {
     accessibleName = name + ", loading"
   } else {
@@ -1093,7 +1016,6 @@ function overviewRow(provider, metric, nowMs, tightest, ui) {
     alert: severityWord === "critical",
     severityWord: severityWord,
     subText: subText,
-    subTag: subTag,
     statusWord: statusWord,
     statusGlyph: statusGlyph(state),
     statusBody: stateBody(provider),
@@ -1125,10 +1047,9 @@ function overviewModel(snapshot, settings, nowMs, selection, ui) {
   var metric = displayMetric(settings)
   var opts = ui || {}
   var providers = visibleProviders(snapshot, settings)
-  var tightest = electTightest(providers, metric, nowMs)
   var rows = []
   for (var i = 0; i < providers.length; i++)
-    rows.push(overviewRow(providers[i], metric, nowMs, tightest, opts))
+    rows.push(overviewRow(providers[i], metric, nowMs, opts))
 
   var want = selection && selection.id ? String(selection.id) : ""
   var selectedId = rows.length ? rows[0].id : ""
@@ -1151,8 +1072,6 @@ function overviewModel(snapshot, settings, nowMs, selection, ui) {
     unitText: unitWord(metric),
     rows: rows,
     selectedId: selectedId,
-    openId: openId,
-    tightest: tightest,
-    headline: headlineModel(providers, tightest, metric, nowMs)
+    openId: openId
   }
 }

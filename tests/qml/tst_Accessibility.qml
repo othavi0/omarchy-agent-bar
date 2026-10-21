@@ -33,7 +33,6 @@ TestCase {
       "MaintenanceView.qml",
       "Service.qml",
       "components/ProviderChip.qml",
-      "components/HeaderTag.qml",
       "components/StateMessage.qml",
       "components/SettingsProviderRow.qml",
       "components/SettingsFooter.qml",
@@ -41,7 +40,6 @@ TestCase {
       "components/ConfirmDialog.qml",
       "components/FocusController.qml",
       "components/RestartBanner.qml",
-      "components/OverviewBand.qml",
       "components/OverviewList.qml",
       "components/ProviderRow.qml",
       "components/RowDetail.qml",
@@ -83,8 +81,6 @@ TestCase {
     verify(src.indexOf("Accessible.expandable: !!(root.row && root.row.openable)") >= 0)
     verify(src.indexOf("Accessible.expanded: !!(root.row && root.row.open)") >= 0)
     verify(src.indexOf("Accessible.description: root.row ? root.row.tickDescription") >= 0)
-    src = read("components/OverviewBand.qml")
-    verify(src.indexOf("Accessible.name: root.headline") >= 0)
     src = read("components/PopupFooter.qml")
     verify(src.indexOf('Accessible.name: "Settings"') >= 0)
     src = read("components/StateMessage.qml")
