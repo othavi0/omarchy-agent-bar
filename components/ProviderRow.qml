@@ -305,7 +305,7 @@ Item {
             id: actionButton
             visible: root.statusKind && !!root.action
             Layout.alignment: Qt.AlignRight
-            height: Style.spacing.controlHeight
+            Layout.preferredHeight: Style.spacing.controlHeight
             text: root.action ? root.action.label : ""
             iconText: root.action && root.action.kind === "view_installation"
                 ? Tokens.GLYPH_EXTERNAL

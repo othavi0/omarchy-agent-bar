@@ -834,6 +834,7 @@ TestCase {
     compare(install[0].bordered, false, "the head action drops the outline too")
     var head = one(rowById("codex"), "rowPlate").color
     verify(!Qt.colorEqual(install[0].color, head), "the head action rests on a tint, not the bare head")
+    compare(install[0].height, Style.spacing.controlHeight, "the layout keeps the head action at the control height")
   }
 
   function luma(c) {
