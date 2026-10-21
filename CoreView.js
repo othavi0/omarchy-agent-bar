@@ -1099,7 +1099,7 @@ function overviewRow(provider, metric, nowMs, tightest, ui) {
     statusBody: stateBody(provider),
     action: action,
     refreshLabel: refreshLabel,
-    updatedText: updatedText,
+    updatedText: state === "stale" ? "" : updatedText,
     pace: reading ? paceModel(provider, layout.lines, primary.id, metric, nowMs) : null,
     tickDescription: primary && primary.tickPercent >= 0
         ? Math.round(primary.elapsed * 100) + "% of the window has passed."

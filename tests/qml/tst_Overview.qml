@@ -225,7 +225,7 @@ TestCase {
     compare(codex.valueText, "96%")
     compare(codex.subText, "Session (5h) · Updated 14m ago")
     compare(codex.subTag, "")
-    compare(codex.updatedText, "Updated 14m ago")
+    compare(codex.updatedText, "", "the subline already shows the age, so the open detail does not repeat it")
     compare(codex.statusWord, "")
     compare(codex.dimIcon, false)
     compare(JSON.stringify(codex).indexOf("Offline"), -1)

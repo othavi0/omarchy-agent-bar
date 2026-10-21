@@ -262,7 +262,7 @@ reset: `elapsed = clamp(1 - (resetsAt - now) / windowMinutes, 0, 1)`.
 | `UX-020C` | The header shows the `Critical` or `Low` tag. | The severity tag moves to the band (`UX-076`). Thresholds and the chip cue rule are unchanged. |
 | `UX-020D` | One lead window; the rest are compact rows. | The lead becomes the row primary (`UX-077`); the rest move to the detail (`UX-079`). The election is unchanged. |
 | `UX-024`, `UX-025` | Selection and scroll persist; a new open resets to the top. | `UX-078`. |
-| `UX-028` | `Updated <age>` caption in the pane; header refresh. | `Updated <age>` lives in the stale sub line and in the action line; Refresh lives in the action line. The stale rendering rule itself stays: no cue, no error text, same severity colour, no "Offline" wording. |
+| `UX-028` | `Updated <age>` caption in the pane; header refresh. | `Updated <age>` lives in the stale sub line, and in the action line only for rows that are not stale, so it never shows twice; Refresh lives in the action line. The stale rendering rule itself stays: no cue, no error text, same severity colour, no "Offline" wording. |
 | `UX-070` to `UX-072` | A "Resets" section in `ProviderView` with its own `Use reset`. | `UX-079`: reset fact lines in the detail, `Use reset` in the action line. |
 | `UX-073` | Result caption under the section. | The caption follows the reset fact lines (`UX-079`). The copy is unchanged. |
 | `A11Y-002` | Up/Down and `j`/`k` switch rail entries. | Move the row selection and open the row. |
