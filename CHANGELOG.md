@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [10.7.2] - 2026-10-21
+
+### Changed
+
+- fix(popup): size the head action in its layout
+- test(qml): wait for the drawer before a capture
+- docs(spec): record press tone and drawer column
+- fix(popup): restore press tone and align drawer
+- docs(spec): record the popup drawer design
+- feat(popup): draw rows as slabs with a drawer
+
 ## [10.7.1] - 2026-10-21
 
 ### Changed
