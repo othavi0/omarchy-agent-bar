@@ -53,6 +53,7 @@ TestCase {
     var files = v10QmlFiles()
     for (var i = 0; i < files.length; i++) {
       var src = read(files[i])
+      verify(src.length > 0, files[i] + " exists")
       var code = src.replace(/\/\/[^\n]*/g, "")
       verify(!/\bBehavior\b/.test(code), files[i] + " has Behavior")
       verify(!/\bTransition\b/.test(code), files[i] + " has Transition")
@@ -66,6 +67,7 @@ TestCase {
     var files = v10QmlFiles()
     for (var i = 0; i < files.length; i++) {
       var src = read(files[i])
+      verify(src.length > 0, files[i] + " exists")
       verify(src.indexOf("component IconButton") < 0, files[i])
       verify(src.indexOf("IconButton {") < 0, files[i])
     }

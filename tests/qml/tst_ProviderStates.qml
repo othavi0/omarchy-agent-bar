@@ -1,6 +1,7 @@
 import QtQuick
 import QtTest
 import "../../CoreView.js" as Core
+import "../../components/Tokens.js" as Tokens
 
 TestCase {
   id: testCase
@@ -411,7 +412,7 @@ TestCase {
     compare(Core.windowLayout(provider, "remaining", now).lead.id, "session")
     compare(Core.chipPercentText(provider, "remaining", now), "90%")
     compare(Core.chipSeverityUrgent(provider), true)
-    compare(Core.chipStateCue(provider), "!")
+    compare(Core.chipStateCue(provider), Tokens.GLYPH_ALERT)
     compare(Core.chipCueLabel(provider), "critical")
   }
 

@@ -5,6 +5,7 @@ import qs.Ui
 import "CoreView.js" as Core
 import "CoreSettings.js" as Settings
 import "components"
+import "components/Tokens.js" as Tokens
 
 Item {
   id: root
@@ -140,7 +141,7 @@ Item {
         visible: root.loading
         width: parent.width
         text: "Loading\u2026"
-        color: Util.alpha(root.foreground, 0.72)
+        color: Util.alpha(root.foreground, Tokens.TEXT_SECONDARY)
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
         textFormat: Text.PlainText
@@ -183,7 +184,7 @@ Item {
       visible: root.tab === "providers"
       width: parent.width
       spacing: Style.spacing.huge
-      opacity: root.locked ? 0.55 : 1.0
+      opacity: root.locked ? Tokens.LOCKED : 1.0
       enabled: !root.locked && visible
 
       Column {
@@ -200,7 +201,7 @@ Item {
         Text {
           bottomPadding: Style.space(4)
           text: "The bar shows them in this order."
-          color: Util.alpha(root.foreground, 0.55)
+          color: Util.alpha(root.foreground, Tokens.TEXT_TERTIARY)
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
           textFormat: Text.PlainText
@@ -278,7 +279,7 @@ Item {
       visible: root.tab === "general"
       width: parent.width
       spacing: Style.spacing.huge
-      opacity: root.locked ? 0.55 : 1.0
+      opacity: root.locked ? Tokens.LOCKED : 1.0
       enabled: !root.locked && visible
 
       Column {
@@ -314,7 +315,7 @@ Item {
           Text {
             visible: root.previewProvider !== null
             text: "Bar reads"
-            color: Util.alpha(root.foreground, 0.55)
+            color: Util.alpha(root.foreground, Tokens.TEXT_TERTIARY)
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
             textFormat: Text.PlainText
@@ -335,10 +336,10 @@ Item {
               Image {
                 anchors.verticalCenter: parent.verticalCenter
                 source: root.previewProvider ? root.iconUrl(root.previewProvider.id) : ""
-                width: 14
-                height: 14
-                sourceSize.width: 14
-                sourceSize.height: 14
+                width: Style.bar.iconSize
+                height: Style.bar.iconSize
+                sourceSize.width: Style.bar.iconSize
+                sourceSize.height: Style.bar.iconSize
                 fillMode: Image.PreserveAspectFit
               }
 
@@ -404,7 +405,7 @@ Item {
           Text {
             Layout.preferredWidth: Style.space(52)
             text: "seconds"
-            color: Util.alpha(root.foreground, 0.72)
+            color: Util.alpha(root.foreground, Tokens.TEXT_SECONDARY)
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
             textFormat: Text.PlainText
@@ -429,7 +430,7 @@ Item {
           width: parent.width
           spacing: Style.space(8)
           enabled: root.notificationsOn
-          opacity: root.notificationsOn ? 1.0 : 0.55
+          opacity: root.notificationsOn ? 1.0 : Tokens.LOCKED
 
           Text {
             Layout.fillWidth: true
@@ -459,7 +460,7 @@ Item {
           Text {
             Layout.preferredWidth: Style.space(52)
             text: "minutes"
-            color: Util.alpha(root.foreground, 0.72)
+            color: Util.alpha(root.foreground, Tokens.TEXT_SECONDARY)
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
             textFormat: Text.PlainText

@@ -2,6 +2,7 @@ import QtQuick
 import QtTest
 import "../../CoreView.js" as Core
 import "../../CoreService.js" as Kernel
+import "../../components/Tokens.js" as Tokens
 
 TestCase {
   id: testCase
@@ -272,15 +273,27 @@ TestCase {
     compare(Core.chipStateCue({ state: "ready" }), "")
     compare(Core.chipStateCue({ state: "loading" }), "")
     compare(Core.chipStateCue({ state: "stale" }), "")
-    compare(Core.chipStateCue({ state: "cli_missing" }), "!")
-    compare(Core.chipStateCue({ state: "unauthenticated" }), "!")
-    compare(Core.chipStateCue({ state: "rate_limited" }), "!")
-    compare(Core.chipStateCue({ state: "network_error" }), "!")
-    compare(Core.chipStateCue({ state: "provider_error" }), "!")
-    compare(Core.chipStateCue({ state: "ready", windows: [{ usedPercent: 96 }] }), "!")
+    compare(Core.chipStateCue({ state: "cli_missing" }), Tokens.GLYPH_ALERT)
+    compare(Core.chipStateCue({ state: "unauthenticated" }), Tokens.GLYPH_ALERT)
+    compare(Core.chipStateCue({ state: "rate_limited" }), Tokens.GLYPH_ALERT)
+    compare(Core.chipStateCue({ state: "network_error" }), Tokens.GLYPH_ALERT)
+    compare(Core.chipStateCue({ state: "provider_error" }), Tokens.GLYPH_ALERT)
+    compare(Core.chipStateCue({ state: "ready", windows: [{ usedPercent: 96 }] }), Tokens.GLYPH_ALERT)
     compare(Core.chipStateCue({ state: "ready", windows: [{ usedPercent: 92 }] }), "")
-    compare(Core.chipStateCue({ state: "stale", windows: [{ usedPercent: 96 }] }), "!")
+    compare(Core.chipStateCue({ state: "stale", windows: [{ usedPercent: 96 }] }), Tokens.GLYPH_ALERT)
     compare(Core.chipStateCue({ state: "stale", windows: [{ usedPercent: 92 }] }), "")
+  }
+
+  function test_chip_cue_is_the_alert_glyph_in_the_icon_font() {
+    compare(Tokens.GLYPH_ALERT, String.fromCodePoint(0xF0026))
+    var chip = sourceAt(chipUrl)
+    var at = chip.indexOf("text: root.stateCue")
+    verify(at >= 0, "the cue Text renders root.stateCue")
+    var cue = chip.slice(at, chip.indexOf("}", at))
+    verify(cue.indexOf("font.family: Style.font.family") >= 0,
+           "the cue uses the Nerd Font family: " + cue)
+    verify(cue.indexOf("font.pixelSize: Style.font.icon") >= 0,
+           "the cue uses the icon size: " + cue)
   }
 
   function test_chip_severity_urgent_only_when_ready_and_critical() {

@@ -65,7 +65,7 @@ Item {
           - (severityTag.visible ? severityTag.width + row.spacing : 0)
           - Style.space(22)
           - row.spacing * 2)
-      height: 1
+      height: Style.spacing.hairline
     }
 
     PanelActionButton {

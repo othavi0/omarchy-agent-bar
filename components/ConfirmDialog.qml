@@ -1,6 +1,7 @@
 import QtQuick
 import qs.Commons
 import qs.Ui
+import "Tokens.js" as Tokens
 
 Item {
   id: root
@@ -46,9 +47,9 @@ Item {
     height: col.implicitHeight + Style.space(28)
     radius: Style.cornerRadius
     color: Color.popups.background
-    border.width: 1
+    border.width: Style.spacing.hairline
     border.color: root.destructive
-        ? Util.alpha(Color.urgent, 0.55)
+        ? Util.alpha(Color.urgent, Tokens.URGENT_RULE)
         : Style.normalBorderColor
 
     MouseArea {
@@ -79,7 +80,7 @@ Item {
       Text {
         width: parent.width
         text: root.message
-        color: Util.alpha(root.foreground, 0.72)
+        color: Util.alpha(root.foreground, Tokens.TEXT_SECONDARY)
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
         wrapMode: Text.WordWrap

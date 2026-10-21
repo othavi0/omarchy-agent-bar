@@ -21,7 +21,7 @@ Rectangle {
   implicitHeight: row.implicitHeight + Style.space(12)
   radius: Style.cornerRadius
   color: Style.selectedFillFor(root.foreground, Color.accent)
-  border.width: 1
+  border.width: Style.spacing.hairline
   border.color: Color.accent
 
   RowLayout {

@@ -309,7 +309,7 @@ KeyboardPanel {
 
         PanelSeparator {
           anchors.right: parent.right
-          width: 1
+          width: Style.spacing.hairline
           height: parent.height
           foreground: Color.foreground
         }

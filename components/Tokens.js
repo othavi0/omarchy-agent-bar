@@ -1,0 +1,28 @@
+.pragma library
+
+var TEXT_SECONDARY = 0.72
+var TEXT_TERTIARY = 0.55
+var TRACK = 0.12
+var DIMMED = 0.45
+var LOCKED = 0.55
+var THIN_FILL = 0.6
+var URGENT_FILL = 0.16
+var URGENT_RULE = 0.55
+
+var ROW_ICON_SCALE = 1.2
+var NAME_COLUMN_EMS = 8.5
+var VALUE_COLUMN_EMS = 3.6
+var PACE_MIN_ELAPSED = 0.1
+
+var GLYPH_ALERT = "\u{F0026}"
+var GLYPH_CLOCK = "\u{F0954}"
+var GLYPH_CHECK = "\u{F012C}"
+var GLYPH_REFRESH = "\u{F0450}"
+var GLYPH_SETTINGS = "\u{F0493}"
+var GLYPH_BACK = "\u{F0141}"
+var GLYPH_UP = "\u{F0143}"
+var GLYPH_DOWN = "\u{F0140}"
+var GLYPH_EXTERNAL = "\u{F03CC}"
+var GLYPH_PLUG = "\u{F06A5}"
+var GLYPH_USER = "\u{F0004}"
+var GLYPH_WIFI_OFF = "\u{F05AA}"

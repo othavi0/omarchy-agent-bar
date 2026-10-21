@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import qs.Commons
 import qs.Ui
+import "Tokens.js" as Tokens
 
 // A section opens with its title and a rule running to the right edge, so
 // sections separate without a full-width divider between them. The title is
@@ -27,7 +28,7 @@ Item {
 
     Text {
       text: root.text
-      color: root.danger ? Color.urgent : Util.alpha(root.foreground, 0.55)
+      color: root.danger ? Color.urgent : Util.alpha(root.foreground, Tokens.TEXT_TERTIARY)
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
       font.bold: true
@@ -39,7 +40,7 @@ Item {
     Text {
       visible: root.count.length > 0
       text: root.count
-      color: Util.alpha(root.foreground, 0.55)
+      color: Util.alpha(root.foreground, Tokens.TEXT_TERTIARY)
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
       textFormat: Text.PlainText

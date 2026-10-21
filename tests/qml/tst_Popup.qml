@@ -82,7 +82,8 @@ TestCase {
     source = source.replace(/Style\.font\.caption/g, "12")
     source = source.replace(/Color\.foreground/g, '"#ffffff"')
     source = source.replace(/Style\.font\.family/g, '"sans"')
-    source = source.replace(/Util\.alpha\(root\.foreground, 0\.72\)/g,
+    source = source.replace('import "Tokens.js" as Tokens\n', "")
+    source = source.replace(/Util\.alpha\(root\.foreground, Tokens\.TEXT_SECONDARY\)/g,
                             "root.foreground")
     source = source.replace(/          text: modelData[^\n]*\n/, "")
     source = source.replace(/          foreground: root\.foreground\n/, "")

@@ -130,7 +130,7 @@ BarWidget {
     }
 
     readonly property string barPos: root.bar ? root.bar.position : "top"
-    readonly property real barH: anchorWindow ? anchorWindow.height : (root.bar ? root.bar.barSize : 26)
+    readonly property real barH: anchorWindow ? anchorWindow.height : (root.bar ? root.bar.barSize : Style.bar.sizeHorizontal)
     readonly property real barW: anchorWindow ? anchorWindow.width : 0
     readonly property real screenW: screen ? screen.width : 0
     readonly property real screenH: screen ? screen.height : 0

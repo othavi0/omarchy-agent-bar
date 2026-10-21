@@ -1,6 +1,7 @@
 import QtQuick
 import qs.Commons
 import qs.Ui
+import "Tokens.js" as Tokens
 
 Column {
   id: root
@@ -77,7 +78,7 @@ Column {
       width: Math.max(0, parent.width)
       visible: root.body.length > 0
       text: root.body
-      color: Util.alpha(root.foreground, 0.72)
+      color: Util.alpha(root.foreground, Tokens.TEXT_SECONDARY)
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
       wrapMode: Text.Wrap

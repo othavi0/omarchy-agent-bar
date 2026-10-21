@@ -1,5 +1,6 @@
 import QtQuick
 import qs.Commons
+import "Tokens.js" as Tokens
 
 Item {
   id: root
@@ -27,13 +28,13 @@ Item {
   readonly property color fillColor: root.isCritical
       ? Color.urgent
       : (root.dimmed ? root.foreground : root.accent)
-  readonly property real fillOpacity: root.dimmed ? 0.45 : (root.isCritical ? 1.0 : 0.9)
-  readonly property color trackColor: Util.alpha(root.foreground, 0.12)
+  readonly property real fillOpacity: root.dimmed ? Tokens.DIMMED : 1.0
+  readonly property color trackColor: Util.alpha(root.foreground, Tokens.TRACK)
 
   width: parent ? parent.width : implicitWidth
   implicitHeight: root.emphasis ? bigCol.implicitHeight : compactRow.implicitHeight
   height: implicitHeight
-  opacity: root.dimmed ? 0.6 : 1.0
+  opacity: root.dimmed ? Tokens.DIMMED : 1.0
 
   TextMetrics {
     id: countdownMetrics
@@ -66,7 +67,7 @@ Item {
         text: root.resetPhrase.length > 0
             ? root.label + " · " + root.resetPhrase
             : root.label
-        color: Util.alpha(root.foreground, 0.72)
+        color: Util.alpha(root.foreground, Tokens.TEXT_SECONDARY)
         font.family: root.fontFamily
         font.pixelSize: Style.font.bodySmall
         elide: Text.ElideRight
@@ -104,7 +105,7 @@ Item {
       Text {
         anchors.baseline: bigNumeral.baseline
         text: root.unitText
-        color: Util.alpha(root.foreground, 0.72)
+        color: Util.alpha(root.foreground, Tokens.TEXT_SECONDARY)
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
         textFormat: Text.PlainText
@@ -144,7 +145,7 @@ Item {
       anchors.verticalCenter: parent.verticalCenter
       width: Math.max(0, Math.round(parent.width * 0.25))
       text: root.label
-      color: Util.alpha(root.foreground, 0.72)
+      color: Util.alpha(root.foreground, Tokens.TEXT_SECONDARY)
       font.family: root.fontFamily
       font.pixelSize: Style.font.bodySmall
       elide: Text.ElideRight
@@ -198,7 +199,7 @@ Item {
       width: countdownMetrics.advanceWidth
       horizontalAlignment: Text.AlignRight
       text: root.resetCountdown
-      color: Util.alpha(root.foreground, 0.55)
+      color: Util.alpha(root.foreground, Tokens.TEXT_TERTIARY)
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
       textFormat: Text.PlainText

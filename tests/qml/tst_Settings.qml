@@ -357,7 +357,7 @@ TestCase {
     var header = read("components/SectionHeader.qml").replace(/\/\/[^\n]*/g, "")
     verify(header.indexOf("PanelSectionHeader") < 0,
            "the host header tints with Qt.darker, darker than body text on light themes")
-    verify(header.indexOf("Util.alpha(root.foreground, 0.55)") >= 0)
+    verify(header.indexOf("Util.alpha(root.foreground, Tokens.TEXT_TERTIARY)") >= 0)
     verify(header.indexOf("Layout.fillWidth: true") >= 0)
   }
 

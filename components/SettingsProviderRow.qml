@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import qs.Commons
 import qs.Ui
+import "Tokens.js" as Tokens
 
 Item {
   id: root
@@ -33,18 +34,18 @@ Item {
     Image {
       Layout.alignment: Qt.AlignVCenter
       source: root.iconSource
-      Layout.preferredWidth: 16
-      Layout.preferredHeight: 16
-      sourceSize.width: 16
-      sourceSize.height: 16
+      Layout.preferredWidth: Style.bar.iconCanvas
+      Layout.preferredHeight: Style.bar.iconCanvas
+      sourceSize.width: Style.bar.iconCanvas
+      sourceSize.height: Style.bar.iconCanvas
       fillMode: Image.PreserveAspectFit
-      opacity: root.enabled ? 1.0 : 0.45
+      opacity: root.enabled ? 1.0 : Tokens.DIMMED
     }
 
     Text {
       Layout.alignment: Qt.AlignVCenter
       text: root.displayName
-      color: root.enabled ? root.foreground : Util.alpha(root.foreground, 0.55)
+      color: root.enabled ? root.foreground : Util.alpha(root.foreground, Tokens.TEXT_TERTIARY)
       font.family: root.fontFamily
       font.pixelSize: Style.font.body
       elide: Text.ElideRight
@@ -56,7 +57,7 @@ Item {
       Layout.alignment: Qt.AlignVCenter
       Layout.fillWidth: true
       text: root.statusText
-      color: Util.alpha(root.foreground, 0.55)
+      color: Util.alpha(root.foreground, Tokens.TEXT_TERTIARY)
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
       elide: Text.ElideRight

@@ -3,6 +3,7 @@ import QtQuick.Layouts
 import qs.Commons
 import qs.Ui
 import "../CoreSettings.js" as Settings
+import "Tokens.js" as Tokens
 
 // Pinned under the Settings scroll surface so Save stays reachable on every
 // tab without scrolling.
@@ -77,7 +78,7 @@ Item {
         Layout.fillWidth: true
         horizontalAlignment: Text.AlignRight
         text: root.statusText
-        color: Util.alpha(root.foreground, 0.72)
+        color: Util.alpha(root.foreground, Tokens.TEXT_SECONDARY)
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
         elide: Text.ElideLeft

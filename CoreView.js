@@ -1,5 +1,6 @@
 .pragma library
 .import "CoreService.js" as Kernel
+.import "components/Tokens.js" as Tokens
 
 function displayMetric(settings) {
   if (settings && settings.display && settings.display.metric === "used")
@@ -156,10 +157,8 @@ function chipStateCue(provider) {
   if (!provider)
     return ""
   var state = String(provider.state || "")
-  if (ERROR_STATES[state])
-    return "!"
-  if (chipSeverityUrgent(provider))
-    return "!"
+  if (ERROR_STATES[state] || chipSeverityUrgent(provider))
+    return Tokens.GLYPH_ALERT
   return ""
 }
 

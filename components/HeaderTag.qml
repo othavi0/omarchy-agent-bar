@@ -1,5 +1,6 @@
 import QtQuick
 import qs.Commons
+import "Tokens.js" as Tokens
 
 Rectangle {
   id: root
@@ -17,14 +18,14 @@ Rectangle {
   height: implicitHeight
   radius: Style.cornerRadius
   color: "transparent"
-  border.width: 1
+  border.width: Style.spacing.hairline
   border.color: root.urgent ? Color.urgent : Style.normalBorderColor
 
   Text {
     id: tagText
     anchors.centerIn: parent
     text: root.label
-    color: root.urgent ? Color.urgent : Util.alpha(root.foreground, 0.72)
+    color: root.urgent ? Color.urgent : Util.alpha(root.foreground, Tokens.TEXT_SECONDARY)
     font.family: root.fontFamily
     font.pixelSize: Style.font.caption
     font.capitalization: Font.AllUppercase

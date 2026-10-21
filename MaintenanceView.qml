@@ -4,6 +4,7 @@ import qs.Commons
 import qs.Ui
 import "CoreMaintenance.js" as Core
 import "components"
+import "components/Tokens.js" as Tokens
 
 Item {
   id: root
@@ -82,7 +83,7 @@ Item {
             width: parent.width
             visible: !root.restartRequired && ui.message && ui.message.length > 0
             text: ui.message
-            color: root.failed ? Color.urgent : Util.alpha(root.foreground, 0.55)
+            color: root.failed ? Color.urgent : Util.alpha(root.foreground, Tokens.TEXT_TERTIARY)
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
             wrapMode: Text.WordWrap
@@ -115,7 +116,7 @@ Item {
         height: bannerText.implicitHeight + Style.space(14)
         radius: Style.cornerRadius
         color: Style.selectedFillFor(root.foreground, Color.accent)
-        border.width: 1
+        border.width: Style.spacing.hairline
         border.color: Color.accent
 
         Text {
@@ -143,7 +144,7 @@ Item {
         // item reads visible=false, so the old child-based binding latched
         // the row closed when the view opened on an available update.
         visible: root.updateFlow || root.notesAvailable
-        opacity: root.updating ? 0.55 : 1.0
+        opacity: root.updating ? Tokens.LOCKED : 1.0
 
         Button {
           id: updateButton
@@ -234,7 +235,7 @@ Item {
         Text {
           width: parent.width
           text: "Or run this in a terminal:"
-          color: Util.alpha(root.foreground, 0.55)
+          color: Util.alpha(root.foreground, Tokens.TEXT_TERTIARY)
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
           textFormat: Text.PlainText
@@ -275,7 +276,7 @@ Item {
         Text {
           Layout.fillWidth: true
           text: "Removes Agent Bar. Your settings stay."
-          color: Util.alpha(root.foreground, 0.72)
+          color: Util.alpha(root.foreground, Tokens.TEXT_SECONDARY)
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
           wrapMode: Text.WordWrap
@@ -288,7 +289,7 @@ Item {
           bordered: true
           focusable: true
           enabled: !root.blocked && !root.maintenanceBusy
-          opacity: uninstallButton.enabled ? 1.0 : 0.55
+          opacity: uninstallButton.enabled ? 1.0 : Tokens.LOCKED
           foreground: Color.urgent
           fontFamily: root.fontFamily
           Accessible.name: "Uninstall Agent Bar"

@@ -3,6 +3,7 @@ import QtQuick.Layouts
 import qs.Commons
 import qs.Ui
 import "CoreView.js" as Core
+import "components/Tokens.js" as Tokens
 
 Item {
   id: root
@@ -19,7 +20,7 @@ Item {
   signal settingsClicked()
 
   readonly property int slotSize: Style.space(32)
-  readonly property int iconSize: 16
+  readonly property int iconSize: Style.bar.iconCanvas
   readonly property int stackGap: Style.space(8)
   readonly property int spacerMin: Style.space(4)
 
@@ -139,7 +140,7 @@ Item {
           sourceSize.width: root.iconSize
           sourceSize.height: root.iconSize
           fillMode: Image.PreserveAspectFit
-          opacity: railItem.dimmed ? 0.4 : (railItem.selected ? 1.0 : 0.65)
+          opacity: railItem.dimmed ? Tokens.DIMMED : (railItem.selected ? 1.0 : Tokens.TEXT_SECONDARY)
         }
 
         Text {
@@ -209,7 +210,7 @@ Item {
             : ((settingsItem.activeFocus || settingsMouse.containsMouse)
               ? Style.hoverFill
               : "transparent")
-        border.width: settingsItem.activeFocus ? 1 : 0
+        border.width: settingsItem.activeFocus ? Style.spacing.hairline : 0
         border.color: Color.accent
       }
 
@@ -217,7 +218,7 @@ Item {
         anchors.centerIn: parent
         text: "󰒓"
         color: root.foreground
-        opacity: 0.85
+        opacity: Tokens.TEXT_SECONDARY
         font.family: root.fontFamily
         font.pixelSize: Style.font.icon
       }

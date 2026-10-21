@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import qs.Commons
 import qs.Ui
+import "Tokens.js" as Tokens
 
 // UX-070/071: a titled section; ProviderView hides it when there is nothing
 // to reset. The header carries the title, the sum of available resets, and a
@@ -33,7 +34,7 @@ Item {
 
       Text {
         text: "Resets"
-        color: Util.alpha(root.foreground, 0.55)
+        color: Util.alpha(root.foreground, Tokens.TEXT_TERTIARY)
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
         font.bold: true
@@ -45,7 +46,7 @@ Item {
       Text {
         visible: root.availableTotal > 0
         text: String(root.availableTotal)
-        color: Util.alpha(root.foreground, 0.55)
+        color: Util.alpha(root.foreground, Tokens.TEXT_TERTIARY)
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
         textFormat: Text.PlainText
@@ -109,7 +110,7 @@ Item {
                 rowItem.modelData.countText,
                 rowItem.modelData.dateText
               ].filter(function (s) { return s.length > 0 }).join(" · ")
-              color: Util.alpha(root.foreground, 0.72)
+              color: Util.alpha(root.foreground, Tokens.TEXT_SECONDARY)
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
               wrapMode: Text.WordWrap
@@ -125,7 +126,7 @@ Item {
       width: parent.width
       visible: root.outcomeText.length > 0
       text: root.outcomeText
-      color: Util.alpha(root.foreground, 0.72)
+      color: Util.alpha(root.foreground, Tokens.TEXT_SECONDARY)
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
       wrapMode: Text.WordWrap

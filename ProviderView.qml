@@ -3,6 +3,7 @@ import qs.Commons
 import qs.Ui
 import "CoreView.js" as Core
 import "components"
+import "components/Tokens.js" as Tokens
 
 Item {
   id: root
@@ -81,7 +82,7 @@ Item {
       visible: root.showsAge && root.ageText.length > 0
       width: parent.width
       text: root.ageText
-      color: Util.alpha(root.foreground, 0.72)
+      color: Util.alpha(root.foreground, Tokens.TEXT_SECONDARY)
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
       wrapMode: Text.WordWrap
