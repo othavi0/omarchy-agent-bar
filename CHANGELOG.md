@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [10.7.0] - 2026-10-21
+
+### Changed
+
+- chore: release 10.7.0
+- docs(spec): name the alert glyph in UX-020C
+- fix(status): label long Codex windows in days
+- fix(qml): show a stale age once
+- test(qml): add hairline to the stub Style
+- refactor(qml): drop the unused stateTitle
+- docs: describe the overview instead of the rail
+- fix(qml): round the restart banner top corners
+- fix(view): pace copy at and past the reset
+- fix(qml): flag a critical side window in the row
+- fix(qml): follow the shown row when one is hidden
+- fix(qml): focus Back or the row on view switch
+- fix(qml): keep Tab inside the popup focus order
+- fix(qml): give the confirm dialog its palette
+- test(qml): capture the real popup screenshots
+- fix(qml): settings edges, plan and back path
+- feat(qml): render the overview popup
+- feat(qml): derive the overview model
+- feat(qml): add tokens and the alert glyph cue
+- test(qml): add stub host modules for real views
+- docs(spec): amend v10 for the overview popup
+- feat(status): add windowMinutes to windows
+
 ## [10.6.3] - 2026-09-22
 
 ### Changed
