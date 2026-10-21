@@ -3,8 +3,9 @@ import qs.Commons
 import qs.Commons as Commons
 
 // Test stand-in for the host Button: same public surface, icon and label
-// drawn as plain text without the host BorderSurface states.
-Item {
+// drawn as plain text without the host BorderSurface states. Like the host,
+// the root is the filled surface, so `color` and `radius` are public.
+Rectangle {
   id: root
 
   property string text: ""
@@ -38,24 +39,20 @@ Item {
 
   implicitWidth: row.implicitWidth + horizontalPadding * 2
   implicitHeight: Math.max(label.implicitHeight, iconGlyph.implicitHeight) + verticalPadding * 2
+  color: root.background
+  radius: Style.cornerRadius
+  border.width: root.bordered ? Style.normalBorderWidth : 0
+  border.color: Style.normalBorderFor(root.foreground, root.accent)
   activeFocusOnTab: focusable
   Keys.onReturnPressed: if (focusable) root.clicked()
   Keys.onEnterPressed: if (focusable) root.clicked()
   Keys.onSpacePressed: if (focusable) root.clicked()
 
-  Rectangle {
-    anchors.fill: parent
-    color: root.background
-    border.width: root.bordered ? Style.normalBorderWidth : 0
-    border.color: Style.normalBorderFor(root.foreground, root.accent)
-    radius: Style.cornerRadius
-  }
-
   Row {
     id: row
     anchors.verticalCenter: parent.verticalCenter
     x: root.leftAlign ? root.horizontalPadding : Math.max(0, (root.width - implicitWidth) / 2)
-    spacing: Style.spacing.sm
+    spacing: Style.spacing.controlGap
 
     Text {
       id: iconGlyph

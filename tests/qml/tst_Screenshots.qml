@@ -213,7 +213,15 @@ TestCase {
 
   function test_capture(data) {
     stage(scene(data.name))
-    wait(150)
+    tryVerify(function () {
+      var o = popup.overview
+      if (popup.view !== "usage" || !o || !o.openId)
+        return true
+      return ViewHarness.findAll(popup, function (item) {
+        return item.objectName === "drawerWell" && item.visible
+      }).length > 0
+    }, 3000, "the open row's drawer is laid out before " + data.name + " is grabbed")
+    waitForRendering(popup)
     capture(data.name)
   }
 
