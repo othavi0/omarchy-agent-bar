@@ -580,11 +580,15 @@ TestCase {
     var files = [
       "CoreView.js",
       "components/ProviderChip.qml",
-      "ProviderView.qml",
-      "components/ProviderHeader.qml",
-      "ProviderRail.qml",
+      "components/OverviewBand.qml",
+      "components/OverviewList.qml",
+      "components/ProviderRow.qml",
+      "components/RowDetail.qml",
+      "components/UsageMeter.qml",
+      "components/ProviderIcon.qml",
+      "components/PopupFooter.qml",
+      "components/SettingsHeader.qml",
       "components/StateMessage.qml",
-      "components/UsageWindow.qml",
       "Popup.qml",
       "BarWidget.qml"
     ]
@@ -593,6 +597,7 @@ TestCase {
       xhr.open("GET", "file://" + repoRoot + "/" + files[i], false)
       xhr.send()
       var src = String(xhr.responseText)
+      verify(src.length > 0, files[i] + " exists")
       verify(src.indexOf("⌛") < 0, files[i] + " must not use the emoji hourglass")
     }
   }

@@ -90,6 +90,10 @@ TestCase {
     verify(src.indexOf("editorActive") >= 0 || src.indexOf("blocked:") >= 0)
     verify(src.indexOf("PgDown") >= 0 || src.indexOf("Page Down") >= 0)
     verify(src.indexOf("scrollHome") >= 0 || src.indexOf("Home") >= 0)
+    verify(src.indexOf("Scroll.routePanelTextKey(text, keyCatcher.blocked, root.view)") >= 0,
+           "the popup routes keys with its view so s returns from Settings")
+    verify(src.indexOf('route.action === "backToUsage"') >= 0)
+    verify(src.indexOf("function backToUsage()") >= 0)
   }
 
   // Live Quattro KeyboardPanel default property is contentItem (QQuickItem list).

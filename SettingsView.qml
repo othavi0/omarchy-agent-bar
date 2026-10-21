@@ -33,7 +33,6 @@ Item {
   readonly property bool loadFailed: phase === "load_failed"
 
   readonly property var sections: Settings.providerSections(draft)
-  readonly property var changes: Settings.settingsChanges(state ? state.snapshot : null, draft)
 
 
   readonly property string metric: {
@@ -81,10 +80,10 @@ Item {
     return Core.settingsProviderStatus(Core.findProvider(root.snapshot, id))
   }
 
+  // The Back button and the tabs live in SettingsHeader, which the popup
+  // pins above this view.
   function collectFocusTargets() {
     var out = []
-    for (var i = 0; i < tabRepeater.count; i++)
-      out.push(tabRepeater.itemAt(i))
     if (root.loadFailed)
       out.push(restartShellButton)
     return out
@@ -96,46 +95,9 @@ Item {
     spacing: Style.spacing.huge
 
     Column {
+      visible: root.loading || root.loadFailed
       width: parent.width
       spacing: Style.space(8)
-
-      Text {
-        text: "Settings"
-        color: root.foreground
-        font.family: root.fontFamily
-        font.pixelSize: Style.font.body
-        font.bold: true
-        textFormat: Text.PlainText
-        Accessible.role: Accessible.Heading
-      }
-
-      Row {
-        spacing: Style.spacing.md
-
-        Repeater {
-          id: tabRepeater
-          model: Settings.SETTINGS_TABS
-
-          Button {
-            required property var modelData
-            readonly property bool pending: root.changes.tabs[modelData.id] > 0
-            text: modelData.label + (pending ? " •" : "")
-            selected: root.tab === modelData.id
-            bordered: true
-            focusable: true
-            foreground: root.foreground
-            fontFamily: root.fontFamily
-            Accessible.role: Accessible.PageTab
-            Accessible.name: modelData.label
-            Accessible.description: pending ? "Unsaved changes" : ""
-            function focusActivate() {
-              root.tab = modelData.id
-            }
-            Accessible.onPressAction: focusActivate()
-            onClicked: focusActivate()
-          }
-        }
-      }
 
       Text {
         visible: root.loading

@@ -15,6 +15,8 @@ Column {
 
   signal actionActivated(string kind, var target)
 
+  readonly property int innerWidth: Math.max(0, root.width - root.leftPadding - root.rightPadding)
+
   width: parent ? parent.width : implicitWidth
   spacing: Style.space(10)
 
@@ -32,7 +34,7 @@ Column {
 
   Column {
     visible: root.skeleton
-    width: parent.width
+    width: root.innerWidth
     spacing: Style.space(8)
 
     Rectangle {
@@ -57,7 +59,7 @@ Column {
 
   Column {
     visible: !root.skeleton
-    width: parent.width
+    width: root.innerWidth
     spacing: Style.space(8)
 
     Text {

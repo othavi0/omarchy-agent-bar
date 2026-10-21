@@ -27,21 +27,24 @@ TestCase {
     return [
       "BarWidget.qml",
       "Popup.qml",
-      "ProviderRail.qml",
-      "ProviderView.qml",
       "SettingsView.qml",
       "MaintenanceView.qml",
       "components/ProviderChip.qml",
-      "components/ProviderHeader.qml",
       "components/HeaderTag.qml",
-      "components/UsageWindow.qml",
       "components/StateMessage.qml",
       "components/SettingsProviderRow.qml",
       "components/SettingsFooter.qml",
       "components/SectionHeader.qml",
       "components/ConfirmDialog.qml",
-      "components/ResetsSection.qml",
-      "components/RestartBanner.qml"
+      "components/RestartBanner.qml",
+      "components/OverviewBand.qml",
+      "components/OverviewList.qml",
+      "components/ProviderRow.qml",
+      "components/RowDetail.qml",
+      "components/UsageMeter.qml",
+      "components/ProviderIcon.qml",
+      "components/PopupFooter.qml",
+      "components/SettingsHeader.qml"
     ]
   }
 
@@ -125,7 +128,7 @@ TestCase {
     return [
       "SettingsView.qml",
       "MaintenanceView.qml",
-      "components/UsageWindow.qml",
+      "components/UsageMeter.qml",
       "components/StateMessage.qml",
       "components/ConfirmDialog.qml"
     ]
@@ -180,11 +183,18 @@ TestCase {
   }
 
   function test_usage_track_declared_once() {
-    var src = code("components/UsageWindow.qml")
+    var src = code("components/UsageMeter.qml")
     var declarations = src.split("readonly property color trackColor").length - 1
     compare(declarations, 1, "trackColor must be declared exactly once")
     verify(src.indexOf("Qt.rgba(") < 0,
-           "UsageWindow must reference trackColor, not a literal alpha")
+           "UsageMeter must reference trackColor, not a literal alpha")
+    var files = tokenScannedFiles()
+    for (var i = 0; i < files.length; i++) {
+      if (files[i] === "components/UsageMeter.qml")
+        continue
+      verify(code(files[i]).indexOf("Tokens.TRACK") < 0,
+             files[i] + " draws its own track; use UsageMeter")
+    }
   }
 
   function test_control_chrome_uses_style_tokens() {

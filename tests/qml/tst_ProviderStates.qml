@@ -39,7 +39,7 @@ TestCase {
 
   function test_ready_windows_mode() {
     var p = firstProvider("ready.json")
-    compare(Core.contentMode(p), "windows")
+    compare(Core.overviewRowKind(p), "reading")
     verify(Core.planBadge(p).length > 0)
     var lines = Core.windowDisplayLines(p, "remaining")
     verify(lines.length > 0)
@@ -49,14 +49,15 @@ TestCase {
 
   function test_empty_windows_ready_message() {
     var p = firstProvider("valid-empty-windows.json")
-    compare(Core.contentMode(p), "empty_windows")
+    compare(Core.overviewRowKind(p), "status")
+    compare(Core.settingsProviderStatus(p), "No percentage")
     compare(Core.stateBody(p), Core.emptyWindowsMessage())
     verify(Core.stateBody(p).indexOf("does not publish a usage percentage") >= 0)
   }
 
   function test_stale_retains_windows_and_label() {
     var p = firstProvider("valid-stale.json")
-    compare(Core.contentMode(p), "windows")
+    compare(Core.overviewRowKind(p), "reading")
     compare(Core.stateTitle(p), "")
     compare(Core.stateBody(p), "")
     verify(Core.errorMessage(p).length > 0)
@@ -73,13 +74,14 @@ TestCase {
               lastSuccessAt: "2026-07-26T18:42:00Z",
               error: { code: "network_error", message: "Cannot reach Grok.",
                        retryable: true } }
-    compare(Core.contentMode(p), "empty_windows")
+    compare(Core.overviewRowKind(p), "status")
+    compare(Core.settingsProviderStatus(p), "No percentage")
     compare(Core.stateBody(p), Core.emptyWindowsMessage())
   }
 
   function test_cli_missing_view_installation_and_check_again() {
     var p = firstProvider("valid-cli-missing.json")
-    compare(Core.contentMode(p), "state")
+    compare(Core.overviewRowKind(p), "status")
     var acts = Core.stateActions(p)
     var kinds = acts.map(function (a) { return a.kind })
     verify(kinds.indexOf("view_installation") >= 0)
@@ -88,7 +90,7 @@ TestCase {
 
   function test_unauthenticated_connect_or_install() {
     var p = firstProvider("valid-unauthenticated.json")
-    compare(Core.contentMode(p), "state")
+    compare(Core.overviewRowKind(p), "status")
     var acts = Core.stateActions(p)
     verify(acts.length >= 1)
     var kind = acts[0].kind
@@ -113,7 +115,7 @@ TestCase {
 
   function test_provider_error_plain_safe_message() {
     var p = firstProvider("valid-provider-error.json")
-    compare(Core.contentMode(p), "state")
+    compare(Core.overviewRowKind(p), "status")
     var msg = Core.errorMessage(p)
     verify(msg.length > 0)
     verify(msg.indexOf("<") < 0)
@@ -124,19 +126,20 @@ TestCase {
   function test_loading_skeleton_mode() {
     var p = Core.placeholderProvider("claude")
     compare(p.state, "loading")
-    compare(Core.contentMode(p), "skeleton")
-    compare(Core.contentMode(null), "skeleton")
+    compare(Core.overviewRowKind(p), "loading")
   }
 
-  function test_header_model_fields() {
-    var p = firstProvider("ready.json")
-    var h = Core.headerModel(p, true)
-    verify(h.name.length > 0)
-    verify(h.plan.length > 0)
-    verify(h.connection === undefined)
-    compare(h.refreshing, true)
-    verify(h.showStale === undefined)
-    verify(h.lastSuccessAt.length > 0)
+  function test_overview_row_name_and_plan() {
+    var env = { providers: [firstProvider("ready.json")] }
+    var row = Core.overviewModel(env, null, Date.parse("2026-07-28T15:00:00Z"),
+                                 { id: "", collapsed: false },
+                                 { refreshing: true, resetUi: null, resetBusy: false,
+                                   dateFormat: "", timeFormat: "" }).rows[0]
+    verify(row.name.length > 0)
+    verify(row.plan.length > 0)
+    verify(row.connection === undefined)
+    compare(row.refreshing, true)
+    verify(row.showStale === undefined)
   }
 
   function test_plain_text_strips_ansi_and_controls() {
@@ -153,14 +156,13 @@ TestCase {
     verify(!Core.containsMoneyCopy("Claude remaining 58%"))
   }
 
-  function test_resolve_selected_provider() {
+  function test_overview_selection_falls_back_to_the_first_row() {
     var env = loadFixture("valid-multi-provider.json")
-    var p = Core.resolveSelectedProvider(env, "codex", null)
-    verify(p !== null)
-    compare(p.id, "codex")
-    var first = Core.resolveSelectedProvider(env, "", null)
-    verify(first !== null)
-    compare(first.id, "claude")
+    var ui = { refreshing: false, resetUi: null, resetBusy: false, dateFormat: "", timeFormat: "" }
+    var picked = Core.overviewModel(env, null, Date.now(), { id: "codex", collapsed: false }, ui)
+    compare(picked.selectedId, "codex")
+    var first = Core.overviewModel(env, null, Date.now(), { id: "", collapsed: false }, ui)
+    compare(first.selectedId, "claude")
   }
 
   function test_dispatch_action_kind_mapping() {
@@ -475,11 +477,11 @@ TestCase {
   function test_chip_state_cue_stale_is_silent() {
     compare(Core.chipStateCue({ state: "stale" }), "")
     var view = read("CoreView.js")
-    var pane = read("ProviderView.qml")
+    var detail = read("components/RowDetail.qml")
     verify(view.length > 0)
-    verify(pane.length > 0)
+    verify(detail.length > 0, "RowDetail.qml exists")
     verify(view.indexOf("󰅐") < 0)
-    verify(pane.indexOf("󰅐") < 0)
+    verify(detail.indexOf("󰅐") < 0)
   }
 
   function test_state_actions_respect_retryable() {
@@ -562,30 +564,19 @@ TestCase {
     verify(cliLabels.indexOf("Check again") >= 0)
   }
 
-  // ProviderView.qml transitively imports qs.Commons/qs.Ui, which only
-  // Quickshell's own runtime resolves — the bare Qt6 qmltestrunner used by
-  // this gate cannot compile any file with `import qs.Commons` at all
-  // (verified independently: even a one-line file with just that import
-  // fails with the identical "module qs.Commons is not installed" error;
-  // Task 5 already documented that no test in this repo live-instantiates
-  // a qs.*-dependent component — see task-5-report.md). So the fix is
-  // verified by source inspection instead of Qt.createComponent/createObject.
-  function test_provider_view_timer_gates_on_active() {
-    var view = read("ProviderView.qml")
-    verify(view.indexOf("property bool active: true") >= 0,
-        "ProviderView must expose an owner-driven active prop")
-    verify(view.indexOf("running: root.active") >= 0,
-        "Timer must gate on active, not a child's visible prop")
-    verify(view.indexOf("running: root.visible") < 0,
-        "the fixed defect (visible-gated timer) must not resurface")
-    verify(view.indexOf("nowTickRunning") >= 0,
-        "a test-observable alias for the timer's running state must exist")
-    verify(view.indexOf("onActiveChanged") >= 0,
-        "reopening the popup must refresh nowMs, not show a stale countdown")
-
+  // The popup owns the 30 s clock: it runs only while the popup is open and
+  // resyncs on every open, so a reopened popup never shows a stale countdown.
+  function test_popup_clock_gates_on_open() {
     var popup = read("Popup.qml")
-    verify(popup.indexOf("active: root.isOpen") >= 0,
-        "Popup must drive ProviderView.active from its own open state")
+    verify(popup.indexOf('objectName: "nowTimer"') >= 0)
+    verify(popup.indexOf("running: root.isOpen") >= 0,
+        "the clock must gate on the popup's open state")
+    verify(popup.indexOf("running: root.visible") < 0,
+        "the fixed defect (visible-gated timer) must not resurface")
+    var open = popup.indexOf("onIsOpenChanged: {")
+    verify(open > 0)
+    verify(popup.substring(open, popup.indexOf("\n  }\n", open)).indexOf("root.nowMs = Date.now()") >= 0,
+        "reopening the popup must refresh nowMs")
   }
 
   function claudeResetsProvider(extraWindows) {

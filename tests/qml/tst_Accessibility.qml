@@ -29,23 +29,26 @@ TestCase {
     return [
       "BarWidget.qml",
       "Popup.qml",
-      "ProviderRail.qml",
-      "ProviderView.qml",
       "SettingsView.qml",
       "MaintenanceView.qml",
       "Service.qml",
       "components/ProviderChip.qml",
-      "components/ProviderHeader.qml",
       "components/HeaderTag.qml",
-      "components/UsageWindow.qml",
       "components/StateMessage.qml",
       "components/SettingsProviderRow.qml",
       "components/SettingsFooter.qml",
       "components/SectionHeader.qml",
       "components/ConfirmDialog.qml",
       "components/FocusController.qml",
-      "components/ResetsSection.qml",
-      "components/RestartBanner.qml"
+      "components/RestartBanner.qml",
+      "components/OverviewBand.qml",
+      "components/OverviewList.qml",
+      "components/ProviderRow.qml",
+      "components/RowDetail.qml",
+      "components/UsageMeter.qml",
+      "components/ProviderIcon.qml",
+      "components/PopupFooter.qml",
+      "components/SettingsHeader.qml"
     ]
   }
 
@@ -74,9 +77,16 @@ TestCase {
   }
 
   function test_interactive_controls_have_accessible_names() {
-    var src = read("ProviderRail.qml")
-    verify(src.indexOf("Accessible.name") >= 0)
-    verify(src.indexOf("Accessible.role") >= 0)
+    var src = read("components/ProviderRow.qml")
+    verify(src.indexOf("Accessible.name: root.row ? root.row.accessibleName") >= 0)
+    verify(src.indexOf("Accessible.role: Accessible.Button") >= 0)
+    verify(src.indexOf("Accessible.expandable: !!(root.row && root.row.openable)") >= 0)
+    verify(src.indexOf("Accessible.expanded: !!(root.row && root.row.open)") >= 0)
+    verify(src.indexOf("Accessible.description: root.row ? root.row.tickDescription") >= 0)
+    src = read("components/OverviewBand.qml")
+    verify(src.indexOf("Accessible.name: root.headline") >= 0)
+    src = read("components/PopupFooter.qml")
+    verify(src.indexOf('Accessible.name: "Settings"') >= 0)
     src = read("components/StateMessage.qml")
     verify(src.indexOf("Accessible.name") >= 0)
     src = read("SettingsView.qml")
@@ -94,10 +104,11 @@ TestCase {
   }
 
   function test_glyphs_and_text_labels() {
-    var header = read("components/ProviderHeader.qml")
-    verify(header.indexOf("󰑐") >= 0)
-    var rail = read("ProviderRail.qml")
-    verify(rail.indexOf("󰒓") >= 0)
+    var detail = read("components/RowDetail.qml")
+    verify(detail.indexOf("iconText: Tokens.GLYPH_REFRESH") >= 0)
+    var popupFooter = read("components/PopupFooter.qml")
+    verify(popupFooter.indexOf("iconText: Tokens.GLYPH_SETTINGS") >= 0)
+    verify(popupFooter.indexOf('text: "Settings"') >= 0)
     var footer = read("components/SettingsFooter.qml")
     verify(footer.indexOf("Save changes") >= 0)
     verify(footer.indexOf("Restore defaults") >= 0)

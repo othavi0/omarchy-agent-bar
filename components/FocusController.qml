@@ -92,6 +92,19 @@ Item {
     return item
   }
 
+  function focusItem(item) {
+    if (!item || !targets)
+      return false
+    for (var i = 0; i < targets.length; i++) {
+      if (targets[i] === item) {
+        index = i
+        focusCurrent()
+        return true
+      }
+    }
+    return false
+  }
+
   function focusCurrent() {
     var item = current
     if (!item)
@@ -122,8 +135,18 @@ Item {
     return false
   }
 
+  function scrolledBy(item) {
+    for (var cur = item; cur; cur = cur.parent) {
+      if (cur === flickable.contentItem)
+        return true
+    }
+    return false
+  }
+
+  // Pinned targets (banners, band, footers) sit outside the Flickable; only
+  // a target inside the scrolled content may move it.
   function ensureVisible(item) {
-    if (!flickable || !item)
+    if (!flickable || !item || !scrolledBy(item))
       return
     var y = 0
     var h = item.height || 0

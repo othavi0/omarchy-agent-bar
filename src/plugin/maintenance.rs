@@ -964,8 +964,6 @@ mod tests {
             "CoreView.js",
             "MaintenanceView.qml",
             "Popup.qml",
-            "ProviderRail.qml",
-            "ProviderView.qml",
             "SettingsView.qml",
         ] {
             fs::write(root.join(name), format!("// {name}\n")).unwrap();
@@ -1007,8 +1005,6 @@ mod tests {
             "CoreView.js",
             "MaintenanceView.qml",
             "Popup.qml",
-            "ProviderRail.qml",
-            "ProviderView.qml",
             "SettingsView.qml",
             "manifest.json",
             "icons/claude.png",

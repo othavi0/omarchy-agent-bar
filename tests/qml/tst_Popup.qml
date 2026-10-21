@@ -27,6 +27,18 @@ TestCase {
     return String(xhr.responseText || "")
   }
 
+  function blockEnd(src, start) {
+    var open = src.indexOf("{", start)
+    var depth = 0
+    for (var i = open; i < src.length; i++) {
+      if (src[i] === "{")
+        depth++
+      else if (src[i] === "}" && --depth === 0)
+        return i
+    }
+    return -1
+  }
+
   function test_restart_banner_is_one_line_with_a_restart_button() {
     var banner = ViewHarness.createView(repoRoot, "components/RestartBanner.qml", testCase, testCase,
                                         { width: 420, version: "10.6.2" })
@@ -57,7 +69,7 @@ TestCase {
     var start = src.indexOf("RestartBanner {")
     verify(start > src.indexOf("id: stalledMessage"), "the banner sits under the stalled message")
     verify(start < src.indexOf("id: contentLoader"), "the banner sits above the provider content")
-    var block = src.substring(start, src.indexOf("\n            }\n", start))
+    var block = src.substring(start, blockEnd(src, start))
     verify(block.indexOf("root.agentService.restartPending") >= 0)
     verify(block.indexOf('root.view !== "settings"') >= 0)
     verify(block.indexOf("!stalledMessage.visible") >= 0)
@@ -137,13 +149,19 @@ TestCase {
     message.destroy()
   }
 
-  function test_popup_uses_keyboard_panel_and_rail() {
+  function test_popup_uses_keyboard_panel_and_overview() {
     var src = read("Popup.qml")
     verify(src.indexOf("KeyboardPanel") >= 0)
-    verify(src.indexOf("ProviderRail") >= 0)
-    verify(src.indexOf("ProviderView") >= 0)
     verify(src.indexOf("PanelKeyCatcher") >= 0)
-    verify(src.indexOf("fittedContent") >= 0 || src.indexOf("maxContentWidth") >= 0)
+    verify(src.indexOf("OverviewBand {") >= 0)
+    verify(src.indexOf("OverviewList {") >= 0)
+    verify(src.indexOf("PopupFooter {") >= 0)
+    verify(src.indexOf("SettingsHeader {") >= 0)
+    verify(src.indexOf("ProviderRail") < 0)
+    verify(src.indexOf("ProviderView") < 0)
+    verify(src.indexOf("maxContentWidth: Style.space(520)") >= 0)
+    verify(src.indexOf('objectName: "popupBody"') >= 0)
+    verify(src.indexOf("Core.overviewModel(") >= 0)
   }
 
   function test_stalled_banner_is_conditional_and_actionable() {
@@ -161,119 +179,85 @@ TestCase {
     verify(src.indexOf("stalledMessage.collectFocusTargets()") >= 0)
   }
 
-  function test_rail_is_icon_only_settings_at_bottom() {
-    var src = read("ProviderRail.qml")
-    verify(src.indexOf("Image") >= 0)
-    verify(src.indexOf("settingsBtn") >= 0 || src.indexOf("Settings") >= 0)
-    verify(src.indexOf("󰒓") >= 0)
-    verify(src.indexOf("modelData.name") < 0 || src.indexOf("Accessible.name") >= 0)
-    verify(src.indexOf("text: modelData.name") < 0)
-    verify(src.indexOf("text: modelData") < 0)
-  }
-
-  function test_header_has_no_provider_icon() {
-    var src = read("components/ProviderHeader.qml")
-    verify(src.indexOf("Image") < 0)
-    verify(src.indexOf("iconSource") < 0)
-    verify(src.indexOf("name") >= 0)
-    verify(src.indexOf("plan") >= 0)
-    verify(src.indexOf("󰑐") >= 0)
-    verify(src.indexOf("connection") < 0)
-    verify(src.indexOf("HeaderTag") >= 0)
-    verify(src.indexOf("radius: height / 2") < 0)
-  }
-
-  function test_header_renders_plan_and_severity_tags() {
-    var hdr = read("components/ProviderHeader.qml")
-    verify(hdr.indexOf("HeaderTag {") >= 0)
-    verify(hdr.indexOf("id: planTag") >= 0)
-    verify(hdr.indexOf("id: severityTag") >= 0)
-    verify(hdr.indexOf("property string severityText") >= 0)
-    verify(hdr.indexOf("property bool severityUrgent") >= 0)
-    verify(hdr.indexOf("border.color: Style.normalBorderColor") < 0)
-
+  function test_header_tag_kinds() {
     var tag = read("components/HeaderTag.qml")
+    verify(tag.indexOf('property string kind: "neutral"') >= 0)
+    verify(tag.indexOf('root.kind === "urgent"') >= 0)
+    verify(tag.indexOf('root.kind === "accent"') >= 0)
     verify(tag.indexOf("Color.urgent") >= 0)
+    verify(tag.indexOf("Style.selectedAccentFill") >= 0)
+    verify(tag.indexOf("Tokens.URGENT_FILL") >= 0)
     verify(tag.indexOf("radius: Style.cornerRadius") >= 0)
     verify(tag.indexOf("Font.AllUppercase") >= 0)
     verify(tag.indexOf("Qt.rgba(") < 0)
-  }
-
-  function test_header_spacer_accounts_for_both_tags() {
-    var hdr = read("components/ProviderHeader.qml")
-    verify(hdr.indexOf("planTag.visible ? planTag.width") >= 0)
-    verify(hdr.indexOf("severityTag.visible ? severityTag.width") >= 0)
-    verify(hdr.indexOf("Style.space(60)") < 0,
-           "the old lump constant hid the second tag's width")
-    verify(hdr.indexOf("row.spacing * 2") >= 0,
-           "the spacer must charge both unconditional gaps: before it and after it")
-  }
-
-  function test_rail_has_no_own_frame() {
-    var rail = read("ProviderRail.qml")
-    verify(rail.indexOf("normalFill") < 0)
-    verify(rail.indexOf("normalBorderColor") < 0)
-    verify(rail.indexOf("selectedFill") >= 0)
-    verify(rail.indexOf("anchors.topMargin: Style.spacing.popupPadding") >= 0)
-    // The frame deletion's failure shape is a dangling id — runtime-only,
-    // invisible to qmllint/qmltestrunner/plugin-validate (all three verified
-    // blind to it). Ban the id and any anchor to it outright.
-    verify(rail.indexOf("id: frame") < 0)
-    verify(rail.indexOf("anchors.fill: frame") < 0)
-  }
-
-  function test_content_and_rail_share_inset_token() {
-    var popup = read("Popup.qml")
-    verify(popup.indexOf("contentMargins: Style.spacing.popupPadding") >= 0)
-    verify(popup.indexOf("Style.space(14)") < 0)
+    verify(tag.indexOf("property bool urgent") < 0, "kind replaces the urgent flag")
   }
 
   function test_no_meta_footer() {
-    var view = read("ProviderView.qml")
-    verify(view.indexOf("connection") < 0)
-    verify(view.indexOf('"Cache"') < 0)
-    verify(view.indexOf('"Live"') < 0)
+    var files = ["components/ProviderRow.qml", "components/RowDetail.qml"]
+    for (var i = 0; i < files.length; i++) {
+      var src = read(files[i])
+      verify(src.length > 0, files[i] + " exists")
+      verify(src.indexOf("connection") < 0, files[i])
+      verify(src.indexOf('"Cache"') < 0, files[i])
+      verify(src.indexOf('"Live"') < 0, files[i])
+    }
   }
 
+  // UX-028: a stale row reads like a ready one. The age is neutral copy from
+  // the model; no offline wording, no error text, no stale-only glyph.
   function test_stale_age_line_is_neutral() {
-    var view = read("ProviderView.qml")
-    verify(view.length > 0)
-    verify(view.indexOf("formatAgoText") >= 0)
-    verify(view.indexOf('"Updated "') >= 0)
-    verify(view.indexOf("󰅐") < 0)
-    verify(view.indexOf("⌛") < 0)
-    verify(view.indexOf('"Last data "') < 0)
-    verify(view.indexOf("Color.urgent") < 0)
-    verify(view.indexOf("errorMessage") < 0)
-    verify(view.indexOf('+ " ago"') < 0)
+    var core = read("CoreView.js")
+    verify(core.indexOf("formatAgoText(provider.lastSuccessAt, nowMs)") >= 0)
+    verify(core.indexOf('"Updated " + ago') >= 0)
+    var files = ["components/ProviderRow.qml", "components/RowDetail.qml"]
+    for (var i = 0; i < files.length; i++) {
+      var src = read(files[i])
+      verify(src.length > 0, files[i] + " exists")
+      verify(src.indexOf("󰅐") < 0, files[i])
+      verify(src.indexOf("⌛") < 0, files[i])
+      verify(src.indexOf('"Last data "') < 0, files[i])
+      verify(src.indexOf("Offline") < 0, files[i])
+      verify(src.indexOf("GLYPH_WIFI_OFF") < 0, files[i])
+      verify(src.indexOf("errorMessage") < 0, files[i])
+      verify(src.indexOf('+ " ago"') < 0, files[i])
+    }
+    verify(read("components/RowDetail.qml").indexOf("row.updatedText") >= 0)
   }
 
   function test_stale_windows_are_not_dimmed() {
-    var view = read("ProviderView.qml")
-    verify(view.length > 0)
-    verify(view.indexOf("isStale") < 0)
-    verify(view.indexOf("stale_windows") < 0)
-    verify(view.indexOf("dimmed:") < 0)
-    verify(view.indexOf("opacity:") < 0)
+    var files = ["components/ProviderRow.qml", "components/RowDetail.qml", "components/UsageMeter.qml"]
+    for (var i = 0; i < files.length; i++) {
+      var src = read(files[i])
+      verify(src.length > 0, files[i] + " exists")
+      verify(src.indexOf("isStale") < 0, files[i])
+      verify(src.indexOf('"stale"') < 0, files[i] + " must not branch on the stale state")
+    }
+    verify(read("components/UsageMeter.qml").indexOf("property bool dimmed") < 0)
   }
 
-  function test_full_width_separator_present() {
-    var src = read("ProviderView.qml")
-    verify(src.indexOf("PanelSeparator") >= 0)
-    verify(src.indexOf("width: parent.width") >= 0)
+  function popupSourceFiles() {
+    return [
+      "Popup.qml",
+      "components/OverviewBand.qml",
+      "components/OverviewList.qml",
+      "components/ProviderRow.qml",
+      "components/RowDetail.qml",
+      "components/UsageMeter.qml",
+      "components/ProviderIcon.qml",
+      "components/PopupFooter.qml",
+      "components/SettingsHeader.qml",
+      "components/HeaderTag.qml",
+      "components/StateMessage.qml",
+      "components/RestartBanner.qml"
+    ]
   }
 
   function test_plain_text_only_no_rich_text() {
-    var files = [
-      "Popup.qml",
-      "ProviderRail.qml",
-      "ProviderView.qml",
-      "components/ProviderHeader.qml",
-      "components/UsageWindow.qml",
-      "components/StateMessage.qml"
-    ]
+    var files = popupSourceFiles()
     for (var i = 0; i < files.length; i++) {
       var src = read(files[i])
+      verify(src.length > 0, files[i] + " exists")
       verify(src.indexOf("Text.RichText") < 0, files[i])
       verify(src.indexOf("RichText") < 0, files[i])
       verify(src.indexOf("innerHTML") < 0, files[i])
@@ -283,18 +267,10 @@ TestCase {
   }
 
   function test_no_money_copy_in_popup_sources() {
-    var files = [
-      "Popup.qml",
-      "ProviderView.qml",
-      "components/StateMessage.qml",
-      "components/UsageWindow.qml",
-      "components/ProviderHeader.qml",
-      "CoreView.js"
-    ]
+    var files = popupSourceFiles()
     for (var i = 0; i < files.length; i++) {
       var src = read(files[i])
-      if (files[i].indexOf("CoreView.js") >= 0)
-        continue
+      verify(src.length > 0, files[i] + " exists")
       verify(!Core.containsMoneyCopy(src), files[i] + " has money copy")
     }
   }
@@ -342,53 +318,18 @@ TestCase {
     compare(Core.mapActionKind("bash"), null)
   }
 
-  function test_lead_window_geometry_and_label_line() {
-    var win = read("components/UsageWindow.qml")
-    verify(win.indexOf("Math.round(Style.font.body * 2.5)") >= 0)
-    verify(win.indexOf("Style.font.body * 1.8") < 0)
-    verify(win.indexOf("root.resetPhrase") >= 0)
-    verify(win.indexOf("root.resetCountdown") >= 0)
-    verify(win.indexOf("property string resetText") < 0,
-           "resetText is replaced by the countdown pair")
-    verify(win.indexOf('text: "resets"') < 0,
-           "the reset row moved into the label line")
-  }
-
-  function test_compact_rows_carry_their_own_track() {
-    var win = read("components/UsageWindow.qml")
-    var compact = win.slice(win.indexOf("id: compactRow"))
-    verify(compact.length > 0, "compactRow must still exist")
-    verify(compact.indexOf("color: root.trackColor") >= 0,
-           "the compact row needs a track of its own (UX-020A)")
-    verify(compact.indexOf("root.resetCountdown") >= 0,
-           "the compact row needs its reset column")
-    verify(win.indexOf('text: "23h 59m"') >= 0,
-           "the reset column is measured with TextMetrics, never hardcoded px")
-  }
-
-  function test_critical_window_uses_the_urgent_token() {
-    var win = read("components/UsageWindow.qml")
-    verify(win.indexOf("Color.urgent") >= 0)
-    verify(win.indexOf('root.severity === "critical"') >= 0)
-    verify(win.indexOf("Qt.rgba(") < 0)
-
-    var value = win.slice(win.indexOf("readonly property color valueColor"))
-    value = value.slice(0, value.indexOf("\n"))
-    verify(value.indexOf("root.dimmed") < 0,
-           "valueColor must not consult dimmed: " + value)
-    var fill = win.slice(win.indexOf("readonly property color fillColor"))
-    fill = fill.slice(0, fill.indexOf("readonly property real fillOpacity"))
-    verify(fill.indexOf("root.isCritical") < fill.indexOf("root.dimmed"),
-           "fillColor must test isCritical before dimmed: " + fill)
-  }
-
-  function test_provider_view_leads_with_one_window() {
-    var view = read("ProviderView.qml")
-    verify(view.indexOf("Core.windowLayout(") >= 0)
-    verify(view.indexOf("emphasis: true") >= 0)
-    verify(view.indexOf("emphasis: false") >= 0)
-    verify(view.indexOf("severityText: ") >= 0)
-    verify(view.indexOf("strength: 0.08") < 0)
+  function test_critical_meter_uses_the_urgent_token() {
+    var meter = read("components/UsageMeter.qml")
+    verify(meter.length > 0, "UsageMeter.qml exists")
+    verify(meter.indexOf("Color.urgent") >= 0)
+    verify(meter.indexOf("root.critical") >= 0)
+    verify(meter.indexOf("Tokens.THIN_FILL") >= 0)
+    verify(meter.indexOf('objectName: "paceTick"') >= 0)
+    verify(meter.indexOf("Qt.rgba(") < 0)
+    var fill = meter.slice(meter.indexOf("readonly property color fillColor"))
+    fill = fill.slice(0, fill.indexOf("\n\n"))
+    verify(fill.indexOf("root.critical") >= 0 && fill.indexOf("root.critical") < fill.indexOf("root.thin"),
+           "critical wins over the thin fill: " + fill)
   }
 
   // The three QML gates never compile a file that imports qs.*, so a dangling
@@ -401,13 +342,18 @@ TestCase {
       "components/FocusController.qml",
       "components/HeaderTag.qml",
       "components/ProviderChip.qml",
-      "components/ProviderHeader.qml",
-      "components/ResetsSection.qml",
+      "components/OverviewBand.qml",
+      "components/OverviewList.qml",
+      "components/ProviderRow.qml",
+      "components/RowDetail.qml",
+      "components/UsageMeter.qml",
+      "components/ProviderIcon.qml",
+      "components/PopupFooter.qml",
+      "components/SettingsHeader.qml",
       "components/SettingsProviderRow.qml",
       "components/SettingsFooter.qml",
       "components/SectionHeader.qml",
       "components/StateMessage.qml",
-      "components/UsageWindow.qml",
       "CoreMaintenance.js",
       "CoreScroll.js",
       "CoreService.js",
@@ -415,13 +361,12 @@ TestCase {
       "CoreView.js",
       "MaintenanceView.qml",
       "Popup.qml",
-      "ProviderRail.qml",
-      "ProviderView.qml",
       "Service.qml",
       "SettingsView.qml"
     ]
     for (var i = 0; i < files.length; i++) {
       var source = read(files[i])
+      verify(source.length > 0, files[i] + " exists")
       verify(source.indexOf("primaryWindow") < 0,
              files[i] + " still references the deleted lead selector")
     }
@@ -432,9 +377,20 @@ TestCase {
     verify(core.indexOf("windowGroups") < 0,
            "windowGroups is replaced by windowLayout")
     verify(core.indexOf("function electLeadIndex") >= 0)
-    var view = read("ProviderView.qml")
-    verify(view.indexOf("groups.primary") < 0)
-    verify(view.indexOf("groups.secondary") < 0)
+  }
+
+  // The rail and single-provider pane are gone with their files; their
+  // helpers must not linger in CoreView.js.
+  function test_rail_and_pane_helpers_are_gone() {
+    var core = read("CoreView.js")
+    var dead = ["railProviderSelected", "railTooltipText", "resolveSelectedProvider",
+                "headerModel", "contentMode"]
+    for (var i = 0; i < dead.length; i++)
+      verify(core.indexOf("function " + dead[i] + "(") < 0, dead[i] + " is dead code")
+    var gone = ["ProviderRail.qml", "ProviderView.qml", "components/ProviderHeader.qml",
+                "components/UsageWindow.qml", "components/ResetsSection.qml"]
+    for (var g = 0; g < gone.length; g++)
+      compare(read(gone[g]), "", gone[g] + " is deleted")
   }
 
   function test_absolute_clock_humaniser_is_gone() {
@@ -456,18 +412,6 @@ TestCase {
     verify(/^\(\d{1,2}:\d{2} (AM|PM)\)$/.test(h12), "got: " + h12)
     compare(Core.resetClockText("not-a-date", "HH:mm"), "")
     compare(Core.resetClockText("2026-08-02T02:00:00Z", ""), "")
-  }
-
-  function test_only_the_lead_window_gets_the_clock() {
-    var view = read("ProviderView.qml")
-    var first = view.indexOf("resetClock:")
-    verify(first >= 0, "lead window must bind resetClock")
-    verify(view.indexOf("resetClock:", first + 1) < 0,
-           "compact rows must not gain the clock")
-    verify(view.indexOf("Locale.ShortFormat") >= 0,
-           "the format must come from the viewer's locale")
-    var win = read("components/UsageWindow.qml")
-    verify(win.indexOf("property string resetClock") >= 0)
   }
 
   function test_reset_argv_is_typed_array() {
@@ -516,16 +460,26 @@ TestCase {
     verify(Service.validateProvider(withMalformed) !== null)
   }
 
-  function test_resets_section_visibility_is_owned_by_provider_view() {
-    var src = read("components/ResetsSection.qml")
-    verify(src.indexOf("\n  visible:") < 0, "the owner alone decides the section's visibility")
-    verify(src.indexOf("signal useResetClicked()") >= 0)
-    verify(src.indexOf("Text.PlainText") >= 0)
-    var view = read("ProviderView.qml")
-    verify(view.indexOf("signal resetRequested(string providerId, string resetId)") >= 0)
-    verify(view.indexOf("ResetsSection {") >= 0)
-    verify(view.indexOf('visible: root.mode === "windows" && root.resetsSummary.visible') >= 0)
-    verify(view.indexOf("onUseResetClicked:") >= 0)
+  // UX-079: the reset facts carry no button; Use reset sits in the action
+  // line next to Refresh, which stays rightmost and always enabled.
+  function test_use_reset_lives_in_the_action_line() {
+    var src = read("components/RowDetail.qml")
+    verify(src.length > 0, "RowDetail.qml exists")
+    verify(src.indexOf("signal resetRequested(string resetId)") >= 0)
+    verify(src.indexOf("signal refreshRequested()") >= 0)
+    verify(src.indexOf("visible: root.useReset.visible") >= 0)
+    verify(src.indexOf("enabled: root.useReset.enabled") >= 0)
+    var use = src.indexOf("id: useResetButton")
+    var refresh = src.indexOf("id: refreshButton")
+    verify(use > 0 && refresh > use, "Refresh is the rightmost button")
+    var refreshBlock = src.lastIndexOf("Button {", refresh)
+    var refreshSrc = src.substring(refreshBlock, blockEnd(src, refreshBlock))
+    verify(refreshSrc.indexOf("iconSpinning: root.refreshing") >= 0)
+    verify(refreshSrc.indexOf("iconText: Tokens.GLYPH_REFRESH") >= 0)
+    verify(refreshSrc.indexOf("enabled:") < 0, "Refresh is never disabled")
+    var row = read("components/ProviderRow.qml")
+    verify(row.indexOf("RowDetail {") >= 0)
+    verify(row.indexOf("visible: !!(root.row && root.row.open)") >= 0)
   }
 
   function test_service_owns_a_dedicated_reset_lane() {

@@ -221,22 +221,6 @@ function chipAccessibleLabel(provider, metric, nowMs) {
   return parts.join(" · ")
 }
 
-// The rail plate marks whoever owns the open content: the provider in the
-// usage view, the Settings slot in the settings view.
-function railProviderSelected(view, providerId, selectedId) {
-  if (view === "settings")
-    return false
-  var id = String(providerId || "")
-  return id.length > 0 && id === String(selectedId || "")
-}
-
-function railTooltipText(provider, metric, nowMs) {
-  var label = chipAccessibleLabel(provider, metric, nowMs)
-  if (chipSeverityUrgent(provider))
-    label += " · critical"
-  return label
-}
-
 var SETTINGS_PROVIDER_STATUS = {
   "cli_missing": "Not installed",
   "unauthenticated": "Signed out",
@@ -314,20 +298,6 @@ function findProvider(snapshot, providerId) {
       return p
   }
   return null
-}
-
-function resolveSelectedProvider(snapshot, selectedProviderId, settings) {
-  var chips = visibleProviders(snapshot, settings)
-  if (!chips.length)
-    return null
-  var want = String(selectedProviderId || "")
-  if (want) {
-    for (var i = 0; i < chips.length; i++) {
-      if (String(chips[i].id) === want)
-        return chips[i]
-    }
-  }
-  return chips[0]
 }
 
 function planBadge(provider) {
@@ -826,37 +796,6 @@ function resetConfirmModel(provider, row) {
     message: message,
     confirmText: "Use reset"
   }
-}
-
-function headerModel(provider, refreshing) {
-  if (!provider) {
-    return {
-      name: "",
-      plan: "",
-      lastSuccessAt: null,
-      refreshing: !!refreshing
-    }
-  }
-  return {
-    name: plainText(provider.name || providerDisplayName(provider.id)),
-    plan: plainText(planBadge(provider)),
-    lastSuccessAt: provider.lastSuccessAt ? String(provider.lastSuccessAt) : null,
-    refreshing: !!refreshing
-  }
-}
-
-function contentMode(provider) {
-  if (!provider)
-    return "skeleton"
-  var s = String(provider.state || "")
-  if (s === "loading")
-    return "skeleton"
-  if (presentsReading(s)) {
-    if (!provider.windows || provider.windows.length === 0)
-      return "empty_windows"
-    return "windows"
-  }
-  return "state"
 }
 
 function unitWord(metric) {
