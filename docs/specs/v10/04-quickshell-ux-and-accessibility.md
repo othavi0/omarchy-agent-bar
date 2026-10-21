@@ -111,7 +111,7 @@ literal UI.
   severity tag reading `Critical` or `Low` when the provider
   has one, a critical window renders its numeral and track in the urgent
   theme colour whether it is the lead or a compact row, and a ready provider
-  with a critical window shows the `!` cue on its bar chip; the cue's
+  with a critical window shows the alert glyph (`UX-085`) on its bar chip; the cue's
   accessible name carries the word `critical` even when the chip numeral
   belongs to a non-critical session window. Every level carries a word; no level is
   colour-only.
