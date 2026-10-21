@@ -11,6 +11,8 @@ Column {
   property var overview: null
   // The first row meets the rounded border when nothing sits above it.
   property int topRadius: 0
+  property bool flushTop: false
+  property real frameWidth: 1
   property color foreground: Commons.Color.foreground
   property string fontFamily: Style.font.family
 
@@ -58,6 +60,8 @@ Column {
       row: root.overview && index < root.rowCount ? root.overview.rows[index] : null
       last: index === root.rowCount - 1
       topRadius: index === 0 ? root.topRadius : 0
+      flushTop: index === 0 && root.flushTop
+      frameWidth: root.frameWidth
       foreground: root.foreground
       fontFamily: root.fontFamily
       onToggleRequested: function (id) { root.toggleRequested(id) }

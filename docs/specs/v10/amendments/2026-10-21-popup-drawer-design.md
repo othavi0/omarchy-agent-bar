@@ -48,12 +48,15 @@ sits below the slab.
 
 ### Row (UX-020B and UX-077 amended)
 
-- `UX-020B` (amended): the slab is tinted with the accent, mixed 15 % under
-  an open head and 7 % under a selected closed head. A closed head shows
-  `Style.hoverFill` under the pointer. The open row has a 2-unit accent lip
-  under its head and a 3-unit accent rail on its left edge. The rail spans
-  the head and the drawer. The first row's tint, hover fill, focus ring, and
-  rail still follow the popup's inner radius.
+- `UX-020B` (amended): the slab is tinted with the accent, mixed 6 % under
+  an open head and 4 % under a selected closed head. A closed head shows
+  `Style.hoverFill` under the pointer. The open row is framed: a line above
+  it and a line below its drawer, in the popup border's colour
+  (`Color.popups.border`) and width. The popup border draws the sides, so
+  no side line doubles it. When the open row meets the popup's top border
+  (nothing above it), that border is its top line and the row draws none.
+  The first row's tint, hover fill, and focus ring still follow the popup's
+  inner radius.
 - `UX-077` (amended): the head ends with a chevron in its own column. The
   chevron points right on a closed row and down on the open row, with no
   animation (`A11Y-013`). It is accent on the selected or open row and
@@ -123,7 +126,7 @@ sits below the slab.
 
 | ID | Old text (summary) | Replacement |
 | --- | --- | --- |
-| `UX-020B` | The selected or open row head uses `Style.normalFill`. | The slab is tinted with the accent: 15 % open, 7 % selected. An accent lip and an accent rail mark the open row. |
+| `UX-020B` | The selected or open row head uses `Style.normalFill`. | The slab is tinted with the accent: 6 % open, 4 % selected. Lines above and below the open row, in the popup border's colour and width, frame it with the popup's own sides. |
 | `UX-077` | Icon, name, meter, value, plan, sub line. | The same, plus a chevron column that points down on the open row. |
 | `UX-079` | The detail order and the action line content. | The same order and content in a recessed well, with one left column, one right edge, equal section padding, control-height rows, a shared label column, and tonal twin buttons. |
 | `UX-082` | The head action is a bordered button. | The head action is a borderless accent-tinted button. |
@@ -170,7 +173,12 @@ sits below the slab.
   `A11Y-013` forbids plugin-authored animation, so the chevron snaps.
 - **An inner shadow in the well.** The prototype's shadow darkens toward
   black, and on a dark theme a shade derived from the background alone is
-  invisible. The lip, the rail, and the well tone carry the depth.
+  invisible. The frame lines and the well tone carry the depth.
+- **A left accent rail and a thick accent lip on the open row**, shipped in
+  10.7.2. The owner rejected them: the rail read as generic, and a 15 %
+  accent head was too loud. A full outline drawn inside the row doubled the
+  popup border on both sides, so the frame keeps only the top and bottom
+  lines.
 - **Bold button labels and an accent-only glyph on `Use reset`.** The host
   `Button` draws its label and icon in one colour and bolds them only for
   `selected`. Re-drawing the content would duplicate the host control, and

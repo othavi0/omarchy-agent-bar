@@ -6,8 +6,9 @@ import qs.Ui
 import "Tokens.js" as Tokens
 
 // UX-077/078: one provider, drawn as a slab. The head is the accordion
-// toggle and its chevron turns down while the drawer below it is open; an
-// accent rail spans both. A band of popup floor ends every row but the last.
+// toggle and its chevron turns down while the drawer below it is open; lines
+// above and below frame the open block. A band of popup floor ends every row
+// but the last.
 // Every field comes from the row model.
 Item {
   id: root
@@ -16,6 +17,9 @@ Item {
   property var row: null
   property bool last: false
   property int topRadius: 0
+  // True when the row meets the popup's top border with nothing above it.
+  property bool flushTop: false
+  property real frameWidth: 1
   property color foreground: Commons.Color.foreground
   property string fontFamily: Style.font.family
 
@@ -356,15 +360,6 @@ Item {
           }
         }
       }
-
-      Rectangle {
-        objectName: "rowLip"
-        visible: root.open
-        anchors.bottom: parent.bottom
-        width: parent.width
-        height: Style.space(2)
-        color: Commons.Color.accent
-      }
     }
 
     Rectangle {
@@ -403,20 +398,23 @@ Item {
     }
   }
 
-  // The rail is the left strip of a rounded rectangle wide enough to keep
-  // its full radius, so on the first row it follows the card's corner.
-  Item {
-    objectName: "rowRail"
-    visible: root.open
-    width: Style.space(3)
-    height: head.height + detail.height
-    clip: true
+  // The open block closes with a line above and below, in the popup border's
+  // colour and width. The popup border itself draws the sides, and on a row
+  // that meets the popup's top edge it draws the top too, so no line doubles.
+  Rectangle {
+    objectName: "rowFrameTop"
+    visible: root.open && !root.flushTop
+    width: parent.width
+    height: root.frameWidth
+    color: Commons.Color.popups.border
+  }
 
-    Rectangle {
-      width: Math.max(parent.width, root.topRadius * 2)
-      height: parent.height
-      topLeftRadius: root.topRadius
-      color: Commons.Color.accent
-    }
+  Rectangle {
+    objectName: "rowFrameBottom"
+    visible: root.open
+    y: head.height + detail.height - height
+    width: parent.width
+    height: root.frameWidth
+    color: Commons.Color.popups.border
   }
 }

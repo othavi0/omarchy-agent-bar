@@ -141,9 +141,9 @@ literal UI.
   never takes the number. See
   `docs/specs/v10/amendments/2026-09-04-session-window-leads-design.md`.
 - `UX-020B` (amended 2026-09-10, 2026-10-21): The row slab takes an accent
-  tint under an open head (15 %) and a lighter one under a selected head
-  (7 %). The open row adds an accent lip under its head and an accent rail
-  on its left edge, spanning the head and the drawer. Settings has no idle
+  tint under an open head (6 %) and a lighter one under a selected head
+  (4 %). Lines above and below the open row, in the popup border's colour
+  and width, frame it together with the popup's own sides. Settings has no idle
   selected-looking border. See
   `docs/specs/v10/amendments/2026-10-21-popup-drawer-design.md`.
 - `UX-021`: The popup opens on the monitor that received the interaction.
