@@ -53,6 +53,15 @@ TestCase {
     compare(Core.routePanelTextKey("k", false).delta, -1)
   }
 
+  function test_route_s_in_settings() {
+    compare(Core.routePanelTextKey("s", false, "settings").action, "backToUsage")
+    compare(Core.routePanelTextKey("S", false, "settings").action, "backToUsage")
+    compare(Core.routePanelTextKey("s", false, "usage").action, "openSettings")
+    compare(Core.routePanelTextKey("s", false).action, "openSettings")
+    compare(Core.routePanelTextKey("s", true, "settings").action, "noop")
+    compare(Core.routePanelTextKey("r", false, "settings").action, "refresh")
+  }
+
   function test_editor_suppresses_shortcuts() {
     compare(Core.panelShortcutsBlocked(true), true)
     compare(Core.routePanelTextKey("s", true).action, "noop")

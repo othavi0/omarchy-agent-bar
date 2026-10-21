@@ -536,6 +536,15 @@ function formatAgoText(iso, nowMs) {
   return Math.floor(hours / 24) + "d ago"
 }
 
+// The JSON contract allows a positive integer or null; anything else reads
+// as "no known length", so pace never guesses a duration.
+function windowMinutesOf(w) {
+  if (!w || typeof w.windowMinutes !== "number" || !isFinite(w.windowMinutes))
+    return null
+  var n = Math.round(w.windowMinutes)
+  return n >= 1 ? n : null
+}
+
 function windowDisplayLines(provider, metric, nowMs) {
   var lines = []
   if (!provider || !Kernel.isArrayLike(provider.windows))
@@ -565,7 +574,8 @@ function windowDisplayLines(provider, metric, nowMs) {
       severity: severityLevel(used),
       resetsAt: w.resetsAt ? String(w.resetsAt) : null,
       resetCountdown: countdown,
-      resetPhrase: resetPhrase(countdown)
+      resetPhrase: resetPhrase(countdown),
+      windowMinutes: windowMinutesOf(w)
     })
   }
   return lines
@@ -636,7 +646,7 @@ function electLeadIndex(lines) {
 function windowLayout(provider, metric, nowMs) {
   var lines = windowDisplayLines(provider, metric, nowMs)
   var leadIndex = electLeadIndex(lines)
-  var layout = { lead: null, rest: [] }
+  var layout = { lead: null, rest: [], lines: lines }
   for (var i = 0; i < lines.length; i++) {
     if (i === leadIndex)
       layout.lead = lines[i]
@@ -847,4 +857,382 @@ function contentMode(provider) {
     return "windows"
   }
   return "state"
+}
+
+function unitWord(metric) {
+  return metric === "used" ? "used" : "left"
+}
+
+// Highest usedPercent across providers that present a reading. Ties keep the
+// first provider in display order, then the first window in delivered order.
+// Unlike electLeadIndex, a session window gets no preference here.
+function electTightest(providers, metric, nowMs) {
+  var best = null
+  var bestUsed = -Infinity
+  var list = Kernel.isArrayLike(providers) ? providers : []
+  for (var i = 0; i < list.length; i++) {
+    var p = list[i]
+    if (!p || !presentsReading(p.state))
+      continue
+    var lines = windowDisplayLines(p, metric, nowMs)
+    for (var j = 0; j < lines.length; j++) {
+      if (lines[j].usedPercent === null || lines[j].usedPercent <= bestUsed)
+        continue
+      bestUsed = lines[j].usedPercent
+      best = { providerId: String(p.id), windowId: lines[j].id }
+    }
+  }
+  return best
+}
+
+function headlineModel(providers, tightest, metric, nowMs) {
+  if (!tightest)
+    return null
+  var provider = null
+  for (var i = 0; i < providers.length; i++) {
+    if (providers[i] && String(providers[i].id) === tightest.providerId)
+      provider = providers[i]
+  }
+  var lines = windowDisplayLines(provider, metric, nowMs)
+  var line = null
+  for (var j = 0; j < lines.length; j++) {
+    if (lines[j].id === tightest.windowId)
+      line = lines[j]
+  }
+  if (!provider || !line)
+    return null
+  var name = plainText(provider.name || providerDisplayName(provider.id))
+  var word = line.id === "session" || line.id === "weekly" ? line.id : line.label
+  var resetText = line.resetCountdown.length ? line.resetPhrase + " " + line.resetCountdown : ""
+  var tagText = severityTagText(line.severity)
+  var accessible = "Tightest: " + name + " " + word + " " + line.percentText + " " + unitWord(metric)
+  if (tagText.length)
+    accessible += ", " + tagText.toLowerCase()
+  if (resetText.length)
+    accessible += ", " + resetText
+  return {
+    providerId: tightest.providerId,
+    providerName: name,
+    windowWord: word,
+    percentText: line.percentText,
+    unitText: unitWord(metric),
+    severity: line.severity,
+    critical: line.severity === "critical",
+    tagText: tagText,
+    resetText: resetText,
+    accessibleName: accessible
+  }
+}
+
+var DAY_MS = 86400000
+
+function overviewResetCellText(line, nowMs, timeFormat) {
+  if (!line.resetCountdown.length)
+    return ""
+  var text = line.resetPhrase + " " + line.resetCountdown
+  var diff = parseIsoMs(line.resetsAt) - nowMs
+  if (diff > 0 && diff < DAY_MS) {
+    var clock = resetClockText(line.resetsAt, timeFormat)
+    if (clock.length)
+      text += " " + clock
+  }
+  return text
+}
+
+function overviewWindow(line, provider, tightest, metric, nowMs, timeFormat) {
+  var resetMs = parseIsoMs(line.resetsAt)
+  var elapsed = null
+  if (line.windowMinutes !== null && isFinite(resetMs))
+    elapsed = Math.max(0, Math.min(1, 1 - (resetMs - nowMs) / (line.windowMinutes * 60000)))
+  var tick = -1
+  if (String(provider.state || "") === "ready" && elapsed !== null
+      && elapsed >= Tokens.PACE_MIN_ELAPSED)
+    tick = Math.round((metric === "used" ? elapsed : 1 - elapsed) * 100)
+  var isTightest = !!tightest && tightest.providerId === String(provider.id)
+      && tightest.windowId === line.id
+  line.critical = line.severity === "critical"
+  line.elapsed = elapsed
+  line.tickPercent = tick
+  line.isTightest = isTightest
+  line.resetCellText = isTightest ? "" : overviewResetCellText(line, nowMs, timeFormat)
+  return line
+}
+
+function paceDuration(minutes) {
+  return countdownText(Math.max(60000, Math.round(minutes) * 60000))
+}
+
+// Linear projection over the windows whose tick shows. lines are WindowModels
+// in delivered order.
+function paceModel(provider, lines, primaryId, metric, nowMs) {
+  if (!provider || String(provider.state || "") !== "ready" || !lines.length)
+    return null
+  var full = metric === "used" ? "full" : "empty"
+  var key = metric === "used" ? "= time passed" : "= time left"
+  var candidates = []
+  var timed = false
+  for (var i = 0; i < lines.length; i++) {
+    if (lines[i].elapsed !== null)
+      timed = true
+    if (lines[i].tickPercent >= 0 && lines[i].usedPercent !== null)
+      candidates.push(lines[i])
+  }
+  if (!candidates.length) {
+    if (!timed)
+      return null
+    return {
+      kind: "tooEarly",
+      glyph: Tokens.GLYPH_CLOCK,
+      critical: false,
+      text: "Too early to project, under " + Math.round(Tokens.PACE_MIN_ELAPSED * 100)
+          + "% of the window has passed.",
+      strong: "",
+      rest: "",
+      key: ""
+    }
+  }
+
+  function prefixOf(w) {
+    return w.id === primaryId || w.isTightest ? "" : w.label + " is "
+  }
+
+  for (var f = 0; f < candidates.length; f++) {
+    if (candidates[f].usedPercent < 100)
+      continue
+    var fullPrefix = prefixOf(candidates[f])
+    return {
+      kind: "fullNow",
+      glyph: Tokens.GLYPH_ALERT,
+      critical: true,
+      text: fullPrefix,
+      strong: fullPrefix.length ? full + " now" : full.charAt(0).toUpperCase() + full.slice(1) + " now",
+      rest: "",
+      key: key
+    }
+  }
+
+  var soonest = null
+  var soonestMin = Infinity
+  var widest = null
+  var widestProjected = -Infinity
+  for (var c = 0; c < candidates.length; c++) {
+    var w = candidates[c]
+    var projected = w.usedPercent / w.elapsed
+    if (projected >= 100) {
+      var toFull = (100 - w.usedPercent) / (w.usedPercent / (w.elapsed * w.windowMinutes))
+      if (toFull < soonestMin) {
+        soonest = w
+        soonestMin = toFull
+      }
+    } else if (projected > widestProjected) {
+      widest = w
+      widestProjected = projected
+    }
+  }
+
+  if (soonest) {
+    var resetMin = (parseIsoMs(soonest.resetsAt) - nowMs) / 60000
+    return {
+      kind: "runsOut",
+      glyph: Tokens.GLYPH_ALERT,
+      critical: soonest.critical,
+      text: "At this pace " + prefixOf(soonest),
+      strong: full + " in ~" + paceDuration(soonestMin),
+      rest: ", " + paceDuration(Math.max(0, resetMin - soonestMin)) + " before reset",
+      key: key
+    }
+  }
+
+  var n = Math.min(99, Math.round(widestProjected))
+  return {
+    kind: "lasts",
+    glyph: Tokens.GLYPH_CHECK,
+    critical: false,
+    text: "",
+    strong: "Lasts to reset",
+    rest: ", " + widest.label + " ends near " + (metric === "used" ? n + "% used" : (100 - n) + "% left"),
+    key: key
+  }
+}
+
+function statusGlyph(state) {
+  switch (String(state || "")) {
+  case "cli_missing": return Tokens.GLYPH_PLUG
+  case "unauthenticated": return Tokens.GLYPH_USER
+  case "rate_limited": return Tokens.GLYPH_CLOCK
+  case "network_error": return Tokens.GLYPH_WIFI_OFF
+  case "provider_error": return Tokens.GLYPH_ALERT
+  default: return ""
+  }
+}
+
+function overviewRowKind(provider) {
+  var state = String(provider.state || "")
+  if (state === "loading")
+    return "loading"
+  if (presentsReading(state) && Kernel.isArrayLike(provider.windows) && provider.windows.length > 0)
+    return "reading"
+  return "status"
+}
+
+function overviewResetLines(provider, dateFormat, timeFormat) {
+  var raw = resetsOf(provider)
+  var rows = resetRows(provider, dateFormat, timeFormat)
+  var out = []
+  for (var i = 0; i < rows.length; i++) {
+    var hasTotal = raw[i].total !== null && raw[i].total !== undefined
+    var facts = [
+      resetCountAccessible(raw[i].available, raw[i].total) + (hasTotal ? " available" : ""),
+      rows[i].clearsText.length ? "clears " + rows[i].clearsText : "",
+      rows[i].dateText
+    ]
+    out.push({
+      label: rows[i].label,
+      facts: facts.filter(function (fact) { return fact.length > 0 })
+    })
+  }
+  return out
+}
+
+function overviewRow(provider, metric, nowMs, tightest, ui) {
+  var id = String(provider.id || "")
+  var state = String(provider.state || "")
+  var name = plainText(provider.name || providerDisplayName(id))
+  var kind = overviewRowKind(provider)
+  var timeFormat = ui.timeFormat
+  var layout = windowLayout(provider, metric, nowMs)
+  for (var i = 0; i < layout.lines.length; i++)
+    overviewWindow(layout.lines[i], provider, tightest, metric, nowMs, timeFormat)
+  var primary = layout.lead
+  var reading = kind === "reading"
+
+  var ago = formatAgoText(provider.lastSuccessAt, nowMs)
+  var updatedText = ago.length ? "Updated " + ago : ""
+
+  var subText = ""
+  var subTag = ""
+  if (reading) {
+    subText = primary.label
+    if (state === "stale") {
+      if (updatedText.length)
+        subText += " · " + updatedText
+    } else if (primary.isTightest) {
+      subTag = "Tightest"
+    } else if (primary.resetCountdown.length) {
+      subText += " · " + primary.resetPhrase + " " + primary.resetCountdown
+    }
+  }
+
+  var actions = stateActions(provider)
+  var action = null
+  var refreshLabel = "Refresh"
+  for (var a = 0; a < actions.length; a++) {
+    if (actions[a].kind === "retry")
+      refreshLabel = actions[a].label
+    else if (action === null)
+      action = actions[a]
+  }
+
+  var severity = reading ? providerSeverity(provider) : ""
+  var severityWord = severity === "critical" ? "critical" : (severity === "warning" ? "low" : "")
+  var valueText = reading ? primary.percentText
+      : (kind === "loading" ? chipNumeralText(provider, metric, nowMs) : "—")
+  var unitText = reading ? unitWord(metric) : ""
+  var statusWord = settingsProviderStatus(provider)
+
+  var accessibleName
+  if (reading) {
+    accessibleName = name + ", " + valueText + " " + unitText
+    if (severityWord.length)
+      accessibleName += ", " + severityWord
+    accessibleName += ", " + subText
+    if (subTag.length)
+      accessibleName += ", tightest"
+  } else if (kind === "loading") {
+    accessibleName = name + ", loading"
+  } else {
+    accessibleName = statusWord.length ? name + ", " + statusWord : name
+  }
+
+  var summary = resetsSummary(provider)
+  var resetUi = ui.resetUi
+  return {
+    id: id,
+    name: name,
+    kind: kind,
+    state: state,
+    plan: plainText(planBadge(provider)),
+    openable: kind !== "loading",
+    selected: false,
+    open: false,
+    dimIcon: kind === "status" && !!ERROR_STATES[state],
+    primary: primary,
+    windows: layout.rest,
+    valueText: valueText,
+    unitText: unitText,
+    critical: reading && primary.critical,
+    severityWord: severityWord,
+    subText: subText,
+    subTag: subTag,
+    statusWord: statusWord,
+    statusGlyph: statusGlyph(state),
+    statusBody: stateBody(provider),
+    action: action,
+    refreshLabel: refreshLabel,
+    updatedText: updatedText,
+    pace: reading ? paceModel(provider, layout.lines, primary.id, metric, nowMs) : null,
+    tickDescription: primary && primary.tickPercent >= 0
+        ? Math.round(primary.elapsed * 100) + "% of the window has passed."
+        : "",
+    resets: overviewResetLines(provider, ui.dateFormat, timeFormat),
+    useReset: {
+      visible: summary.visible,
+      enabled: summary.claimableId !== null && !ui.resetBusy,
+      resetId: summary.claimableId,
+      text: ui.resetBusy ? "Using reset…" : "Use reset"
+    },
+    outcomeText: resetUi && String(resetUi.providerId || "") === id
+        ? resetOutcomeText(resetUi.outcome, timeFormat)
+        : "",
+    refreshing: !!ui.refreshing,
+    accessibleName: accessibleName
+  }
+}
+
+// selection = { id, collapsed } from the service popup owner.
+// ui = { refreshing, resetUi, resetBusy, dateFormat, timeFormat }.
+function overviewModel(snapshot, settings, nowMs, selection, ui) {
+  var metric = displayMetric(settings)
+  var opts = ui || {}
+  var providers = visibleProviders(snapshot, settings)
+  var tightest = electTightest(providers, metric, nowMs)
+  var rows = []
+  for (var i = 0; i < providers.length; i++)
+    rows.push(overviewRow(providers[i], metric, nowMs, tightest, opts))
+
+  var want = selection && selection.id ? String(selection.id) : ""
+  var selectedId = rows.length ? rows[0].id : ""
+  for (var s = 0; s < rows.length; s++) {
+    if (rows[s].id === want)
+      selectedId = want
+  }
+  var collapsed = !!(selection && selection.collapsed)
+  var openId = ""
+  for (var r = 0; r < rows.length; r++) {
+    rows[r].selected = rows[r].id === selectedId
+    if (rows[r].selected && rows[r].openable && !collapsed)
+      openId = rows[r].id
+  }
+  for (var o = 0; o < rows.length; o++)
+    rows[o].open = rows[o].id === openId
+
+  return {
+    metric: metric,
+    unitText: unitWord(metric),
+    rows: rows,
+    selectedId: selectedId,
+    openId: openId,
+    tightest: tightest,
+    headline: headlineModel(providers, tightest, metric, nowMs)
+  }
 }

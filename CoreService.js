@@ -411,8 +411,25 @@ function requestPopup(current, owner, providerId, view) {
   return {
     owner: o,
     providerId: providerId === null || providerId === undefined ? null : String(providerId),
-    view: view ? String(view) : "usage"
+    view: view ? String(view) : "usage",
+    collapsed: false
   }
+}
+
+// A head click on the open row collapses it; any other row opens instead.
+function togglePopupRow(current, owner, providerId) {
+  if (!current || current.owner !== owner)
+    return current
+  var id = String(providerId || "")
+  if (String(current.providerId || "") === id) {
+    return {
+      owner: current.owner,
+      providerId: current.providerId,
+      view: current.view,
+      collapsed: !current.collapsed
+    }
+  }
+  return { owner: owner, providerId: id, view: "usage", collapsed: false }
 }
 
 function closePopup(current, owner) {
