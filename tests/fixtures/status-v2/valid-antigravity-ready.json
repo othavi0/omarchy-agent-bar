@@ -19,28 +19,32 @@
           "label": "Gemini · 7d",
           "usedPercent": 14.0,
           "remainingPercent": 86.0,
-          "resetsAt": "2026-08-27T16:18:13Z"
+          "resetsAt": "2026-08-27T16:18:13Z",
+          "windowMinutes": 10080
         },
         {
           "id": "gemini-5h",
           "label": "Gemini · 5h",
           "usedPercent": 8.0,
           "remainingPercent": 92.0,
-          "resetsAt": "2026-08-21T22:09:26Z"
+          "resetsAt": "2026-08-21T22:09:26Z",
+          "windowMinutes": 300
         },
         {
           "id": "3p-weekly",
           "label": "Claude/GPT · 7d",
           "usedPercent": 0.0,
           "remainingPercent": 100.0,
-          "resetsAt": null
+          "resetsAt": null,
+          "windowMinutes": 10080
         },
         {
           "id": "3p-5h",
           "label": "Claude/GPT · 5h",
           "usedPercent": 0.0,
           "remainingPercent": 100.0,
-          "resetsAt": null
+          "resetsAt": null,
+          "windowMinutes": 300
         }
       ],
       "lastSuccessAt": "2026-08-21T12:00:00Z",

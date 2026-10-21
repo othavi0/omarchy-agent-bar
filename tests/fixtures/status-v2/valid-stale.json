@@ -22,7 +22,8 @@
           "label": "Session (5h)",
           "usedPercent": 90.0,
           "remainingPercent": 10.0,
-          "resetsAt": null
+          "resetsAt": null,
+          "windowMinutes": null
         }
       ],
       "lastSuccessAt": "2026-07-26T18:40:00Z",

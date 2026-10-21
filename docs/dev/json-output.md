@@ -37,7 +37,8 @@ Representative response:
           "label": "Session (5h)",
           "usedPercent": 42.0,
           "remainingPercent": 58.0,
-          "resetsAt": "2026-07-26T22:00:00Z"
+          "resetsAt": "2026-07-26T22:00:00Z",
+          "windowMinutes": 300
         }
       ],
       "lastSuccessAt": "2026-07-26T18:42:00Z",
@@ -69,6 +70,9 @@ completed status envelope never serializes `loading`.
 - Percentages are finite and inside `0..=100`.
 - Used plus remaining equals 100 within 0.01.
 - Resets are UTC RFC 3339 or `null`.
+- `windowMinutes` is the nominal window length in whole minutes, or `null`
+  when the provider defines none. The popup uses it only for the pace tick and
+  projection. A cached window written before this key loads as `null`.
 - No `-1`, NaN, infinity, or string sentinel.
 - A connected provider may have an empty windows array.
 - Empty percentage data renders `—`; it does not fabricate a value.

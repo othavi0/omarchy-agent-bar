@@ -22,14 +22,16 @@
           "label": "Session (5h)",
           "usedPercent": 10.0,
           "remainingPercent": 90.0,
-          "resetsAt": "2026-07-26T22:00:00Z"
+          "resetsAt": "2026-07-26T22:00:00Z",
+          "windowMinutes": 300
         },
         {
           "id": "weekly",
           "label": "Weekly (7d)",
           "usedPercent": 25.5,
           "remainingPercent": 74.5,
-          "resetsAt": "2026-08-01T00:00:00Z"
+          "resetsAt": "2026-08-01T00:00:00Z",
+          "windowMinutes": 10080
         }
       ],
       "lastSuccessAt": "2026-07-26T18:40:00Z",
