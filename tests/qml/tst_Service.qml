@@ -227,6 +227,42 @@ TestCase {
     compare(s.selectedProviderId, "grok")
   }
 
+  function test_toggle_popup_row() {
+    compare(Core.requestPopup(null, "mon-a", "claude", "usage").collapsed, false)
+
+    var open = { owner: "mon-a", providerId: "claude", view: "usage", collapsed: false }
+    var folded = Core.togglePopupRow(open, "mon-a", "claude")
+    compare(folded, { owner: "mon-a", providerId: "claude", view: "usage", collapsed: true })
+    compare(open.collapsed, false)
+    compare(Core.togglePopupRow(folded, "mon-a", "claude").collapsed, false)
+
+    compare(Core.togglePopupRow(folded, "mon-a", "codex"),
+            { owner: "mon-a", providerId: "codex", view: "usage", collapsed: false })
+    compare(Core.togglePopupRow(open, "mon-b", "claude"), open)
+    compare(Core.togglePopupRow(null, "mon-a", "claude"), null)
+
+    var s = createService()
+    s.requestPopup("mon-a", "claude", "usage")
+    compare(s.popupOwner.collapsed, false)
+    s.toggleProviderRow("mon-a", "claude")
+    compare(s.popupOwner.collapsed, true)
+    compare(s.selectedProviderId, "claude")
+    s.toggleProviderRow("mon-a", "codex")
+    compare(s.popupOwner.providerId, "codex")
+    compare(s.popupOwner.collapsed, false)
+    compare(s.selectedProviderId, "codex")
+    s.toggleProviderRow("mon-b", "grok")
+    compare(s.popupOwner.owner, "mon-a")
+    compare(s.popupOwner.providerId, "codex")
+    compare(s.selectedProviderId, "codex")
+
+    s.toggleProviderRow("mon-a", "codex")
+    compare(s.popupOwner.collapsed, true)
+    s.requestPopup("mon-b", "codex", "usage")
+    compare(s.popupOwner.owner, "mon-b")
+    compare(s.popupOwner.collapsed, false)
+  }
+
   function test_settings_open_captures_snapshot() {
     var s = createService()
     finishLane(s, "settingsBootstrap", 1)

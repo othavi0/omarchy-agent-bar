@@ -6,6 +6,7 @@
 
 use std::collections::HashSet;
 use std::fmt;
+use std::num::NonZeroU32;
 
 use serde::{Deserialize, Serialize};
 use time::format_description::well_known::Rfc3339;
@@ -221,6 +222,11 @@ pub struct UsageWindow {
     remaining_percent: f64,
     #[serde(with = "time::serde::rfc3339::option")]
     resets_at: Option<OffsetDateTime>,
+    /// Nominal window length in whole minutes; `None` when the provider
+    /// defines none. Rows written before this field load as `None`
+    /// (CACHE-001B); `0` is unrepresentable and fails deserialization.
+    #[serde(default)]
+    window_minutes: Option<NonZeroU32>,
 }
 
 impl UsageWindow {
@@ -256,7 +262,17 @@ impl UsageWindow {
             used_percent,
             remaining_percent,
             resets_at,
+            window_minutes: None,
         })
+    }
+
+    pub fn with_window_minutes(mut self, minutes: Option<NonZeroU32>) -> Self {
+        self.window_minutes = minutes;
+        self
+    }
+
+    pub fn window_minutes(&self) -> Option<NonZeroU32> {
+        self.window_minutes
     }
 
     pub fn id(&self) -> &str {
@@ -1082,6 +1098,37 @@ mod tests {
         assert!(UsageWindow::try_new("s", "S", 40.0, 50.0, None).is_err());
         assert!(UsageWindow::try_new("s", "S", 40.0, 60.0, None).is_ok());
         assert!(UsageWindow::try_new("s", "S", 40.005, 59.995, None).is_ok());
+    }
+
+    #[test]
+    fn window_minutes_serializes_null_by_default() {
+        let json = serde_json::to_string(&session_window()).unwrap();
+        assert!(json.contains(r#""windowMinutes":null"#), "{json}");
+    }
+
+    #[test]
+    fn window_minutes_serializes_when_set() {
+        let window = session_window().with_window_minutes(std::num::NonZeroU32::new(300));
+        let json = serde_json::to_string(&window).unwrap();
+        assert!(json.contains(r#""windowMinutes":300"#), "{json}");
+        let back: UsageWindow = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, window);
+        assert_eq!(back.window_minutes().map(|m| m.get()), Some(300));
+    }
+
+    #[test]
+    fn window_without_window_minutes_key_deserializes() {
+        let json = r#"{"id":"session","label":"Session","usedPercent":42.0,
+            "remainingPercent":58.0,"resetsAt":null}"#;
+        let window: UsageWindow = serde_json::from_str(json).unwrap();
+        assert_eq!(window.window_minutes(), None);
+    }
+
+    #[test]
+    fn window_minutes_zero_is_rejected() {
+        let json = r#"{"id":"session","label":"Session","usedPercent":42.0,
+            "remainingPercent":58.0,"resetsAt":null,"windowMinutes":0}"#;
+        assert!(serde_json::from_str::<UsageWindow>(json).is_err());
     }
 
     #[test]

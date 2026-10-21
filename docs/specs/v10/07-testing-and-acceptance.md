@@ -69,14 +69,18 @@ Mandatory known-defect regressions:
 - `TEST-029`: Agent Bar declares no custom QML animations, and at least one
   light and one dark Quattro theme render correctly.
 
-Required screenshot states:
+Required screenshot states (amended 2026-10-21, adding `ready-white.png`
+and `critical-dark.png`; see
+`docs/specs/v10/amendments/2026-10-21-popup-overview-redesign-design.md`):
 
 ```text
 ready-light.png
 ready-dark.png
+ready-white.png
 loading-dark.png
 refreshing-with-data-dark.png
 stale-dark.png
+critical-dark.png
 cli-missing-dark.png
 unauthenticated-dark.png
 rate-limited-dark.png
@@ -99,10 +103,19 @@ scripts/verify-v10-ui
 ```
 
 The script recreates `target/v10-ui-evidence/`, invokes
-`tst_Screenshots.qml` through `qmltestrunner`, verifies the exact inventory
-above with no extra PNG, and writes sorted
+`tst_Screenshots.qml` through `qmltestrunner` with `-import
+tests/qml/modules` ahead of the host shell import, verifies the exact
+inventory above with no extra PNG, and writes sorted
 `target/v10-ui-evidence/SHA256SUMS`. The PR records that directory and
 hash file.
+
+- `TEST-043` (added 2026-10-21): Screenshots render the real `Popup.qml`
+  with the real `Service.qml` against the stub host modules in
+  `tests/qml/modules`, from deterministic fixtures. A missing output
+  directory or a failed save fails the run.
+- `TEST-044` (added 2026-10-21): The fixed scan lists in
+  `tst_Accessibility.qml` and `tst_Tokens.qml` equal the QML files on disk,
+  minus declared exemptions.
 
 ## Legacy and documentation gates
 

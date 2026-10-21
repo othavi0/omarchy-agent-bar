@@ -297,8 +297,6 @@ The table is product data, not an example:
 ├── Service.qml
 ├── BarWidget.qml
 ├── Popup.qml
-├── ProviderRail.qml
-├── ProviderView.qml
 ├── SettingsView.qml
 ├── MaintenanceView.qml
 ├── CoreMaintenance.js
@@ -307,9 +305,16 @@ The table is product data, not an example:
 ├── CoreSettings.js
 ├── CoreView.js
 ├── components/
+│   ├── Tokens.js
 │   ├── ProviderChip.qml
-│   ├── ProviderHeader.qml
-│   ├── UsageWindow.qml
+│   ├── ProviderIcon.qml
+│   ├── UsageMeter.qml
+│   ├── OverviewBand.qml
+│   ├── OverviewList.qml
+│   ├── ProviderRow.qml
+│   ├── RowDetail.qml
+│   ├── PopupFooter.qml
+│   ├── SettingsHeader.qml
 │   ├── StateMessage.qml
 │   ├── SettingsProviderRow.qml
 │   ├── ConfirmDialog.qml

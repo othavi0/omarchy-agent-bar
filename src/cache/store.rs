@@ -450,6 +450,113 @@ mod tests {
         );
     }
 
+    fn cache_document_with_window(window: &str) -> String {
+        format!(
+            r#"{{
+            "schemaVersion": 2,
+            "revision": 4,
+            "providers": {{
+                "claude": {{
+                    "startedAt": "2026-07-26T18:42:00Z",
+                    "completedAt": "2026-07-26T18:42:01Z",
+                    "expiresAt": "2026-07-26T18:47:01Z",
+                    "status": {{
+                        "id": "claude",
+                        "name": "Claude",
+                        "state": "ready",
+                        "source": "live",
+                        "plan": null,
+                        "windows": [{window}],
+                        "lastSuccessAt": "2026-07-26T18:40:00Z",
+                        "error": null,
+                        "action": null
+                    }}
+                }}
+            }}
+        }}"#
+        )
+    }
+
+    const PRE_WINDOW_MINUTES_WINDOW: &str = r#"{"id": "session", "label": "Session",
+        "usedPercent": 42.0, "remainingPercent": 58.0,
+        "resetsAt": "2026-07-26T22:00:00Z"}"#;
+
+    fn corrupt_files(dir: &Path) -> usize {
+        fs::read_dir(dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().contains("corrupt-"))
+            .count()
+    }
+
+    #[test]
+    fn parse_document_accepts_window_without_window_minutes() {
+        let doc = parse_document(cache_document_with_window(PRE_WINDOW_MINUTES_WINDOW).as_bytes())
+            .expect("a window written before windowMinutes must load");
+        let entry = doc.get(ProviderId::Claude).expect("claude entry loads");
+        assert_eq!(entry.status.windows().len(), 1);
+        assert_eq!(entry.status.windows()[0].window_minutes(), None);
+    }
+
+    #[test]
+    fn load_keeps_pre_window_minutes_cache_without_quarantine() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = store_in(dir.path());
+        fs::write(
+            &store.paths.document,
+            cache_document_with_window(PRE_WINDOW_MINUTES_WINDOW),
+        )
+        .unwrap();
+        let doc = store.load().unwrap();
+        assert_eq!(doc.revision, 4, "old cache must not be quarantined");
+        let entry = doc.get(ProviderId::Claude).expect("claude entry loads");
+        assert_eq!(entry.status.windows()[0].window_minutes(), None);
+        assert_eq!(corrupt_files(dir.path()), 0);
+    }
+
+    #[test]
+    fn load_quarantines_window_minutes_zero() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = store_in(dir.path());
+        let zero = r#"{"id": "session", "label": "Session",
+            "usedPercent": 42.0, "remainingPercent": 58.0,
+            "resetsAt": null, "windowMinutes": 0}"#;
+        fs::write(&store.paths.document, cache_document_with_window(zero)).unwrap();
+        let doc = store.load().unwrap();
+        assert!(doc.providers.is_empty(), "quarantine resets to empty");
+        assert_eq!(corrupt_files(dir.path()), 1);
+    }
+
+    #[test]
+    fn cache_round_trip_keeps_window_minutes() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = store_in(dir.path());
+        let now = datetime!(2026-07-26 18:42:00 UTC);
+        let window =
+            crate::status::schema::UsageWindow::try_new("session", "Session", 42.0, 58.0, None)
+                .unwrap()
+                .with_window_minutes(std::num::NonZeroU32::new(300));
+        let status = ProviderStatus::ready(
+            ProviderId::Claude,
+            "Claude",
+            DataSource::Live,
+            None,
+            vec![window],
+            now,
+        )
+        .unwrap();
+        let entry = entry_from_status(status, now, now, std::time::Duration::from_secs(300));
+        store
+            .merge_provider(ProviderId::Claude, entry, now)
+            .unwrap();
+        let doc = store.load().unwrap();
+        let entry = doc.get(ProviderId::Claude).expect("claude entry loads");
+        assert_eq!(
+            entry.status.windows()[0].window_minutes().map(|m| m.get()),
+            Some(300)
+        );
+    }
+
     #[test]
     fn corrupt_cache_is_quarantined() {
         let dir = tempfile::tempdir().unwrap();

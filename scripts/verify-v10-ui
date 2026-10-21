@@ -44,6 +44,7 @@ fi
 "${QMLTEST}" \
   -input "${QML_TEST}" \
   -import /usr/share/omarchy/shell \
+  -import "${ROOT}/tests/qml/modules" \
   -import "${ROOT}" \
   -o -,txt
 

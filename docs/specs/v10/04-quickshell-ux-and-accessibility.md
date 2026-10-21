@@ -14,9 +14,11 @@ verified Quattro-native glyphs or explicit English text labels.
   remaining percentage of the elected lead window (per `UX-020D`), so the
   chip and the popup always name the same number.
 - `UX-003`: Do not render `AB`, `Agent Bar`, or a generic leading product icon.
-- `UX-004`: Left click opens the clicked provider.
+- `UX-004` (superseded 2026-10-21 by `UX-078`): Left click opens the popup
+  with the clicked provider's row open.
 - `UX-005`: Left-clicking the same provider while open closes the popup.
-- `UX-006`: Left-clicking another provider switches content without closing.
+- `UX-006` (superseded 2026-10-21 by `UX-078`): Left-clicking another
+  provider opens that provider's row without closing.
 - `UX-007`: Middle click requests one all-provider cache-bypass refresh.
 - `UX-008`: Right click opens Settings.
 - `UX-009`: Mouse wheel over a bar chip has no effect.
@@ -35,64 +37,87 @@ verified Quattro-native glyphs or explicit English text labels.
 
 ## Popup layout
 
+Amended 2026-10-21: the rail and the single-provider pane are replaced by
+a headline band, one row per enabled provider with an accordion detail,
+and a footer. See
+`docs/specs/v10/amendments/2026-10-21-popup-overview-redesign-design.md`.
+
 ```text
-+------+-------------------------------------------+
-|  C   | Claude                  Max | Connected   |
-|  O   | Updated 2 minutes ago              [R]    |
-|  A   +-------------------------------------------+
-|  G   |                                           |
-|      | Selected provider content                 |
-|      |                                           |
-|      | Full-width sections and separators        |
-|      |                                           |
-|  S   |                                           |
-+------+-------------------------------------------+
++--------------------------------------------------+
+| [C] Tightest: Claude session 76% used ·          |
+|     resets in 1h 32m                             |
++--------------------------------------------------+
+| [C] Claude      [========|==  ]   76%            |
+|     Max         Session (5h) [Tightest]   used   |
+|     Open row detail: pace line, other windows,   |
+|     reset facts, Updated <age> [Use reset] [R]   |
++--------------------------------------------------+
+| [O] Codex       [=           ]    2%             |
++--------------------------------------------------+
+| [S] Settings          [↑↓] provider · [r] · [s]  |
++--------------------------------------------------+
 ```
 
-`C`, `O`, `A`, and `G` represent provider icons. `S` represents the native
-settings glyph. `[R]` represents the native refresh glyph; these letters are
-not literal UI.
+`C` and `O` represent provider icons. `S` represents the native settings
+glyph. `[R]` represents the native refresh glyph; these letters are not
+literal UI.
 
-- `UX-013`: The left rail is visually separate and uses provider icons only.
-- `UX-014` (amended 2026-09-10): Provider names are available through
+- `UX-075` to `UX-086` (added 2026-10-21): usage view layout, headline
+  band, row anatomy, accordion, row detail, pace tick, pace line, status
+  rows, footer, Settings band and edges, chip alert glyph, and tokens. See
+  `docs/specs/v10/amendments/2026-10-21-popup-overview-redesign-design.md`.
+
+- `UX-013` (superseded 2026-10-21 by `UX-075`): The left rail is visually
+  separate and uses provider icons only. There is no rail.
+- `UX-014` (amended 2026-09-10, superseded 2026-10-21 by `A11Y-024`): Provider names are available through
   tooltips and accessibility. Each provider slot's tooltip and accessible name
   read like the chip's accessible label, with `critical` appended when a
   critical window drives severity, and the slot shows the chip's `!` cue in
   its corner under the same rule as the bar chip (`UX-020C`). A hairline
   separates the rail from the content. See
   `docs/specs/v10/amendments/2026-09-10-settings-tabs-and-rail-state-design.md`.
-- `UX-015`: Settings is the last control in the rail stack (the stack shares
+- `UX-015` (superseded 2026-10-21 by `UX-083`): Settings is the last control in the rail stack (the stack shares
   the popup content inset top and bottom; not overlaid with
   `anchors.bottom` on short cards).
-- `UX-016`: The provider header does not repeat the provider icon.
-- `UX-017`: The header shows the provider name, the plan tag, severity when
+- `UX-016` (amended 2026-10-21): The provider header is removed; see
+  `UX-076`, `UX-077`, and `UX-079`. The former text: the provider header
+  does not repeat the provider icon.
+- `UX-017` (amended 2026-10-21): The header is removed; the band carries
+  severity (`UX-076`), the row carries the name and plan (`UX-077`), and the
+  open row's action line carries the update age and refresh (`UX-079`).
+  The former text: the header shows the provider name, the plan tag, severity when
   present, and the provider refresh control. Connection state is implied
   structurally (windows render only when a reading exists) and update age
   lives in the pane's neutral age caption (`UX-028`).
-- `UX-018`: Only one provider's content is visible at a time.
-- `UX-019` (amended 2026-09-10): In provider content, section backgrounds and
-  separators extend through the full content width. Settings sections open
-  with a titled rule that runs to the right edge instead, with no separator
-  between them. See
-  `docs/specs/v10/amendments/2026-09-10-settings-tabs-and-rail-state-design.md`.
+- `UX-018` (superseded 2026-10-21 by `UX-075` and `UX-078`): Every enabled
+  provider is a row; at most one row's detail is open.
+- `UX-019` (amended 2026-09-10, 2026-10-21): Every band, rule, row fill, and
+  footer runs edge to edge to the popup border, Settings included; text
+  carries its own indent. Settings sections still open with a titled rule.
+  See
+  `docs/specs/v10/amendments/2026-09-10-settings-tabs-and-rail-state-design.md`
+  and `docs/specs/v10/amendments/2026-10-21-popup-overview-redesign-design.md`.
 - `UX-020`: Popup dimensions use Quattro fitting helpers and the current screen
   geometry; fixed sizes are maximum intentions, not unconditional dimensions.
   Content-fit height has a small compact floor only; no large empty minimum.
-- `UX-020A`: Every percentage window row shows a horizontal usage track
-  filled by the displayed metric (used or remaining), in both the lead window
-  and the compact rows, so secondary windows stay comparable.
-- `UX-020C` (amended 2026-09-04): Severity is computed from `usedPercent`,
-  independent of the displayed metric, using the notification thresholds: at
-  or above 95 the window is Critical, at or above 90 it is Warning. The popup
-  header shows a severity tag reading `Critical` or `Low` when the provider
+- `UX-020A` (amended 2026-10-21): Every percentage window row shows a
+  horizontal usage track filled by the displayed metric (used or remaining),
+  in both the row primary and the detail windows, so secondary windows stay
+  comparable. The meter carries the pace tick (`UX-080`).
+- `UX-020C` (amended 2026-09-04, 2026-10-21): Severity is computed from
+  `usedPercent`, independent of the displayed metric, using the notification
+  thresholds: at or above 95 the window is Critical, at or above 90 it is
+  Warning. The headline band (`UX-076`; formerly the popup header) shows a
+  severity tag reading `Critical` or `Low` when the provider
   has one, a critical window renders its numeral and track in the urgent
   theme colour whether it is the lead or a compact row, and a ready provider
-  with a critical window shows the `!` cue on its bar chip; the cue's
+  with a critical window shows the alert glyph (`UX-085`) on its bar chip; the cue's
   accessible name carries the word `critical` even when the chip numeral
   belongs to a non-critical session window. Every level carries a word; no level is
   colour-only.
-- `UX-020D` (amended 2026-09-04, 2026-09-10): The popup renders exactly one
-  lead window, elected deterministically: a session window (window id
+- `UX-020D` (amended 2026-09-04, 2026-09-10, 2026-10-21): Each popup row
+  renders exactly one primary window (`UX-077`), and the other windows move
+  to the row detail (`UX-079`). The primary is the lead window, elected deterministically: a session window (window id
   `session`, `gemini-5h`, or `3p-5h`) leads whenever present, and among
   several the one with the lowest remaining percentage, ties keeping the
   delivered order; otherwise a critical window wins, and among criticals the one
@@ -105,28 +130,31 @@ not literal UI.
   hours. A critical non-lead window still drives severity (`UX-020C`); it
   never takes the number. See
   `docs/specs/v10/amendments/2026-09-04-session-window-leads-design.md`.
-- `UX-020B` (amended 2026-09-10): The rail uses a neutral soft plate only
-  for the slot that owns the open content: the selected provider in the
-  usage view, the Settings slot while Settings is open. No accent edge tick;
-  Settings has no idle selected-looking border.
+- `UX-020B` (amended 2026-09-10, 2026-10-21): The selected or open row head
+  uses the neutral `Style.normalFill` plate. No accent edge tick; Settings
+  has no idle selected-looking border.
 - `UX-021`: The popup opens on the monitor that received the interaction.
 - `UX-022`: Only one agent-bar popup is visible across all monitors.
 - `UX-023`: Moving the popup to another monitor preserves selected provider
   and service state.
-- `UX-024`: Selection and scroll position persist while the popup remains open.
-- `UX-025`: A new open resets the selected provider content to the top.
+- `UX-024` (superseded 2026-10-21 by `UX-078`): Selection, the collapsed
+  flag, and scroll position persist while the popup remains open.
+- `UX-025` (superseded 2026-10-21 by `UX-078`): A new open scrolls the rows
+  to the top and keeps the selected row open.
 
 ## Provider states
 
 - `UX-026`: Initial collection with no prior data uses skeleton placeholders.
 - `UX-027`: Refresh with prior data keeps content and shows a subtle progress
   indicator.
-- `UX-028` (amended 2026-08-10): Stale is retained data, not a fault, and
-  renders as such. Bar and popup treat a stale provider exactly like a ready
-  one — same opacity, same severity colour, no cue, no urgent tint, no error
-  text, and no recovery action. The popup's only acknowledgement is one
-  neutral caption, `Updated <age>`, in the pane foreground; the header's
-  refresh control remains the way to force a collection. The typed error and
+- `UX-028` (amended 2026-08-10, 2026-10-21): Stale is retained data, not a
+  fault, and renders as such. Bar and popup treat a stale provider exactly
+  like a ready one — same opacity, same severity colour, no cue, no urgent
+  tint, no error text, and no recovery action. The popup's only
+  acknowledgement is the neutral caption `Updated <age>`, in the row's sub
+  line (`{label} · Updated <age>`) and in the open row's action line; the
+  action line's Refresh remains the way to force a collection. A stale row
+  shows no pace tick and no pace line (`UX-080`). The typed error and
   the `retry` action stay in the status JSON for `agent-bar status`; the UI
   does not surface them.
 
@@ -248,11 +276,13 @@ Requirements:
 ## Keyboard and focus
 
 - `A11Y-001`: Use `KeyboardPanel` as the popup keyboard surface.
-- `A11Y-002`: Up/Down and `j`/`k` switch provider rail entries.
+- `A11Y-002` (amended 2026-10-21): Up/Down and `j`/`k` move the row
+  selection and open the selected row. They do nothing in Settings.
 - `A11Y-003`: Tab and Shift+Tab traverse visible actions in visual order.
 - `A11Y-004`: Enter and Space activate the focused control.
 - `A11Y-005`: `r` refreshes the selected provider.
-- `A11Y-006`: `s` opens Settings.
+- `A11Y-006` (amended 2026-10-21): `s` opens Settings from the usage view
+  and returns to the usage view from Settings.
 - `A11Y-007`: Escape closes the popup.
 - `A11Y-008`: Panel shortcuts are suspended while a field editor owns input.
 - `A11Y-009`: Every interactive control has native visible focus,
@@ -263,6 +293,10 @@ Requirements:
 - `A11Y-013`: Agent Bar QML declares no `Behavior`, `Transition`, or animation
   of its own. Internal motion of imported Quattro controls is host-owned and is
   not represented as a plugin-controlled reduced-motion setting.
+- `A11Y-024` to `A11Y-026` (added 2026-10-21): the expandable row head, the
+  usage and Settings focus order, and pace and severity cues that are never
+  colour only. See
+  `docs/specs/v10/amendments/2026-10-21-popup-overview-redesign-design.md`.
 
 ## Scrolling
 

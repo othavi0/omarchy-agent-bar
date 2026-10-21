@@ -70,12 +70,12 @@ function panelShortcutsBlocked(editorActive) {
   return !!editorActive
 }
 
-function routePanelTextKey(key, editorActive) {
+function routePanelTextKey(key, editorActive, view) {
   if (panelShortcutsBlocked(editorActive))
     return { action: "noop" }
   var k = String(key || "")
   if (k === "s" || k === "S")
-    return { action: "openSettings" }
+    return { action: view === "settings" ? "backToUsage" : "openSettings" }
   if (k === "r" || k === "R")
     return { action: "refresh" }
   if (k === "j" || k === "J")

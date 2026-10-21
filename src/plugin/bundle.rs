@@ -34,8 +34,6 @@ pub const SHIPPED_ROOT_FILES: &[&str] = &[
     "LICENSE",
     "MaintenanceView.qml",
     "Popup.qml",
-    "ProviderRail.qml",
-    "ProviderView.qml",
     "README.md",
     "Service.qml",
     "SettingsView.qml",
@@ -985,8 +983,6 @@ mod tests {
             "CoreView.js",
             "MaintenanceView.qml",
             "Popup.qml",
-            "ProviderRail.qml",
-            "ProviderView.qml",
             "SettingsView.qml",
         ] {
             fs::write(root.join(name), format!("// {name}\n")).unwrap();

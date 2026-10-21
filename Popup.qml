@@ -2,9 +2,11 @@ import QtQuick
 import QtQuick.Controls
 import qs.Ui
 import qs.Commons
+import qs.Commons as Commons
 import "CoreService.js" as Service
 import "CoreView.js" as Core
 import "CoreScroll.js" as Scroll
+import "CoreSettings.js" as Settings
 import "components"
 
 // Do NOT redeclare KeyboardPanel's required anchorItem/bar here. Redeclaring
@@ -17,11 +19,10 @@ KeyboardPanel {
   property var owner: null
   property var agentService: null
 
-  property int maxContentWidth: Style.space(540)
+  property int maxContentWidth: Style.space(520)
   property int maxContentHeight: Style.space(560)
   property int minContentHeight: Style.space(160)
   property int contentLineHeight: Style.font.body + Style.space(8)
-  property int contentMargins: Style.spacing.popupPadding
 
   property bool editorActive: contentLoader.item && contentLoader.item.editorOwnsFocus
       ? !!contentLoader.item.editorOwnsFocus
@@ -31,14 +32,15 @@ KeyboardPanel {
       ? agentService.resolvedSettings
       : Service.defaultSettings()
 
-  readonly property var railProviders: agentService
+  readonly property var visibleProviders: agentService
       ? agentService.visibleProviders
       : Core.visibleProviders(null, resolvedSettings)
 
-  readonly property string displayMetric: Core.displayMetric(resolvedSettings)
   property string settingsTab: "providers"
 
-  readonly property string selectedId: {
+  // The service's pick, which may name a provider Settings has since hidden.
+  // The overview falls back to a shown row, and selectedId follows it.
+  readonly property string requestedId: {
     if (!agentService)
       return ""
     if (agentService.popupOwner && agentService.popupOwner.providerId
@@ -46,16 +48,12 @@ KeyboardPanel {
       return String(agentService.popupOwner.providerId)
     if (agentService.selectedProviderId && String(agentService.selectedProviderId).length)
       return String(agentService.selectedProviderId)
-    if (railProviders.length)
-      return String(railProviders[0].id)
+    if (visibleProviders.length)
+      return String(visibleProviders[0].id)
     return ""
   }
 
-  readonly property var selectedProvider: Core.resolveSelectedProvider(
-    agentService ? agentService.snapshot : null,
-    selectedId,
-    resolvedSettings
-  )
+  readonly property string selectedId: overview.selectedId
 
   readonly property string view: Service.popupView(agentService ? agentService.popupOwner : null)
 
@@ -64,20 +62,54 @@ KeyboardPanel {
     owner
   )
 
-  readonly property int footerHeight: settingsFooter.shown
-      ? settingsFooter.implicitHeight + Style.space(8)
-      : 0
+  // The countdowns and the pace tick read this clock. It ticks only while the
+  // popup is open and resyncs on every open (onIsOpenChanged).
+  property double nowMs: Date.now()
+  property alias nowTickRunning: nowTimer.running
 
-  readonly property int measuredBodyHeight: {
-    var col = contentColumn ? contentColumn.implicitHeight : 0
-    var margins = contentMargins * 2 + root.footerHeight
-    var railMin = rail && rail.minStackHeight
-        ? rail.minStackHeight + Style.space(8)
-        : Style.space(160)
-    return Math.max(col + margins, railMin)
+  readonly property var resetUi: agentService ? agentService.resetUi : null
+
+  readonly property var overview: Core.overviewModel(
+    agentService ? agentService.snapshot : null,
+    resolvedSettings,
+    nowMs,
+    {
+      id: requestedId,
+      collapsed: !!(agentService && agentService.popupOwner && agentService.popupOwner.collapsed)
+    },
+    {
+      refreshing: agentService ? !!agentService.refreshing : false,
+      resetUi: resetUi,
+      resetBusy: !!(agentService && agentService.resetBusy),
+      dateFormat: Qt.locale().dateFormat(Locale.ShortFormat),
+      timeFormat: Qt.locale().timeFormat(Locale.ShortFormat)
+    }
+  )
+
+  // Rows that open, close, change kind or gain an action change the focus
+  // targets; rebuilding on this signature keeps the order live.
+  readonly property string focusShape: {
+    var rows = overview.rows
+    var parts = []
+    for (var i = 0; i < rows.length; i++) {
+      parts.push([rows[i].id, rows[i].kind, rows[i].open, !!rows[i].action,
+                  rows[i].useReset.visible].join(":"))
+    }
+    return parts.join("|")
   }
 
+  // With padding 0 the band and footers meet the border, so their corners
+  // follow the card radius minus the border width.
+  readonly property int innerRadius: Math.max(0, Style.cornerRadius - verticalContentInset / 2)
+
+  readonly property int measuredBodyHeight: header.implicitHeight
+      + contentFlick.contentHeight
+      + footerArea.implicitHeight
+
+  property bool pendingRowFocus: false
+
   open: isOpen
+  padding: 0
   contentWidth: maxContentWidth
   // verticalContentInset (padding + borders), not padding alone: KeyboardPanel
   // subtracts the border from the inner area, so sizing without it left the
@@ -100,13 +132,30 @@ KeyboardPanel {
     if (!agentService)
       return
     agentService.requestPopup(owner, providerId, "usage")
-    contentFlick.contentY = 0
+  }
+
+  function toggleRow(providerId) {
+    if (!agentService)
+      return
+    // The service toggles against its own pick; hand it the row on screen
+    // first when that pick is hidden.
+    if (root.requestedId !== root.selectedId)
+      agentService.requestPopup(owner, root.selectedId, root.view)
+    agentService.toggleProviderRow(owner, providerId)
   }
 
   function openSettings() {
     if (!agentService)
       return
     agentService.openSettings(owner)
+    contentFlick.contentY = 0
+  }
+
+  function backToUsage() {
+    if (!agentService)
+      return
+    root.pendingRowFocus = true
+    agentService.requestPopup(owner, root.selectedId, "usage")
     contentFlick.contentY = 0
   }
 
@@ -132,8 +181,6 @@ KeyboardPanel {
     agentService.requestReset(providerId, resetId)
   }
 
-  readonly property var resetUi: agentService ? agentService.resetUi : null
-
   readonly property var resetConfirmRow: {
     if (!resetUi || !resetUi.confirmOpen)
       return null
@@ -156,23 +203,29 @@ KeyboardPanel {
 
   function providerIds() {
     var ids = []
-    for (var i = 0; i < railProviders.length; i++) {
-      if (railProviders[i] && railProviders[i].id)
-        ids.push(String(railProviders[i].id))
-    }
+    for (var i = 0; i < overview.rows.length; i++)
+      ids.push(overview.rows[i].id)
     return ids
   }
 
+  // Up/Down select and open the next row (A11Y-002, UX-078); the deferred
+  // rebuild in onSelectedIdChanged then moves focus to its head.
   function stepProvider(delta) {
     var next = Scroll.routeProviderDelta(providerIds(), root.selectedId, delta)
-    if (next)
-      root.selectProvider(next)
+    if (!next)
+      return
+    root.pendingRowFocus = true
+    root.selectProvider(next)
   }
 
   function handleTextKey(text) {
-    var route = Scroll.routePanelTextKey(text, keyCatcher.blocked)
+    var route = Scroll.routePanelTextKey(text, keyCatcher.blocked, root.view)
     if (route.action === "openSettings") {
       root.openSettings()
+      return
+    }
+    if (route.action === "backToUsage") {
+      root.backToUsage()
       return
     }
     if (route.action === "refresh") {
@@ -180,12 +233,13 @@ KeyboardPanel {
         root.onRefresh(root.selectedId)
       return
     }
-    if (route.action === "providerDelta")
+    if (route.action === "providerDelta" && root.view !== "settings")
       root.stepProvider(route.delta)
   }
 
   FocusController {
     id: focusController
+    objectName: "focusController"
     flickable: contentFlick
     lineHeight: root.contentLineHeight
     focusBlocked: root.editorActive
@@ -195,19 +249,28 @@ KeyboardPanel {
     if (!focusController || typeof focusController.setTargets !== "function")
       return
     var list = []
-    if (rail && typeof rail.collectFocusTargets === "function")
-      list = list.concat(rail.collectFocusTargets())
     if (stalledMessage && typeof stalledMessage.collectFocusTargets === "function")
       list = list.concat(stalledMessage.collectFocusTargets())
     list = list.concat(restartBanner.collectFocusTargets())
+    if (root.view === "settings")
+      list = list.concat(settingsHeader.collectFocusTargets())
     if (contentLoader.item && typeof contentLoader.item.collectFocusTargets === "function")
       list = list.concat(contentLoader.item.collectFocusTargets())
+    if (root.view !== "settings")
+      list = list.concat(popupFooter.collectFocusTargets())
     if (settingsFooter.shown)
       list = list.concat(settingsFooter.collectFocusTargets())
     focusController.setTargets(list)
+    focusPendingRow()
+    if (root.view === "settings" && contentLoader.item
+        && typeof contentLoader.item.anchoredFocusTarget === "function") {
+      var anchored = contentLoader.item.anchoredFocusTarget()
+      if (anchored)
+        focusController.focusItem(anchored)
+    }
   }
 
-  // Deferred so the rail and the Loader finish building first. The popup
+  // Deferred so the rows and the Loader finish building first. The popup
   // can be destroyed before the call runs (#83), so check the method is
   // still there instead of throwing from a dead object.
   function scheduleFocusRebuild() {
@@ -217,32 +280,62 @@ KeyboardPanel {
     })
   }
 
+  // The old view's targets are gone, so its index means nothing here: the
+  // rebuild starts on the first target (Back in Settings) unless a row
+  // focus is pending.
   onViewChanged: {
     if (contentFlick)
       contentFlick.contentY = 0
+    focusController.index = -1
     scheduleFocusRebuild()
   }
-  onSelectedIdChanged: Qt.callLater(function () {
-    if (focusController && typeof focusController.clampScroll === "function")
-      focusController.clampScroll()
-    if (typeof root.rebuildFocusTargets === "function")
-      root.rebuildFocusTargets()
-  })
+  onFocusShapeChanged: scheduleFocusRebuild()
+  // A new selection, a step or a fallback from a hidden provider alike,
+  // takes focus to its head.
+  onSelectedIdChanged: {
+    root.pendingRowFocus = true
+    Qt.callLater(function () {
+      if (focusController && typeof focusController.clampScroll === "function")
+        focusController.clampScroll()
+      if (typeof root.rebuildFocusTargets === "function")
+        root.rebuildFocusTargets()
+    })
+  }
+
+  // After a keyboard step or an open, focus lands on the selected row's head
+  // rather than on the first target.
+  function focusPendingRow() {
+    if (!pendingRowFocus || view === "settings" || !contentLoader.item
+        || typeof contentLoader.item.rowHead !== "function")
+      return
+    if (!contentLoader.item.builtCount)
+      return
+    pendingRowFocus = false
+    var head = contentLoader.item.rowHead(selectedId)
+    if (head)
+      focusController.focusItem(head)
+  }
   onAgentServiceChanged: scheduleFocusRebuild()
   onIsOpenChanged: {
-    if (isOpen)
-      settingsTab = agentService && (agentService.updateRunning || agentService.restartPending)
-          ? "about" : "providers"
+    if (!isOpen)
+      return
+    root.nowMs = Date.now()
+    contentFlick.contentY = 0
+    root.pendingRowFocus = true
+    scheduleFocusRebuild()
+    settingsTab = agentService && (agentService.updateRunning || agentService.restartPending)
+        ? "about" : "providers"
   }
 
   PanelKeyCatcher {
     id: keyCatcher
+    objectName: "keyCatcher"
     anchors.fill: parent
     blocked: root.editorActive
 
     onCloseRequested: root.close()
     onMoveRequested: function (dx, dy) {
-      if (dy !== 0)
+      if (dy !== 0 && root.view !== "settings")
         root.stepProvider(dy)
     }
     onTabRequested: function (direction) {
@@ -256,6 +349,7 @@ KeyboardPanel {
     // A11Y-023: page/home/end. Nested under an Item (not KeyboardPanel default
     // contentItem) because Shortcut is not a QQuickItem and live Quattro rejects
     // non-Item default children ("Cannot assign QQuickShortcut to contentItem").
+    // The clock Timer sits here for the same reason.
     Item {
       id: scrollShortcuts
       width: 0
@@ -280,137 +374,190 @@ KeyboardPanel {
         enabled: root.isOpen && !keyCatcher.blocked
         onActivated: focusController.scrollEnd()
       }
+      Timer {
+        id: nowTimer
+        objectName: "nowTimer"
+        interval: 30000
+        repeat: true
+        running: root.isOpen
+        onTriggered: root.nowMs = Date.now()
+      }
     }
 
-    Row {
-      id: panelBody
+    // UX-075: banners, the band and the footers stay pinned; only the rows
+    // (or the Settings body) scroll. Everything runs edge to edge and each
+    // block carries its own text inset.
+    Item {
+      id: popupBody
+      objectName: "popupBody"
       anchors.fill: parent
-      spacing: 0
 
-      ProviderRail {
-        id: rail
-        width: rail.railWidth
-        height: parent.height
-        providers: root.railProviders
-        selectedProviderId: root.selectedId
-        settingsActive: root.view === "settings"
-        displayMetric: root.displayMetric
-        nowMs: root.owner && root.owner.nowMs !== undefined ? root.owner.nowMs : Date.now()
-        foreground: Color.foreground
-        fontFamily: Style.font.family
-        onProviderSelected: function (id) { root.selectProvider(id) }
-        onSettingsClicked: root.openSettings()
+      // The catcher stands down while a number field owns typing; Tab, Backtab
+      // and Esc still leave the field.
+      Keys.onPressed: function (event) {
+        if (!root.editorActive)
+          return
+        if (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab) {
+          focusController.move(event.key === Qt.Key_Backtab
+              || (event.modifiers & Qt.ShiftModifier) ? -1 : 1)
+          event.accepted = true
+        } else if (event.key === Qt.Key_Escape) {
+          root.close()
+          event.accepted = true
+        }
       }
 
-      Item {
-        id: railGutter
-        width: root.padding
-        height: parent.height
+      Column {
+        id: header
+        anchors.top: parent.top
+        width: parent.width
 
-        PanelSeparator {
-          anchors.right: parent.right
-          width: 1
-          height: parent.height
-          foreground: Color.foreground
+        StateMessage {
+          id: stalledMessage
+          width: parent.width
+          leftPadding: Style.spacing.popupPadding
+          rightPadding: Style.spacing.popupPadding
+          topPadding: Style.space(12)
+          bottomPadding: Style.space(12)
+          visible: root.agentService
+              && root.agentService.runtimeHealth === "stalled"
+          title: "Agent Bar lost contact with its helper"
+          body: "Restart the shell to recover."
+          actions: [{
+            kind: "restart_shell",
+            label: "Restart shell",
+            target: null
+          }]
+          foreground: Commons.Color.foreground
+          fontFamily: Style.font.family
+          onActionActivated: function (kind, target) {
+            if (kind === "restart_shell" && root.agentService)
+              root.agentService.restartShell()
+          }
+          onVisibleChanged: root.scheduleFocusRebuild()
+        }
+
+        RestartBanner {
+          id: restartBanner
+          objectName: "restartBanner"
+          width: parent.width
+          visible: !!root.agentService && root.agentService.restartPending
+              && root.view !== "settings" && !stalledMessage.visible
+          version: root.agentService ? root.agentService.pendingVersion : ""
+          innerRadius: root.innerRadius
+          foreground: Commons.Color.foreground
+          fontFamily: Style.font.family
+          onRestartRequested: {
+            if (root.agentService)
+              root.agentService.restartShell()
+          }
+          onVisibleChanged: root.scheduleFocusRebuild()
+        }
+
+        OverviewBand {
+          id: overviewBand
+          width: parent.width
+          visible: root.view !== "settings"
+          headline: root.overview.headline
+          innerRadius: stalledMessage.visible || restartBanner.visible ? 0 : root.innerRadius
+          foreground: Commons.Color.foreground
+          fontFamily: Style.font.family
+        }
+
+        SettingsHeader {
+          id: settingsHeader
+          objectName: "settingsHeader"
+          width: parent.width
+          visible: root.view === "settings"
+          tab: root.settingsTab
+          changes: root.agentService
+              ? Settings.settingsChanges(
+                  root.agentService.settingsState ? root.agentService.settingsState.snapshot : null,
+                  root.agentService.settingsDraft)
+              : null
+          innerRadius: stalledMessage.visible ? 0 : root.innerRadius
+          foreground: Commons.Color.foreground
+          fontFamily: Style.font.family
+          onBackRequested: root.backToUsage()
+          onTabSelected: function (id) { root.settingsTab = id }
+        }
+      }
+
+      Flickable {
+        id: contentFlick
+        objectName: "contentFlick"
+        anchors.top: header.bottom
+        anchors.bottom: footerArea.top
+        anchors.left: parent.left
+        anchors.right: parent.right
+        contentWidth: width
+        contentHeight: contentLoader.item ? contentLoader.item.implicitHeight : 0
+        clip: true
+        boundsBehavior: Flickable.StopAtBounds
+        flickableDirection: Flickable.VerticalFlick
+        interactive: Scroll.flickableInteractive(contentHeight, height)
+        ScrollBar.vertical: ScrollBar {
+          policy: contentFlick.interactive ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
+        }
+
+        onContentHeightChanged: {
+          if (!Scroll.flickableInteractive(contentHeight, height))
+            contentY = 0
+          else if (focusController && typeof focusController.clampScroll === "function")
+            focusController.clampScroll()
+        }
+        onHeightChanged: {
+          if (!Scroll.flickableInteractive(contentHeight, height))
+            contentY = 0
+          else if (focusController && typeof focusController.clampScroll === "function")
+            focusController.clampScroll()
+        }
+
+        // Both bodies run edge to edge and carry their own inset.
+        Loader {
+          id: contentLoader
+          width: contentFlick.width
+          sourceComponent: root.view === "settings" ? settingsContent : providerContent
+          onLoaded: root.scheduleFocusRebuild()
+        }
+
+        Connections {
+          target: contentLoader.item
+          ignoreUnknownSignals: true
+          function onFocusShapeChanged() {
+            root.scheduleFocusRebuild()
+          }
         }
       }
 
       Item {
-        width: Math.max(0, parent.width - rail.width - railGutter.width)
-        height: parent.height
-        clip: true
+        id: footerArea
+        anchors.bottom: parent.bottom
+        width: parent.width
+        implicitHeight: root.view === "settings"
+            ? settingsFooter.implicitHeight
+            : popupFooter.implicitHeight
+        height: implicitHeight
 
-        Flickable {
-          id: contentFlick
-          anchors.fill: parent
-          anchors.leftMargin: root.contentMargins
-          anchors.rightMargin: root.contentMargins
-          anchors.topMargin: root.contentMargins
-          anchors.bottomMargin: root.contentMargins + root.footerHeight
-          contentWidth: width
-          contentHeight: contentColumn.implicitHeight
-          clip: true
-          boundsBehavior: Flickable.StopAtBounds
-          flickableDirection: Flickable.VerticalFlick
-          interactive: Scroll.flickableInteractive(contentHeight, height)
-          ScrollBar.vertical: ScrollBar {
-            policy: contentFlick.interactive ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
-          }
-
-          onContentHeightChanged: {
-            if (!Scroll.flickableInteractive(contentHeight, height))
-              contentY = 0
-            else if (focusController && typeof focusController.clampScroll === "function")
-              focusController.clampScroll()
-          }
-          onHeightChanged: {
-            if (!Scroll.flickableInteractive(contentHeight, height))
-              contentY = 0
-            else if (focusController && typeof focusController.clampScroll === "function")
-              focusController.clampScroll()
-          }
-
-          Column {
-            id: contentColumn
-            width: contentFlick.width
-            spacing: Style.space(12)
-
-            StateMessage {
-              id: stalledMessage
-              width: parent.width
-              visible: root.agentService
-                  && root.agentService.runtimeHealth === "stalled"
-              title: "Agent Bar lost contact with its helper"
-              body: "Restart the shell to recover."
-              actions: [{
-                kind: "restart_shell",
-                label: "Restart shell",
-                target: null
-              }]
-              foreground: Color.foreground
-              fontFamily: Style.font.family
-              onActionActivated: function (kind, target) {
-                if (kind === "restart_shell" && root.agentService)
-                  root.agentService.restartShell()
-              }
-              onVisibleChanged: root.scheduleFocusRebuild()
-            }
-
-            RestartBanner {
-              id: restartBanner
-              width: parent.width
-              visible: !!root.agentService && root.agentService.restartPending
-                  && root.view !== "settings" && !stalledMessage.visible
-              version: root.agentService ? root.agentService.pendingVersion : ""
-              foreground: Color.foreground
-              fontFamily: Style.font.family
-              onRestartRequested: {
-                if (root.agentService)
-                  root.agentService.restartShell()
-              }
-              onVisibleChanged: root.scheduleFocusRebuild()
-            }
-
-            Loader {
-              id: contentLoader
-              width: parent.width
-              sourceComponent: root.view === "settings" ? settingsContent : providerContent
-              onLoaded: root.scheduleFocusRebuild()
-            }
-          }
+        PopupFooter {
+          id: popupFooter
+          anchors.bottom: parent.bottom
+          width: parent.width
+          visible: root.view !== "settings"
+          innerRadius: root.innerRadius
+          foreground: Commons.Color.foreground
+          fontFamily: Style.font.family
+          onSettingsRequested: root.openSettings()
         }
 
         SettingsFooter {
           id: settingsFooter
-          anchors.left: parent.left
-          anchors.right: parent.right
           anchors.bottom: parent.bottom
-          anchors.leftMargin: root.contentMargins
-          anchors.rightMargin: root.contentMargins
-          anchors.bottomMargin: root.contentMargins
+          width: parent.width
           active: root.view === "settings"
+          innerRadius: root.innerRadius
           agentService: root.agentService
-          foreground: Color.foreground
+          foreground: Commons.Color.foreground
           fontFamily: Style.font.family
           onShownChanged: root.scheduleFocusRebuild()
         }
@@ -423,7 +570,7 @@ KeyboardPanel {
       title: root.resetConfirmModel.title
       message: root.resetConfirmModel.message
       confirmText: root.resetConfirmModel.confirmText
-      foreground: Color.foreground
+      foreground: Commons.Color.foreground
       fontFamily: Style.font.family
       onCanceled: if (root.agentService) root.agentService.closeResetConfirm()
       onConfirmed: if (root.agentService) root.agentService.confirmReset()
@@ -433,24 +580,12 @@ KeyboardPanel {
   // Declared as properties (not default contentItem children): KeyboardPanel's
   // default property is a QQuickItem list and rejects QQmlComponent objects.
   property Component providerContent: Component {
-    ProviderView {
-      width: contentColumn.width
-      active: root.isOpen
-      provider: root.selectedProvider
-      displayMetric: root.displayMetric
-      refreshing: agentService ? !!agentService.refreshing : false
-      resetBusy: !!(root.agentService && root.agentService.resetBusy
-          && root.resetUi && root.selectedProvider
-          && String(root.resetUi.providerId) === String(root.selectedProvider.id))
-      resetOutcomeText: {
-        var ui = root.resetUi
-        var sel = root.selectedProvider
-        if (!ui || !ui.outcome || !sel || String(ui.providerId) !== String(sel.id))
-          return ""
-        return Core.resetOutcomeText(ui.outcome, Qt.locale().timeFormat(Locale.ShortFormat))
-      }
-      foreground: Color.foreground
+    OverviewList {
+      width: contentLoader.width
+      overview: root.overview
+      foreground: Commons.Color.foreground
       fontFamily: Style.font.family
+      onToggleRequested: function (id) { root.toggleRow(id) }
       onRefreshRequested: function (id) { root.onRefresh(id) }
       onActionRequested: function (id, kind, target) { root.onAction(id, kind, target) }
       onResetRequested: function (id, resetId) { root.onResetRequested(id, resetId) }
@@ -459,13 +594,13 @@ KeyboardPanel {
 
   property Component settingsContent: Component {
     SettingsView {
-      width: contentColumn.width
+      width: contentLoader.width
       // A Binding element, unlike a plain binding, survives the view's own
-      // assignment to `tab` when a tab is clicked.
+      // assignment to `tab`.
       Binding on tab { value: root.settingsTab }
       onTabChanged: root.settingsTab = tab
       agentService: root.agentService
-      foreground: Color.foreground
+      foreground: Commons.Color.foreground
       fontFamily: Style.font.family
     }
   }

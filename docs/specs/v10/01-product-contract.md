@@ -70,12 +70,13 @@ Refresh interval: 60 seconds
 Notifications: enabled
 ```
 
-- `PROD-020`: The provider rail and bar follow the settings order.
+- `PROD-020` (amended 2026-10-21): The popup rows and bar follow the
+  settings order.
 - `PROD-021`: Enabled providers remain visible when their CLI is missing.
 - `PROD-022`: Missing-CLI providers use a dimmed icon and an installation
   action; Agent Bar never installs the provider CLI.
-- `PROD-023`: Disabled providers disappear from the bar and provider rail but
-  remain available in Settings.
+- `PROD-023` (amended 2026-10-21): Disabled providers disappear from the
+  bar and the popup rows but remain available in Settings.
 - `PROD-024`: **Retired** by the 2026-09-15 amendment. The v9 migration no
   longer exists.
 
@@ -84,17 +85,20 @@ Notifications: enabled
 ### Read quota
 
 1. The bar shows one compact chip per enabled provider.
-2. Left-clicking a chip opens that provider in the consolidated popup.
-3. The popup shows plan, usage windows, reset times, and typed error/action
-   state; connection state is implied structurally and the last-success age
-   appears as a neutral caption while a reading is retained (`UX-028`).
-4. Clicking the same chip closes the popup; clicking another chip switches
-   provider without closing it.
+2. Left-clicking a chip opens the consolidated popup with that provider's
+   row open (amended 2026-10-21, `docs/specs/v10/amendments/2026-10-21-popup-overview-redesign-design.md`).
+3. The popup names the tightest window across providers, then lists one row
+   per enabled provider with its plan, primary window, and typed
+   error/action state. The open row shows the pace line, the other windows,
+   reset times, and the last-success age as a neutral caption while a
+   reading is retained (`UX-028`).
+4. Clicking the same chip closes the popup; clicking another chip opens
+   that provider's row without closing it.
 
 ### Refresh
 
 1. The service polls automatically using provider cache policy.
-2. The provider-header refresh action bypasses cache for that provider once.
+2. The open row's Refresh action bypasses cache for that provider once.
 3. Middle-clicking any bar chip bypasses cache for all enabled providers once.
 4. Concurrent forced requests are coalesced without being discarded.
 

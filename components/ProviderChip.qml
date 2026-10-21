@@ -100,8 +100,8 @@ WidgetButton {
       visible: !root.vertical && root.stateCue.length > 0
       text: root.stateCue
       color: root.numeralColor
-      font.family: root.fontFamily
-      font.pixelSize: Style.font.body
+      font.family: Style.font.family
+      font.pixelSize: Style.font.icon
       anchors.verticalCenter: parent.verticalCenter
       renderType: Text.NativeRendering
       textFormat: Text.PlainText

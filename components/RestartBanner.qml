@@ -10,6 +10,7 @@ Rectangle {
   property string version: ""
   property color foreground: Color.foreground
   property string fontFamily: Style.font.family
+  property int innerRadius: 0
 
   signal restartRequested()
 
@@ -17,20 +18,21 @@ Rectangle {
     return root.visible ? [restartButton] : []
   }
 
+  // A full-width band under the popup border; the text carries the inset and
+  // an accent rule closes the band.
   width: parent ? parent.width : implicitWidth
-  implicitHeight: row.implicitHeight + Style.space(12)
-  radius: Style.cornerRadius
+  implicitHeight: row.implicitHeight + Style.space(16) + rule.height
   color: Style.selectedFillFor(root.foreground, Color.accent)
-  border.width: 1
-  border.color: Color.accent
+  topLeftRadius: root.innerRadius
+  topRightRadius: root.innerRadius
 
   RowLayout {
     id: row
     anchors.left: parent.left
     anchors.right: parent.right
-    anchors.verticalCenter: parent.verticalCenter
-    anchors.leftMargin: Style.space(9)
-    anchors.rightMargin: Style.space(6)
+    anchors.leftMargin: Style.spacing.popupPadding
+    anchors.rightMargin: Style.space(8)
+    y: Math.round((parent.height - rule.height - height) / 2)
     spacing: Style.space(8)
 
     Text {
@@ -60,5 +62,14 @@ Rectangle {
       Accessible.onPressAction: focusActivate()
       onClicked: focusActivate()
     }
+  }
+
+  Rectangle {
+    id: rule
+    objectName: "edgeRule"
+    anchors.bottom: parent.bottom
+    width: parent.width
+    height: Style.spacing.hairline
+    color: Color.accent
   }
 }

@@ -134,25 +134,6 @@ TestCase {
     compare(tabs.join(","), "providers:Providers,general:General,about:About")
   }
 
-  function test_rail_selection_follows_the_open_view() {
-    compare(View.railProviderSelected("usage", "claude", "claude"), true)
-    compare(View.railProviderSelected("settings", "claude", "claude"), false)
-    compare(View.railProviderSelected("usage", "codex", "claude"), false)
-    compare(View.railProviderSelected("usage", "", ""), false)
-  }
-
-  function test_rail_tooltip_names_provider_and_state() {
-    var nowMs = Date.parse("2026-09-10T12:00:00Z")
-    var missing = { id: "antigravity", name: "Antigravity", state: "cli_missing", windows: [] }
-    compare(View.railTooltipText(missing, "remaining", nowMs), "Antigravity · no CLI")
-    var grok = { id: "grok", name: "Grok", state: "ready",
-                 windows: [{ id: "session", usedPercent: 96, remainingPercent: 4 }] }
-    compare(View.railTooltipText(grok, "remaining", nowMs), "Grok · 4% · critical")
-    var claude = { id: "claude", name: "Claude", state: "ready",
-                   windows: [{ id: "session", usedPercent: 62, remainingPercent: 38 }] }
-    compare(View.railTooltipText(claude, "used", nowMs), "Claude · 62%")
-  }
-
   function test_settings_provider_status_words() {
     compare(View.settingsProviderStatus({ state: "cli_missing" }), "Not installed")
     compare(View.settingsProviderStatus({ state: "unauthenticated" }), "Signed out")
@@ -319,8 +300,12 @@ TestCase {
     verify(src.indexOf("root.agentService.restartShell()") >= 0)
     verify(src.indexOf("function collectFocusTargets()") >= 0)
     verify(src.indexOf("if (root.loadFailed)\n      out.push(restartShellButton)") >= 0)
-    verify(src.indexOf("out.push(tabRepeater.itemAt(i))") >= 0,
+    var header = read("components/SettingsHeader.qml")
+    verify(header.indexOf("out.push(tabRepeater.itemAt(i))") >= 0,
            "keyboard users reach every Settings tab through the focus order")
+    verify(header.indexOf("Keys.onReturnPressed") < 0,
+           "the tab strip relies on the host Button key mapping")
+    verify(src.indexOf("tabRepeater") < 0, "the tabs moved to SettingsHeader")
     verify(src.indexOf("Keys.onReturnPressed") < 0,
            "Settings must rely on the host Button key mapping")
     verify(src.indexOf("credential") < 0 || src.toLowerCase().indexOf("no credential") >= 0)
@@ -343,8 +328,12 @@ TestCase {
 
   function test_settings_view_is_tabbed_with_line_headers() {
     var src = read("SettingsView.qml")
-    verify(src.indexOf("model: Settings.SETTINGS_TABS") >= 0)
-    verify(src.indexOf("Accessible.role: Accessible.PageTab") >= 0)
+    var header = read("components/SettingsHeader.qml")
+    verify(header.indexOf("model: Settings.SETTINGS_TABS") >= 0)
+    verify(header.indexOf("Accessible.role: Accessible.PageTab") >= 0)
+    verify(header.indexOf('Accessible.name: "Back to usage"') >= 0)
+    verify(header.indexOf("Tokens.GLYPH_BACK") >= 0)
+    verify(src.indexOf('text: "Settings"') < 0, "the title moved to SettingsHeader")
     verify(src.indexOf("SectionHeader") >= 0)
     verify(src.indexOf('"On the bar"') >= 0)
     verify(src.indexOf('"Hidden"') >= 0)
@@ -357,7 +346,7 @@ TestCase {
     var header = read("components/SectionHeader.qml").replace(/\/\/[^\n]*/g, "")
     verify(header.indexOf("PanelSectionHeader") < 0,
            "the host header tints with Qt.darker, darker than body text on light themes")
-    verify(header.indexOf("Util.alpha(root.foreground, 0.55)") >= 0)
+    verify(header.indexOf("Util.alpha(root.foreground, Tokens.TEXT_TERTIARY)") >= 0)
     verify(header.indexOf("Layout.fillWidth: true") >= 0)
   }
 
@@ -399,37 +388,26 @@ TestCase {
     var flickEnd = blockEnd(src, flick)
     var footer = src.indexOf("SettingsFooter {")
     verify(footer > flickEnd, "the footer sits after the Flickable, never inside the scrolled content")
-    verify(src.substring(flick, flickEnd).indexOf("anchors.bottomMargin: root.contentMargins + root.footerHeight") >= 0,
+    verify(src.substring(flick, flickEnd).indexOf("anchors.bottom: footerArea.top") >= 0,
            "the scroll surface stops above the footer")
+    verify(src.substring(flick, flickEnd).indexOf("contentMargins") < 0)
     var measured = src.indexOf("readonly property int measuredBodyHeight")
-    verify(src.substring(measured, blockEnd(src, measured)).indexOf("root.footerHeight") >= 0,
+    verify(src.substring(measured, blockEnd(src, measured)).indexOf("footerArea.implicitHeight") >= 0,
            "the popup height budgets the footer")
     verify(src.indexOf("list = list.concat(settingsFooter.collectFocusTargets())") >= 0)
     verify(src.indexOf("Binding on tab { value: root.settingsTab }") >= 0,
            "a plain tab binding would die on the first tab click")
-    verify(src.indexOf("tab: root.settingsTab") < 0)
-  }
-
-  function test_rail_state_follows_view_with_tooltips() {
-    var rail = read("ProviderRail.qml")
-    verify(rail.indexOf("property bool settingsActive") >= 0)
-    verify(rail.indexOf("Core.railProviderSelected(") >= 0)
-    verify(rail.indexOf("Core.railTooltipText(") >= 0)
-    verify(rail.indexOf("Core.chipStateCue(") >= 0)
-    var tooltips = rail.split("PanelToolTip {").length - 1
-    compare(tooltips, 2, "every rail slot, provider and Settings, carries a tooltip")
-    verify(rail.indexOf("PanelSeparator") < 0,
-           "the owner dropped the rule above the Settings slot; the rail edge rule lives in Popup")
-    var popup = read("Popup.qml")
-    verify(popup.indexOf('settingsActive: root.view === "settings"') >= 0)
+    verify(src.indexOf("tab: root.settingsTab") >= 0, "the header tab strip follows the popup tab")
+    verify(src.indexOf("onTabSelected: function (id) { root.settingsTab = id }") >= 0)
   }
 
   function test_settings_row_has_icon_name_chevrons() {
     var src = read("components/SettingsProviderRow.qml")
-    verify(src.indexOf("Image") >= 0)
+    verify(src.indexOf("ProviderIcon {") >= 0, "the row draws its mark with ProviderIcon")
+    verify(src.indexOf("sourceSize") < 0, "no row-local icon size")
     verify(src.indexOf("displayName") >= 0)
-    verify(src.indexOf("󰅃") >= 0)
-    verify(src.indexOf("󰅀") >= 0)
+    verify(src.indexOf("Tokens.GLYPH_UP") >= 0)
+    verify(src.indexOf("Tokens.GLYPH_DOWN") >= 0)
     verify(src.indexOf("enableToggled") >= 0)
   }
 

@@ -1,5 +1,6 @@
 import QtQuick
 import QtTest
+import "../../components/Tokens.js" as Tokens
 
 TestCase {
   id: testCase
@@ -26,93 +27,118 @@ TestCase {
     return [
       "BarWidget.qml",
       "Popup.qml",
-      "ProviderRail.qml",
-      "ProviderView.qml",
       "SettingsView.qml",
       "MaintenanceView.qml",
       "components/ProviderChip.qml",
-      "components/ProviderHeader.qml",
       "components/HeaderTag.qml",
-      "components/UsageWindow.qml",
       "components/StateMessage.qml",
       "components/SettingsProviderRow.qml",
       "components/SettingsFooter.qml",
       "components/SectionHeader.qml",
       "components/ConfirmDialog.qml",
-      "components/ResetsSection.qml",
-      "components/RestartBanner.qml"
+      "components/RestartBanner.qml",
+      "components/OverviewBand.qml",
+      "components/OverviewList.qml",
+      "components/ProviderRow.qml",
+      "components/RowDetail.qml",
+      "components/UsageMeter.qml",
+      "components/ProviderIcon.qml",
+      "components/PopupFooter.qml",
+      "components/SettingsHeader.qml"
     ]
+  }
+
+  function code(rel) {
+    var src = read(rel)
+    verify(src.length > 0, rel + " exists")
+    return src.replace(/\/\/[^\n]*/g, "")
+  }
+
+  function test_tokens_values() {
+    var alphas = {
+      TEXT_SECONDARY: 0.72, TEXT_TERTIARY: 0.55, TRACK: 0.12, DIMMED: 0.45,
+      LOCKED: 0.55, THIN_FILL: 0.6, URGENT_FILL: 0.16, URGENT_RULE: 0.55,
+      ROW_ICON_SCALE: 1.2, NAME_COLUMN_EMS: 8.5, VALUE_COLUMN_EMS: 3.6,
+      PACE_MIN_ELAPSED: 0.1
+    }
+    for (var k in alphas)
+      compare(Tokens[k], alphas[k], k)
+    var glyphs = {
+      GLYPH_ALERT: 0xF0026, GLYPH_CLOCK: 0xF0954, GLYPH_CHECK: 0xF012C,
+      GLYPH_REFRESH: 0xF0450, GLYPH_SETTINGS: 0xF0493, GLYPH_BACK: 0xF0141,
+      GLYPH_UP: 0xF0143, GLYPH_DOWN: 0xF0140, GLYPH_EXTERNAL: 0xF03CC,
+      GLYPH_PLUG: 0xF06A5, GLYPH_USER: 0xF0004, GLYPH_WIFI_OFF: 0xF05AA
+    }
+    for (var g in glyphs)
+      compare(Tokens[g], String.fromCodePoint(glyphs[g]), g)
   }
 
   function test_no_qt_darker() {
     var files = tokenScannedFiles()
-    for (var i = 0; i < files.length; i++) {
-      var code = read(files[i]).replace(/\/\/[^\n]*/g, "")
-      verify(code.indexOf("Qt.darker") < 0,
+    for (var i = 0; i < files.length; i++)
+      verify(code(files[i]).indexOf("Qt.darker") < 0,
              files[i] + " still calls Qt.darker; use Util.alpha")
+  }
+
+  function test_alpha_arguments_are_tokens() {
+    var files = tokenScannedFiles()
+    for (var i = 0; i < files.length; i++) {
+      var callRe = /Util\.alpha\(([^()]*)\)/g
+      var src = code(files[i])
+      var m
+      while ((m = callRe.exec(src)) !== null) {
+        var arg = m[1].slice(m[1].indexOf(",") + 1)
+        verify(/^\s*Tokens\.[A-Z_]+\s*$/.test(arg),
+               files[i] + ": Util.alpha(" + m[1] + ") must take a Tokens alpha")
+      }
     }
   }
 
-  function alphaArgValues(code) {
-    var values = []
-    var callRe = /Util\.alpha\(([^()]*)\)/g
-    var m
-    while ((m = callRe.exec(code)) !== null) {
-      var args = m[1]
-      var commaIdx = args.indexOf(",")
-      if (commaIdx < 0)
-        continue
-      var opacityArg = args.slice(commaIdx + 1)
-      var numRe = /\d+(?:\.\d+)?/g
-      var nm
-      while ((nm = numRe.exec(opacityArg)) !== null)
-        values.push(nm[0])
+  function test_no_opacity_literal() {
+    var files = tokenScannedFiles()
+    var allowed = { "0": true, "1": true, "1.0": true }
+    for (var i = 0; i < files.length; i++) {
+      var lines = code(files[i]).split("\n")
+      for (var j = 0; j < lines.length; j++) {
+        if (!/[oO]pacity\s*:/.test(lines[j]))
+          continue
+        var nums = lines[j].replace(/Tokens\.[A-Z_]+/g, "").match(/\b\d+(?:\.\d+)?\b/g) || []
+        for (var n = 0; n < nums.length; n++)
+          verify(allowed[nums[n]] === true,
+                 files[i] + ":" + (j + 1) + " opacity literal " + nums[n] + "; use Tokens")
+      }
     }
-    return values
+  }
+
+  function test_no_size_literal_above_one() {
+    var files = tokenScannedFiles()
+    var sizeRe = /(?:^|[\s.])(width|height|size|pixelSize|iconSize|preferredWidth|preferredHeight|sourceSize\.(?:width|height)):\s*(\d+(?:\.\d+)?)\s*$/
+    for (var i = 0; i < files.length; i++) {
+      var lines = code(files[i]).split("\n")
+      for (var j = 0; j < lines.length; j++) {
+        var m = sizeRe.exec(lines[j])
+        if (m)
+          verify(Number(m[2]) <= 1,
+                 files[i] + ":" + (j + 1) + " size literal " + m[2] + "; use Style or a Tokens ratio")
+      }
+    }
   }
 
   function convertedFiles() {
     return [
       "SettingsView.qml",
       "MaintenanceView.qml",
-      "components/UsageWindow.qml",
+      "components/UsageMeter.qml",
       "components/StateMessage.qml",
       "components/ConfirmDialog.qml"
     ]
   }
 
-  function textAlphaExceptions() {
-    return {
-      "components/UsageWindow.qml": ["0.12"]
-    }
-  }
-
-  function test_no_third_alpha_value() {
-    var files = tokenScannedFiles()
-    var exceptions = textAlphaExceptions()
-    var seen = {}
-    for (var i = 0; i < files.length; i++) {
-      var code = read(files[i]).replace(/\/\/[^\n]*/g, "")
-      var values = alphaArgValues(code)
-      var excepted = exceptions[files[i]] || []
-      for (var j = 0; j < values.length; j++) {
-        if (excepted.indexOf(values[j]) >= 0)
-          continue
-        seen[values[j]] = true
-      }
-    }
-    var distinct = Object.keys(seen).sort()
-    compare(distinct.join(","), "0.55,0.72",
-            "Util.alpha opacity must be exactly 0.55 or 0.72, found: " + distinct.join(","))
-  }
-
   function test_util_alpha_used_in_converted_files() {
     var files = convertedFiles()
-    for (var i = 0; i < files.length; i++) {
-      var code = read(files[i]).replace(/\/\/[^\n]*/g, "")
-      verify(code.indexOf("Util.alpha(") >= 0,
+    for (var i = 0; i < files.length; i++)
+      verify(code(files[i]).indexOf("Util.alpha(") >= 0,
              files[i] + " has no Util.alpha( call; conversion must use Util.alpha")
-    }
   }
 
   // Composite a translucent foreground over a background, the way the
@@ -144,8 +170,8 @@ TestCase {
 
   function test_secondary_recedes_in_both_themes(data) {
     var primary = contrast(data.fg, data.bg)
-    var supporting = contrast(composite(data.fg, data.bg, 0.72), data.bg)
-    var meta = contrast(composite(data.fg, data.bg, 0.55), data.bg)
+    var supporting = contrast(composite(data.fg, data.bg, Tokens.TEXT_SECONDARY), data.bg)
+    var meta = contrast(composite(data.fg, data.bg, Tokens.TEXT_TERTIARY), data.bg)
     verify(supporting < primary,
            data.tag + ": supporting " + supporting + " must be under primary " + primary)
     verify(meta < supporting,
@@ -157,12 +183,18 @@ TestCase {
   }
 
   function test_usage_track_declared_once() {
-    var code = read("components/UsageWindow.qml")
-        .replace(/\/\/[^\n]*/g, "")
-    var declarations = code.split("readonly property color trackColor").length - 1
+    var src = code("components/UsageMeter.qml")
+    var declarations = src.split("readonly property color trackColor").length - 1
     compare(declarations, 1, "trackColor must be declared exactly once")
-    verify(code.indexOf("Qt.rgba(") < 0,
-           "UsageWindow must reference trackColor, not a literal alpha")
+    verify(src.indexOf("Qt.rgba(") < 0,
+           "UsageMeter must reference trackColor, not a literal alpha")
+    var files = tokenScannedFiles()
+    for (var i = 0; i < files.length; i++) {
+      if (files[i] === "components/UsageMeter.qml")
+        continue
+      verify(code(files[i]).indexOf("Tokens.TRACK") < 0,
+             files[i] + " draws its own track; use UsageMeter")
+    }
   }
 
   function test_control_chrome_uses_style_tokens() {
@@ -171,8 +203,7 @@ TestCase {
     for (var i = 0; i < files.length; i++) {
       if (allowed.indexOf(files[i]) >= 0)
         continue
-      var code = read(files[i]).replace(/\/\/[^\n]*/g, "")
-      verify(code.indexOf("Qt.rgba(") < 0,
+      verify(code(files[i]).indexOf("Qt.rgba(") < 0,
              files[i] + " still hardcodes an alpha; use a Style state token")
     }
   }

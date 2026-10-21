@@ -22,6 +22,7 @@ function requiredScreenshotNames() {
   ]
 }
 
+// The values tst_Screenshots assigns to the stub qs.Commons Color.
 function themePalette(mode) {
   if (mode === "white") {
     return {
@@ -29,7 +30,10 @@ function themePalette(mode) {
       background: "#ffffff",
       foreground: "#000000",
       accent: "#0057d8",
-      urgent: "#c31432"
+      urgent: "#c31432",
+      muted: "#8a8a8a",
+      border: "#d4d4d8",
+      popups: { background: "#ffffff", border: "#000000" }
     }
   }
   if (mode === "light") {
@@ -37,15 +41,21 @@ function themePalette(mode) {
       mode: "light",
       background: "#f4f4f5",
       foreground: "#18181b",
+      accent: "#2563eb",
+      urgent: "#b91c1c",
+      muted: "#a1a1aa",
       border: "#d4d4d8",
-      urgent: "#b91c1c"
+      popups: { background: "#f4f4f5", border: "#d4d4d8" }
     }
   }
   return {
     mode: "dark",
     background: "#18181b",
     foreground: "#e4e4e7",
+    accent: "#60a5fa",
+    urgent: "#f87171",
+    muted: "#71717a",
     border: "#3f3f46",
-    urgent: "#f87171"
+    popups: { background: "#18181b", border: "#3f3f46" }
   }
 }

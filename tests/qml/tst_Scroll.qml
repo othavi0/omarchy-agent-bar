@@ -84,6 +84,8 @@ TestCase {
     verify(src.indexOf("Style.space(280)") < 0)
     verify(src.indexOf("onWheel") < 0)
     verify(src.indexOf("angleDelta") < 0)
+    verify(src.indexOf('objectName: "contentFlick"') >= 0)
+    verify(src.indexOf("railGutter") < 0)
   }
 
   function test_bar_widget_foreign_dismiss_contract() {
@@ -92,35 +94,4 @@ TestCase {
     verify(src.indexOf("foreignPopupOpen") >= 0 || src.indexOf("foreignDismiss") >= 0)
   }
 
-  function test_provider_rail_stack_no_bottom_pin() {
-    var src = read("ProviderRail.qml")
-    verify(src.indexOf("ColumnLayout") >= 0)
-    verify(src.indexOf("minStackHeight") >= 0)
-    verify(src.indexOf("anchors.bottom: parent.bottom") < 0)
-    verify(src.indexOf("border.width") >= 0)
-    verify(src.indexOf("settingsItem") >= 0)
-    verify(src.indexOf("PanelActionButton") < 0)
-  }
-
-  // The panel's left padding sits before the rail slot; the gutter after it
-  // must be as wide, with the rule at its far edge, or the icons read as
-  // off-centre between the popup border and the rule.
-  function test_rail_slot_is_centred_between_border_and_rule() {
-    var src = read("Popup.qml")
-    var start = src.indexOf("id: railGutter")
-    verify(start > 0)
-    var gutter = src.substring(start, src.indexOf("\n      Item {", start))
-    verify(gutter.indexOf("width: root.padding") >= 0,
-           "the gutter mirrors KeyboardPanel's left padding")
-    verify(gutter.indexOf("anchors.right: parent.right") >= 0,
-           "the rule closes the gutter")
-    verify(gutter.indexOf("anchors.left: parent.left") < 0)
-  }
-
-  function test_popup_content_width_accounts_for_gutter() {
-    var src = read("Popup.qml")
-    verify(src.indexOf("railGutter") >= 0)
-    verify(src.indexOf("parent.width - rail.width - railGutter.width") >= 0)
-    verify(src.indexOf("parent.width - rail.width - 1") < 0)
-  }
 }

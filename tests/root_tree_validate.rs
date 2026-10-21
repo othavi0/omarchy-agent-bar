@@ -31,8 +31,6 @@ const ROOT_SOURCE_FILES: &[&str] = &[
     "CoreView.js",
     "MaintenanceView.qml",
     "Popup.qml",
-    "ProviderRail.qml",
-    "ProviderView.qml",
     "Service.qml",
     "SettingsView.qml",
     "manifest.json",

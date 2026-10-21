@@ -449,6 +449,23 @@ TestCase {
     }
   }
 
+  function test_maintenance_view_collects_focus_targets() {
+    var table = [
+      ["idle", Core.maintenanceUiIdle("10.3.1"), ["Check for updates", "Uninstall Agent Bar"]],
+      ["update_available", availableUi(),
+       ["Update to 10.4.0", "Release notes", "Marketplace page", "Uninstall Agent Bar"]],
+      ["restart_required", failedUi("updated"), ["Restart shell", "Later", "Uninstall Agent Bar"]]
+    ]
+    for (var i = 0; i < table.length; i++) {
+      var view = ViewHarness.createView(repoRoot, "MaintenanceView.qml", testCase, testCase,
+                                        { width: 480, agentService: fakeService(table[i][1]) })
+      verify(typeof view.collectFocusTargets === "function", "MaintenanceView collects focus targets")
+      var names = view.collectFocusTargets().map(function (t) { return String(t.Accessible.name) })
+      compare(JSON.stringify(names), JSON.stringify(table[i][2]), table[i][0])
+      view.destroy()
+    }
+  }
+
   function test_maintenance_view_buttons_call_the_service() {
     var svc = Qt.createQmlObject(
       'import QtQuick; QtObject { property var maintenanceUi: null; '

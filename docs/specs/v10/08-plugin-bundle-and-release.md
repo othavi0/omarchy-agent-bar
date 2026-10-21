@@ -28,8 +28,6 @@ othavi0.agent-bar/
 ├── Service.qml
 ├── BarWidget.qml
 ├── Popup.qml
-├── ProviderRail.qml
-├── ProviderView.qml
 ├── SettingsView.qml
 ├── MaintenanceView.qml
 ├── CoreMaintenance.js

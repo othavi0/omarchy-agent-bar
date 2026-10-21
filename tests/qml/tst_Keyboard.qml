@@ -53,6 +53,15 @@ TestCase {
     compare(Core.routePanelTextKey("k", false).delta, -1)
   }
 
+  function test_route_s_in_settings() {
+    compare(Core.routePanelTextKey("s", false, "settings").action, "backToUsage")
+    compare(Core.routePanelTextKey("S", false, "settings").action, "backToUsage")
+    compare(Core.routePanelTextKey("s", false, "usage").action, "openSettings")
+    compare(Core.routePanelTextKey("s", false).action, "openSettings")
+    compare(Core.routePanelTextKey("s", true, "settings").action, "noop")
+    compare(Core.routePanelTextKey("r", false, "settings").action, "refresh")
+  }
+
   function test_editor_suppresses_shortcuts() {
     compare(Core.panelShortcutsBlocked(true), true)
     compare(Core.routePanelTextKey("s", true).action, "noop")
@@ -81,6 +90,10 @@ TestCase {
     verify(src.indexOf("editorActive") >= 0 || src.indexOf("blocked:") >= 0)
     verify(src.indexOf("PgDown") >= 0 || src.indexOf("Page Down") >= 0)
     verify(src.indexOf("scrollHome") >= 0 || src.indexOf("Home") >= 0)
+    verify(src.indexOf("Scroll.routePanelTextKey(text, keyCatcher.blocked, root.view)") >= 0,
+           "the popup routes keys with its view so s returns from Settings")
+    verify(src.indexOf('route.action === "backToUsage"') >= 0)
+    verify(src.indexOf("function backToUsage()") >= 0)
   }
 
   // Live Quattro KeyboardPanel default property is contentItem (QQuickItem list).

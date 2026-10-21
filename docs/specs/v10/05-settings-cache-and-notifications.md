@@ -128,6 +128,12 @@ $XDG_STATE_HOME/agent-bar/maintenance.lock
   `deny_unknown_fields` on a nested object, so an unrecognized key inside
   a provider row is ignored, never rejected. See
   `docs/specs/v10/amendments/2026-09-15-drop-unread-status-fields-design.md`.
+- `CACHE-001B` (added 2026-10-21): A cache document written before
+  `windowMinutes` (`JSON-020A`) still loads; the missing key reads as
+  `null`, so the row shows no pace until its next live collection. The
+  cache schema version stays 2. A `windowMinutes` of 0 is corrupt and
+  follows `CACHE-018`. See
+  `docs/specs/v10/amendments/2026-10-21-popup-overview-redesign-design.md`.
 - `CACHE-002`: Cache contains no token, credential, raw provider response, raw
   headers, or raw stderr.
 - `CACHE-003`: Cache writes use the shared atomic-file primitive and restrictive

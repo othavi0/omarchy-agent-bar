@@ -1,6 +1,8 @@
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
+import "Tokens.js" as Tokens
 
 Item {
   id: root
@@ -12,7 +14,7 @@ Item {
   property string confirmText: "Confirm"
   property bool destructive: false
   property bool confirmEnabled: true
-  property color foreground: Color.foreground
+  property color foreground: Commons.Color.foreground
   property string fontFamily: Style.font.family
 
   default property alias extraContent: extraCol.data
@@ -24,7 +26,7 @@ Item {
   // exact surface — Color.menu.scrim composes the theme's background at a
   // fixed alpha, so it dims regardless of whether foreground is light or
   // dark. A foreground-based wash would invert on light-foreground themes.
-  readonly property color scrimColor: Color.menu.scrim
+  readonly property color scrimColor: Commons.Color.menu.scrim
 
   anchors.fill: parent
   visible: opened
@@ -45,10 +47,10 @@ Item {
     width: Math.min(parent.width - Style.space(32), Style.space(380))
     height: col.implicitHeight + Style.space(28)
     radius: Style.cornerRadius
-    color: Color.popups.background
-    border.width: 1
+    color: Commons.Color.popups.background
+    border.width: Style.spacing.hairline
     border.color: root.destructive
-        ? Util.alpha(Color.urgent, 0.55)
+        ? Util.alpha(Commons.Color.urgent, Tokens.URGENT_RULE)
         : Style.normalBorderColor
 
     MouseArea {
@@ -79,7 +81,7 @@ Item {
       Text {
         width: parent.width
         text: root.message
-        color: Util.alpha(root.foreground, 0.72)
+        color: Util.alpha(root.foreground, Tokens.TEXT_SECONDARY)
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
         wrapMode: Text.WordWrap
@@ -110,7 +112,7 @@ Item {
           bordered: true
           focusable: true
           enabled: root.confirmEnabled
-          foreground: root.destructive ? Color.urgent : root.foreground
+          foreground: root.destructive ? Commons.Color.urgent : root.foreground
           fontFamily: root.fontFamily
           Accessible.name: root.confirmText
           onClicked: root.confirmed()

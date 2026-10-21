@@ -1,228 +1,240 @@
 import QtQuick
 import QtTest
-import "TestPalette.js" as Core
+import qs.Commons as Commons
+import "TestPalette.js" as Palette
+import "ServiceHarness.js" as ServiceHarness
+import "ViewHarness.js" as ViewHarness
+import "OverviewFixtures.js" as F
 
+// TEST-043: the evidence is the real Popup.qml with the real Service, drawn
+// against tests/qml/modules from deterministic fixtures. scripts/verify-v10-ui
+// creates the output directory; without it every capture fails.
 TestCase {
   id: testCase
   name: "AgentBarScreenshots"
   when: windowShown
+  visible: true
+  width: 900
+  height: 1200
 
   property string repoRoot: {
-    var u = Qt.resolvedUrl(".")
-    var path = String(u).replace("file://", "")
+    var path = String(Qt.resolvedUrl(".")).replace("file://", "")
     if (path.endsWith("/"))
       path = path.slice(0, -1)
     var parts = path.split("/")
     parts.pop(); parts.pop()
     return parts.join("/")
   }
+  readonly property string evidenceDir: repoRoot + "/target/v10-ui-evidence"
 
-  property string evidenceDir: {
-    var env = ""
-    try {
-      env = ""
-    } catch (e) {}
-    return repoRoot + "/target/v10-ui-evidence"
+  property var service: null
+  property var popup: null
+  property var defaultPalette: null
+
+  function initTestCase() {
+    defaultPalette = paletteOfStub()
   }
 
-  property int capturesDone: 0
-  property int capturesExpected: 0
-  property var pendingNames: []
-
-  Rectangle {
-    id: stage
-    width: 480
-    height: 300
-    color: "#18181b"
-    property string titleText: ""
-    property string bodyText: ""
-    property string badgeText: ""
-    property string captionText: ""
-    property color fg: "#e4e4e7"
-    property color muted: "#a1a1aa"
-    property color badgeColor: "#e4e4e7"
-
-    Column {
-      anchors.fill: parent
-      anchors.margins: 16
-      spacing: 10
-
-      Text {
-        text: "Agent Bar"
-        color: stage.muted
-        font.pixelSize: 12
-        textFormat: Text.PlainText
-      }
-      Text {
-        text: stage.titleText
-        color: stage.fg
-        font.pixelSize: 18
-        font.bold: true
-        textFormat: Text.PlainText
-      }
-      Text {
-        visible: stage.badgeText.length > 0
-        text: stage.badgeText
-        color: stage.badgeColor
-        font.pixelSize: 13
-        font.bold: true
-        textFormat: Text.PlainText
-      }
-      Text {
-        // No `visible` binding: under the offscreen software backend a Text
-        // that flips visible false->true stays blank in the very next
-        // grabToImage, which is why the badge above has never rendered in any
-        // captured evidence. An always-present Text painting an empty string
-        // keeps the caption reliable and the layout identical across panels.
-        width: parent.width
-        text: stage.captionText
-        color: stage.muted
-        font.pixelSize: 11
-        wrapMode: Text.WordWrap
-        textFormat: Text.PlainText
-      }
-      Text {
-        width: parent.width
-        text: stage.bodyText
-        color: stage.muted
-        font.pixelSize: 13
-        wrapMode: Text.WordWrap
-        textFormat: Text.PlainText
-      }
+  function cleanup() {
+    if (popup) {
+      popup.destroy()
+      popup = null
+    }
+    if (service) {
+      service.destroy()
+      service = null
     }
   }
 
-  function applyTheme(mode) {
-    var p = Core.themePalette(mode)
-    stage.color = p.background
-    stage.fg = p.foreground
-    // tst_Tokens.qml pins the 0.72 supporting-text alpha. Util.alpha itself is
-    // unreachable here because qs.Commons will not compile under the bare Qt6
-    // runner.
-    var fg = Qt.color(p.foreground)
-    stage.muted = Qt.rgba(fg.r, fg.g, fg.b, 0.72)
-    stage.badgeColor = p.urgent
+  function cleanupTestCase() {
+    applyPalette(defaultPalette)
   }
 
-  function paintState(name) {
-    stage.captionText = ""
-    if (name.indexOf("ready-light") === 0) {
-      applyTheme("light")
-      stage.titleText = "Claude"
-      stage.badgeText = "Connected"
-      stage.bodyText = "Session (5h) · resets in 3h 1m · 58% left · Weekly (7d) 60% · 23h 1m"
-      return
-    }
-    if (name.indexOf("ready-white") === 0) {
-      applyTheme("white")
-      stage.titleText = "Claude"
-      stage.badgeText = "Connected"
-      stage.bodyText = "Session (5h) · resets in 3h 1m · 58% left · Weekly (7d) 60% · 23h 1m"
-      return
-    }
-    applyTheme("dark")
-    if (name.indexOf("ready-dark") === 0) {
-      stage.titleText = "Claude"
-      stage.badgeText = "Connected"
-      stage.bodyText = "Session (5h) · resets in 3h 1m · 58% left · Weekly (7d) 60% · 23h 1m"
-    } else if (name.indexOf("loading-dark") === 0) {
-      stage.titleText = "Loading"
-      stage.badgeText = "Loading"
-      stage.bodyText = "Collecting provider status…"
-    } else if (name.indexOf("refreshing-with-data-dark") === 0) {
-      stage.titleText = "Codex"
-      stage.badgeText = "Connected · refreshing"
-      stage.bodyText = "Weekly (7d) · resets in 23h 1m · 74% left (prior data kept)"
-    } else if (name.indexOf("stale-dark") === 0) {
-      stage.titleText = "Claude"
-      stage.badgeText = "Connected"
-      stage.captionText = "Updated 14m ago"
-      stage.bodyText = "Session (5h) · resets in 3h 1m · 58% left · Weekly (7d) 60% · 23h 1m"
-    } else if (name.indexOf("critical-dark") === 0) {
-      stage.titleText = "Claude"
-      stage.badgeText = "CRITICAL"
-      stage.bodyText = "Session (5h) · resets in 41m · 3% left · Weekly (7d) 60% · 23h 1m"
-    } else if (name.indexOf("cli-missing-dark") === 0) {
-      stage.titleText = "Antigravity"
-      stage.badgeText = "CLI missing"
-      stage.bodyText = "Antigravity CLI is not installed. Agent Bar reads the quota through it. Install guide"
-    } else if (name.indexOf("unauthenticated-dark") === 0) {
-      stage.titleText = "Claude"
-      stage.badgeText = "Not connected"
-      stage.bodyText = "Not signed in to Claude. Signing in opens the official Claude CLI. Sign in"
-    } else if (name.indexOf("rate-limited-dark") === 0) {
-      stage.titleText = "Codex"
-      stage.badgeText = "Rate limited"
-      stage.bodyText = "Codex hit a rate limit. Try again in a few minutes. Retry"
-    } else if (name.indexOf("network-error-dark") === 0) {
-      stage.titleText = "Codex"
-      stage.badgeText = "Network error"
-      stage.bodyText = "Cannot reach Codex. Check your connection. Retry"
-    } else if (name.indexOf("provider-error-dark") === 0) {
-      stage.titleText = "Grok"
-      stage.badgeText = "Provider error"
-      stage.bodyText = "Grok returned no limits. Retry"
-    } else if (name.indexOf("settings-clean-dark") === 0) {
-      stage.titleText = "Settings"
-      stage.badgeText = "clean"
-      stage.bodyText = "Providers · Remaining · Refresh every 60 seconds · Notifications on"
-    } else if (name.indexOf("settings-dirty-dark") === 0) {
-      stage.titleText = "Settings"
-      stage.badgeText = "dirty"
-      stage.bodyText = "Draft changes: display used · Save changes enabled"
-    } else if (name.indexOf("settings-invalid-dark") === 0) {
-      stage.titleText = "Settings"
-      stage.badgeText = "invalid"
-      stage.bodyText = "Refresh every out of range · Save changes disabled"
-    } else if (name.indexOf("maintenance-update-dark") === 0) {
-      stage.titleText = "Maintenance"
-      stage.badgeText = "Update to 10.1.0"
-      stage.bodyText = "Check for updates · Release notes"
-    } else if (name.indexOf("uninstall-confirmation-dark") === 0) {
-      stage.titleText = "Uninstall Agent Bar"
-      stage.badgeText = "Confirm"
-      stage.bodyText = "Also delete saved settings and backups (unchecked) · second click required"
-    } else {
-      stage.titleText = name
-      stage.badgeText = ""
-      stage.bodyText = "fixture"
+  function paletteOfStub() {
+    var c = Commons.Color
+    return {
+      foreground: String(c.foreground),
+      background: String(c.background),
+      accent: String(c.accent),
+      urgent: String(c.urgent),
+      muted: String(c.muted),
+      popups: { background: String(c.popups.background), border: String(c.popups.border) }
     }
   }
 
-  function captureOne(name) {
-    paintState(name)
-    // Let the Column relayout before grabbing. Toggling a child's `visible`
-    // (the age caption) re-runs the positioner, and grabToImage otherwise
-    // captures the previous frame — the caption rendered blank without this.
-    wait(50)
-    var path = evidenceDir + "/" + name
-    var finished = false
-    stage.grabToImage(function (result) {
-      result.saveToFile(path)
-      capturesDone++
-      finished = true
-    })
-    for (var i = 0; i < 50 && !finished; i++)
+  function applyPalette(p) {
+    var c = Commons.Color
+    c.foreground = p.foreground
+    c.background = p.background
+    c.accent = p.accent
+    c.urgent = p.urgent
+    c.muted = p.muted
+    c.popups.background = p.popups.background
+    c.popups.border = p.popups.border
+  }
+
+  // Each name maps to the popup state the 07 inventory names. Error rows sit
+  // open on the provider in that state.
+  function scene(name) {
+    var base = name.replace(/\.png$/, "")
+    var mode = base.endsWith("-light") ? "light" : (base.endsWith("-white") ? "white" : "dark")
+    var s = { mode: mode, env: F.normal(), providerId: "claude", settings: "", tab: "",
+              refreshing: false, update: false, uninstall: false }
+    switch (base.replace(/-(light|dark|white)$/, "")) {
+    case "ready":
+      break
+    case "loading":
+      s.env = null
+      break
+    case "refreshing-with-data":
+      s.refreshing = true
+      break
+    case "stale":
+      s.env = F.stale()
+      s.providerId = "codex"
+      break
+    case "critical":
+      s.env = F.critical()
+      break
+    case "cli-missing":
+      s.env = F.problems()
+      s.providerId = "codex"
+      break
+    case "unauthenticated":
+      s.env = F.problems()
+      break
+    case "rate-limited":
+      s.env = F.problems()
+      s.providerId = "grok"
+      break
+    case "network-error":
+      s.env = F.problems()
+      s.providerId = "antigravity"
+      break
+    case "provider-error":
+      s.env = F.providerError()
+      break
+    case "settings-clean":
+      s.settings = "clean"
+      s.tab = "providers"
+      break
+    case "settings-dirty":
+      s.settings = "dirty"
+      s.tab = "providers"
+      break
+    case "settings-invalid":
+      s.settings = "invalid"
+      s.tab = "general"
+      break
+    case "maintenance-update":
+      s.settings = "clean"
+      s.tab = "about"
+      s.update = true
+      break
+    case "uninstall-confirmation":
+      s.settings = "clean"
+      s.tab = "about"
+      s.uninstall = true
+      break
+    default:
+      fail("no scene for " + name)
+    }
+    return s
+  }
+
+  function stage(s) {
+    applyPalette(Palette.themePalette(s.mode))
+    service = ServiceHarness.createService("file://" + repoRoot + "/Service.qml", testCase, testCase)
+    service.appliedSettings = F.settings("used")
+    service.snapshot = s.env
+    popup = ViewHarness.createReal(repoRoot, "Popup.qml", testCase, testCase,
+                                   { agentService: service, owner: "mon-a" })
+    service.requestPopup("mon-a", s.providerId, "usage")
+    popup.nowMs = F.FIXED_NOW
+    if (s.refreshing) {
+      compare(service.refresh(s.providerId), "ok")
+      verify(service.refreshing, "the status lane is busy while the old rows stay")
+    }
+    if (s.settings) {
+      popup.openSettings()
       wait(20)
-    verify(finished, "grab timed out for " + name)
+      ServiceHarness.finishLane(service, "settingsRead", 0, JSON.stringify(F.settings("used")) + "\n")
+      popup.settingsTab = s.tab
+      if (s.settings === "dirty")
+        service.setProviderEnabled("grok", false)
+      if (s.settings === "invalid")
+        service.setRefreshInterval(5)
+      compare(popup.view, "settings")
+    } else {
+      compare(popup.view, "usage")
+    }
+    if (s.update) {
+      service.checkForUpdates()
+      ServiceHarness.finishLane(service, "maintenanceCheck", 0,
+                                read("tests/fixtures/update-check/available.json"))
+      compare(service.maintenanceUi.phase, "update_available")
+    }
+    if (s.uninstall) {
+      service.openUninstallConfirm()
+      verify(service.maintenanceUi.uninstallConfirmOpen, "the uninstall dialog is open")
+      var dialogs = ViewHarness.findAll(popup, function (item) {
+        return item.scrimColor !== undefined && item.opened === true
+      })
+      compare(dialogs.length, 1, "one open confirm dialog")
+      verify(Qt.colorEqual(dialogs[0].scrimColor, Commons.Color.menu.scrim),
+             "the dialog dims with the theme scrim, got " + dialogs[0].scrimColor)
+    }
+    compare(popup.isOpen, true)
+    compare(String(Commons.Color.background), String(Qt.color(Palette.themePalette(s.mode).background)))
   }
 
-  function test_capture_required_inventory() {
-    var names = Core.requiredScreenshotNames()
-    capturesExpected = names.length
-    capturesDone = 0
-    // Ensure directory exists via a tiny marker write using XMLHttpRequest is not possible;
-    // verify-v10-ui creates the directory before invoking this test.
-    for (var i = 0; i < names.length; i++)
-      captureOne(names[i])
-    compare(capturesDone, capturesExpected)
+  function read(relPath) {
+    var xhr = new XMLHttpRequest()
+    xhr.open("GET", "file://" + repoRoot + "/" + relPath, false)
+    xhr.send()
+    return String(xhr.responseText)
+  }
+
+  function capture(name) {
+    var path = evidenceDir + "/" + name
+    var saved = null
+    popup.grabToImage(function (result) {
+      saved = result.saveToFile(path)
+    })
+    tryVerify(function () { return saved !== null }, 3000, "grabToImage finished for " + name)
+    verify(saved, "cannot write " + path + "; create target/v10-ui-evidence (scripts/verify-v10-ui does)")
+  }
+
+  function test_capture_data() {
+    return Palette.requiredScreenshotNames().map(function (name) {
+      return { tag: name, name: name }
+    })
+  }
+
+  function test_capture(data) {
+    stage(scene(data.name))
+    wait(150)
+    capture(data.name)
   }
 
   function test_required_names_match_spec() {
-    var names = Core.requiredScreenshotNames()
+    var names = Palette.requiredScreenshotNames()
     compare(names.length, 17)
     verify(names.indexOf("ready-light.png") >= 0)
     verify(names.indexOf("ready-white.png") >= 0)
+    verify(names.indexOf("critical-dark.png") >= 0)
     verify(names.indexOf("uninstall-confirmation-dark.png") >= 0)
+  }
+
+  function test_palette_carries_every_role() {
+    var modes = ["dark", "light", "white"]
+    for (var i = 0; i < modes.length; i++) {
+      var p = Palette.themePalette(modes[i])
+      var roles = [p.foreground, p.background, p.accent, p.urgent, p.muted,
+                   p.popups && p.popups.background, p.popups && p.popups.border]
+      for (var r = 0; r < roles.length; r++)
+        verify(typeof roles[r] === "string" && roles[r].charAt(0) === "#",
+               modes[i] + " palette role " + r + " is a colour: " + roles[r])
+    }
   }
 }

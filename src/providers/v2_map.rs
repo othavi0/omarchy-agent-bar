@@ -1,3 +1,5 @@
+use std::num::NonZeroU32;
+
 use serde::Deserialize;
 use serde_json::Value;
 use time::format_description::well_known::Rfc3339;
@@ -75,6 +77,22 @@ fn grok_window_identity(period_type: Option<&str>) -> (String, String) {
     }
 }
 
+const SESSION_MINUTES: u32 = 300;
+const WEEK_MINUTES: u32 = 10_080;
+
+fn minutes(n: u32) -> Option<NonZeroU32> {
+    NonZeroU32::new(n)
+}
+
+/// Only an explicit weekly period states a duration. An absent period keeps
+/// the historical weekly identity (`grok_window_identity`) but no length.
+fn grok_window_minutes(period_type: Option<&str>) -> Option<NonZeroU32> {
+    match period_type {
+        Some("USAGE_PERIOD_TYPE_WEEKLY") => minutes(WEEK_MINUTES),
+        _ => None,
+    }
+}
+
 /// Parse Grok billing JSON into at most one percentage window.
 ///
 /// - `creditUsagePercent` (subscription credits) → used; remaining = 100 − used
@@ -108,36 +126,32 @@ pub fn grok_from_billing_json(
     );
 
     let mut windows = Vec::new();
+    let period_type = doc
+        .current_period
+        .as_ref()
+        .and_then(|p| p.period_type.as_deref());
     let credit = doc.credit_usage_percent.map(|used| {
-        let (id, label) = grok_window_identity(
-            doc.current_period
-                .as_ref()
-                .and_then(|p| p.period_type.as_deref()),
-        );
-        (id, label, used)
+        let (id, label) = grok_window_identity(period_type);
+        (id, label, used, grok_window_minutes(period_type))
     });
     let product = || {
         grok_product_used_percent(&doc).map(|used| {
-            let (id, label) = grok_window_identity(
-                doc.current_period
-                    .as_ref()
-                    .and_then(|p| p.period_type.as_deref()),
-            );
-            (id, label, used)
+            let (id, label) = grok_window_identity(period_type);
+            (id, label, used, grok_window_minutes(period_type))
         })
     };
     let monthly = || {
         grok_monthly_used_percent(&doc).map(|used| {
             let id = "monthly";
-            (id.to_owned(), format_plan_label(id), used)
+            (id.to_owned(), format_plan_label(id), used, None)
         })
     };
-    if let Some((id, label, used_raw)) = credit.or_else(product).or_else(monthly) {
+    if let Some((id, label, used_raw, window_minutes)) = credit.or_else(product).or_else(monthly) {
         let used = used_raw.clamp(0.0, 100.0);
         let remaining = (100.0 - used).clamp(0.0, 100.0);
         let resets = grok_billing_resets_at(&doc);
         if let Ok(w) = UsageWindow::try_new(&id, &label, used, remaining, resets) {
-            windows.push(w);
+            windows.push(w.with_window_minutes(window_minutes));
         }
     }
 
@@ -381,8 +395,18 @@ fn codex_extra_bucket_label(sanitized: &str, window_minutes: Option<i64>) -> Str
     let name = format_plan_label(sanitized);
     match window_minutes {
         Some(10080) => format!("{name} (7d)"),
-        Some(mins) => format!("{name} ({mins}m)"),
+        Some(mins) => format!("{name} ({})", duration_label(mins)),
         None => name,
+    }
+}
+
+fn duration_label(minutes: i64) -> String {
+    if minutes % 1440 == 0 {
+        format!("{}d", minutes / 1440)
+    } else if minutes % 60 == 0 {
+        format!("{}h", minutes / 60)
+    } else {
+        format!("{minutes}m")
     }
 }
 
@@ -390,7 +414,7 @@ fn codex_window_identity(window_minutes: Option<i64>, ordinal: usize) -> (String
     match window_minutes {
         Some(10080) => ("weekly".into(), LABEL_WEEKLY.into()),
         Some(300) => ("session".into(), LABEL_SESSION.into()),
-        Some(n) if n > 0 => (format!("other:{n}:{ordinal}"), format!("{n}m")),
+        Some(n) if n > 0 => (format!("other:{n}:{ordinal}"), duration_label(n)),
         _ => {
             if ordinal == 1 {
                 ("session".into(), LABEL_SESSION.into())
@@ -412,7 +436,13 @@ fn codex_window(id: &str, label: &str, raw: &CodexWindowRaw) -> Option<UsageWind
         .filter(|&ts| ts > 0)
         .and_then(|ts| OffsetDateTime::from_unix_timestamp(ts).ok())
         .map(|ts| ts.to_offset(UtcOffset::UTC));
-    UsageWindow::try_new(id, label, used, remaining, resets).ok()
+    let window_minutes = raw
+        .window_minutes
+        .and_then(|m| u32::try_from(m).ok())
+        .and_then(NonZeroU32::new);
+    UsageWindow::try_new(id, label, used, remaining, resets)
+        .ok()
+        .map(|w| w.with_window_minutes(window_minutes))
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -663,13 +693,13 @@ pub fn claude_from_usage_json(
 
     let mut windows = Vec::new();
     if let Some(w) = doc.five_hour.as_ref() {
-        if let Some(window) = claude_window("session", LABEL_SESSION, w) {
+        if let Some(window) = claude_window("session", LABEL_SESSION, w, minutes(SESSION_MINUTES)) {
             push_window_unique(&mut windows, window);
         }
     }
     // OAuth tokens report the weekly bucket as seven_day_oauth_apps; prefer it.
     if let Some(w) = doc.seven_day_oauth_apps.as_ref().or(doc.seven_day.as_ref()) {
-        if let Some(window) = claude_window("weekly", LABEL_WEEKLY, w) {
+        if let Some(window) = claude_window("weekly", LABEL_WEEKLY, w, minutes(WEEK_MINUTES)) {
             push_window_unique(&mut windows, window);
         }
     }
@@ -690,9 +720,17 @@ pub fn claude_from_usage_json(
             utilization: util,
             resets_at: limit.resets_at.clone(),
         };
-        let (id, label) = match kind {
-            "session" => ("session".to_owned(), LABEL_SESSION.to_owned()),
-            "weekly_all" => ("weekly".to_owned(), LABEL_WEEKLY.to_owned()),
+        let (id, label, window_minutes) = match kind {
+            "session" => (
+                "session".to_owned(),
+                LABEL_SESSION.to_owned(),
+                minutes(SESSION_MINUTES),
+            ),
+            "weekly_all" => (
+                "weekly".to_owned(),
+                LABEL_WEEKLY.to_owned(),
+                minutes(WEEK_MINUTES),
+            ),
             _ => {
                 let model_id = limit
                     .scope
@@ -711,10 +749,18 @@ pub fn claude_from_usage_json(
                     .and_then(|s| s.model.as_ref())
                     .and_then(|m| m.display_name.clone())
                     .unwrap_or_else(|| "Model".into());
-                (id, label)
+                // Only a weekly kind states its length; any other unknown
+                // kind still gets a weekly-model id but no duration.
+                let window_minutes = if kind.starts_with("seven_day") || kind.starts_with("weekly")
+                {
+                    minutes(WEEK_MINUTES)
+                } else {
+                    None
+                };
+                (id, label, window_minutes)
             }
         };
-        if let Some(window) = claude_window(&id, &label, &raw) {
+        if let Some(window) = claude_window(&id, &label, &raw, window_minutes) {
             push_window_unique(&mut windows, window);
         }
     }
@@ -724,7 +770,7 @@ pub fn claude_from_usage_json(
     ] {
         if let Some(w) = field {
             let id = weekly_model_id(suffix, 0);
-            if let Some(window) = claude_window(&id, label, w) {
+            if let Some(window) = claude_window(&id, label, w, minutes(WEEK_MINUTES)) {
                 push_window_unique(&mut windows, window);
             }
         }
@@ -789,14 +835,21 @@ fn parse_reset_timestamp(raw: &str) -> Option<OffsetDateTime> {
         .map(|ts| ts.to_offset(UtcOffset::UTC))
 }
 
-fn claude_window(id: &str, label: &str, raw: &ClaudeWindowRaw) -> Option<UsageWindow> {
+fn claude_window(
+    id: &str,
+    label: &str,
+    raw: &ClaudeWindowRaw,
+    window_minutes: Option<NonZeroU32>,
+) -> Option<UsageWindow> {
     if !raw.utilization.is_finite() {
         return None;
     }
     let used = raw.utilization.clamp(0.0, 100.0);
     let remaining = (100.0 - used).clamp(0.0, 100.0);
     let resets = raw.resets_at.as_deref().and_then(parse_reset_timestamp);
-    UsageWindow::try_new(id, label, used, remaining, resets).ok()
+    UsageWindow::try_new(id, label, used, remaining, resets)
+        .ok()
+        .map(|w| w.with_window_minutes(window_minutes))
 }
 
 pub fn weekly_model_id(raw: &str, ordinal: usize) -> String {
@@ -931,11 +984,19 @@ pub fn antigravity_from_usage_json(stdout: &str, now: OffsetDateTime) -> Provide
         .iter()
         .flat_map(|group| group.buckets.iter())
     {
-        let (label, slot) = match bucket.id.as_str() {
-            "gemini-weekly" => (LABEL_GEMINI_WEEKLY, &mut gemini_weekly),
-            "gemini-5h" => (LABEL_GEMINI_SESSION, &mut gemini_session),
-            "3p-weekly" => (LABEL_THIRD_PARTY_WEEKLY, &mut third_party_weekly),
-            "3p-5h" => (LABEL_THIRD_PARTY_SESSION, &mut third_party_session),
+        let (label, window_minutes, slot) = match bucket.id.as_str() {
+            "gemini-weekly" => (LABEL_GEMINI_WEEKLY, WEEK_MINUTES, &mut gemini_weekly),
+            "gemini-5h" => (LABEL_GEMINI_SESSION, SESSION_MINUTES, &mut gemini_session),
+            "3p-weekly" => (
+                LABEL_THIRD_PARTY_WEEKLY,
+                WEEK_MINUTES,
+                &mut third_party_weekly,
+            ),
+            "3p-5h" => (
+                LABEL_THIRD_PARTY_SESSION,
+                SESSION_MINUTES,
+                &mut third_party_session,
+            ),
             _ => continue,
         };
         if slot.is_some() {
@@ -961,7 +1022,7 @@ pub fn antigravity_from_usage_json(stdout: &str, now: OffsetDateTime) -> Provide
             remaining_percent,
             resets_at,
         ) {
-            *slot = Some(window);
+            *slot = Some(window.with_window_minutes(minutes(window_minutes)));
         }
     }
 
@@ -1254,6 +1315,24 @@ mod tests {
                 assert!(plan.is_some());
             }
             other => panic!("expected ready, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn codex_other_duration_labels_use_the_largest_whole_unit() {
+        for (minutes, label) in [(43200, "30d"), (120, "2h"), (1440, "1d"), (90, "90m")] {
+            let body = format!(
+                r#"{{"primary":{{"used_percent":10.0,"window_minutes":{minutes},"resets_at":1785628013}}}}"#
+            );
+            let result =
+                codex_from_rate_limits_json(body.as_bytes(), datetime!(2026-07-26 18:00:00 UTC));
+            match result {
+                ProviderResult::Ready { windows, .. } => {
+                    assert_eq!(windows[0].id(), format!("other:{minutes}:1"));
+                    assert_eq!(windows[0].label(), label);
+                }
+                other => panic!("expected ready, got {other:?}"),
+            }
         }
     }
 
@@ -1891,5 +1970,155 @@ mod tests {
         let debug = format!("{result:?}");
         assert!(!debug.contains("Models within this group"), "{debug}");
         assert!(!debug.contains("fully refresh"), "{debug}");
+    }
+
+    fn minutes_of(windows: &[UsageWindow]) -> Vec<(String, Option<u32>)> {
+        windows
+            .iter()
+            .map(|w| (w.id().to_owned(), w.window_minutes().map(|m| m.get())))
+            .collect()
+    }
+
+    fn ready_windows(result: ProviderResult) -> Vec<UsageWindow> {
+        match result {
+            ProviderResult::Ready { windows, .. } => windows,
+            other => panic!("expected ready, got {other:?}"),
+        }
+    }
+
+    fn pair(id: &str, minutes: Option<u32>) -> (String, Option<u32>) {
+        (id.to_owned(), minutes)
+    }
+
+    #[test]
+    fn claude_windows_carry_known_minutes() {
+        let body = br#"{
+            "five_hour": {"utilization": 10.0},
+            "seven_day": {"utilization": 12.0},
+            "limits": [
+                {"kind": "seven_day_model", "utilization": 20.0,
+                 "scope": {"model": {"id": "fable", "display_name": "Fable"}}},
+                {"kind": "weekly_scoped", "percent": 10,
+                 "scope": {"model": {"id": null, "display_name": "Haiku"}}}
+            ],
+            "seven_day_opus": {"utilization": 55.0},
+            "seven_day_sonnet": {"utilization": 5.0}
+        }"#;
+        let now = datetime!(2026-08-01 21:00:00 UTC);
+        let windows = ready_windows(claude_from_usage_json(body, now, None, true));
+        assert_eq!(
+            minutes_of(&windows),
+            vec![
+                pair("session", Some(300)),
+                pair("weekly", Some(10_080)),
+                pair("weekly-model:fable", Some(10_080)),
+                pair("weekly-model:haiku", Some(10_080)),
+                pair("weekly-model:opus", Some(10_080)),
+                pair("weekly-model:sonnet", Some(10_080)),
+            ]
+        );
+
+        let limits_only = br#"{"limits": [
+            {"kind": "session", "percent": 7.0},
+            {"kind": "weekly_all", "percent": 12.0}
+        ]}"#;
+        let windows = ready_windows(claude_from_usage_json(limits_only, now, None, true));
+        assert_eq!(
+            minutes_of(&windows),
+            vec![pair("session", Some(300)), pair("weekly", Some(10_080))]
+        );
+    }
+
+    #[test]
+    fn claude_unknown_scoped_kind_has_no_minutes() {
+        let body = br#"{"limits": [
+            {"kind": "five_hour_model", "utilization": 20.0,
+             "scope": {"model": {"id": "opus", "display_name": "Opus"}}}
+        ]}"#;
+        let now = datetime!(2026-08-01 21:00:00 UTC);
+        let windows = ready_windows(claude_from_usage_json(body, now, None, true));
+        assert_eq!(minutes_of(&windows), vec![pair("weekly-model:opus", None)]);
+    }
+
+    #[test]
+    fn codex_windows_carry_wire_duration() {
+        let now = datetime!(2026-07-26 18:00:00 UTC);
+        let body = include_bytes!("../../tests/fixtures/providers/codex/rate-limits-ready.json");
+        let windows = ready_windows(codex_from_rate_limits_json(body, now));
+        assert_eq!(
+            minutes_of(&windows),
+            vec![pair("session", Some(300)), pair("weekly", Some(10_080))]
+        );
+
+        let other = br#"{"primary":{"used_percent":10.0,"window_minutes":45}}"#;
+        let windows = ready_windows(codex_from_rate_limits_json(other, now));
+        assert_eq!(minutes_of(&windows), vec![pair("other:45:1", Some(45))]);
+
+        let json = serde_json::json!({
+            "primary": {"usedPercent": 36.0},
+            "secondary": {"usedPercent": 12.0, "windowDurationMins": 0},
+            "individualLimit": {"remainingPercent": 40.0, "resetsAt": 1791000000},
+            "extraBuckets": [{"limitId": "premium",
+                "primary": {"usedPercent": 10.0, "windowDurationMins": 10080}}]
+        });
+        let bytes = serde_json::to_vec(&json).expect("fixture json");
+        let windows = ready_windows(codex_from_rate_limits_json(&bytes, now));
+        assert_eq!(
+            minutes_of(&windows),
+            vec![
+                pair("session", None),
+                pair("weekly", None),
+                pair("codex:premium", Some(10_080)),
+                pair("workspace-limit", None),
+            ]
+        );
+    }
+
+    #[test]
+    fn grok_weekly_period_carries_a_week() {
+        let now = datetime!(2026-08-07 12:00:00 UTC);
+        let cases: [(&[u8], Option<u32>); 4] = [
+            (
+                br#"{"creditUsagePercent": 20.0,
+                    "currentPeriod": {"type": "USAGE_PERIOD_TYPE_WEEKLY"}}"#,
+                Some(10_080),
+            ),
+            (br#"{"creditUsagePercent": 20.0}"#, None),
+            (
+                br#"{"creditUsagePercent": 20.0,
+                    "currentPeriod": {"type": "USAGE_PERIOD_TYPE_MONTHLY"}}"#,
+                None,
+            ),
+            (
+                include_bytes!("../../tests/fixtures/providers/grok/billing-monthly-limit.json"),
+                None,
+            ),
+        ];
+        for (body, expected) in cases {
+            let windows = ready_windows(grok_from_billing_json(body, now, true));
+            assert_eq!(windows.len(), 1, "got {windows:?}");
+            assert_eq!(
+                windows[0].window_minutes().map(|m| m.get()),
+                expected,
+                "{}",
+                windows[0].id()
+            );
+        }
+    }
+
+    #[test]
+    fn antigravity_windows_carry_family_minutes() {
+        let fixture = include_str!("../../tests/fixtures/antigravity/usage.json");
+        let now = datetime!(2026-08-21 12:00:00 UTC);
+        let windows = ready_windows(antigravity_from_usage_json(fixture, now));
+        assert_eq!(
+            minutes_of(&windows),
+            vec![
+                pair("gemini-weekly", Some(10_080)),
+                pair("gemini-5h", Some(300)),
+                pair("3p-weekly", Some(10_080)),
+                pair("3p-5h", Some(300)),
+            ]
+        );
     }
 }

@@ -1,6 +1,7 @@
 import QtQuick
 import qs.Commons
 import qs.Ui
+import "Tokens.js" as Tokens
 
 Column {
   id: root
@@ -13,6 +14,8 @@ Column {
   property bool skeleton: false
 
   signal actionActivated(string kind, var target)
+
+  readonly property int innerWidth: Math.max(0, root.width - root.leftPadding - root.rightPadding)
 
   width: parent ? parent.width : implicitWidth
   spacing: Style.space(10)
@@ -31,7 +34,7 @@ Column {
 
   Column {
     visible: root.skeleton
-    width: parent.width
+    width: root.innerWidth
     spacing: Style.space(8)
 
     Rectangle {
@@ -56,7 +59,7 @@ Column {
 
   Column {
     visible: !root.skeleton
-    width: parent.width
+    width: root.innerWidth
     spacing: Style.space(8)
 
     Text {
@@ -77,7 +80,7 @@ Column {
       width: Math.max(0, parent.width)
       visible: root.body.length > 0
       text: root.body
-      color: Util.alpha(root.foreground, 0.72)
+      color: Util.alpha(root.foreground, Tokens.TEXT_SECONDARY)
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
       wrapMode: Text.Wrap
