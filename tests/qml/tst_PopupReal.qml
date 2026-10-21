@@ -617,4 +617,36 @@ TestCase {
     settle()
     compare(popup.isOpen, false, "Esc closes the popup from the field")
   }
+
+  function currentName() {
+    var fc = one(popup, "focusController")
+    return fc.current && fc.current.activeFocus ? String(fc.current.Accessible.name) : "none"
+  }
+
+  function test_view_switch_focuses_back_and_the_selected_row() {
+    openRealPopup(F.normal(), "used", "grok")
+    tryVerify(function () { return headOf("grok").activeFocus }, 1000)
+    keyClick(Qt.Key_S)
+    ServiceHarness.finishLane(service, "settingsRead", 0, JSON.stringify(F.settings("used")))
+    settle()
+    compare(popup.view, "settings")
+    tryVerify(function () { return currentName() === "Back to usage" }, 1000,
+              "s opens Settings on Back, not on " + currentName())
+
+    keyClick(Qt.Key_S)
+    settle()
+    compare(popup.view, "usage")
+    tryVerify(function () { return headOf("grok").activeFocus }, 1000,
+              "Back lands on the selected row, not on " + currentName())
+
+    var fc = one(popup, "focusController")
+    var live = fc.liveTargets()
+    verify(fc.focusItem(live[live.length - 1]))
+    compare(currentName(), "Settings")
+    keyClick(Qt.Key_Return)
+    settle()
+    compare(popup.view, "settings")
+    tryVerify(function () { return currentName() === "Back to usage" }, 1000,
+              "the footer opens Settings on Back, not on " + currentName())
+  }
 }

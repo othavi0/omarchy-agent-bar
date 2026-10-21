@@ -146,6 +146,7 @@ KeyboardPanel {
   function backToUsage() {
     if (!agentService)
       return
+    root.pendingRowFocus = true
     agentService.requestPopup(owner, root.selectedId, "usage")
     contentFlick.contentY = 0
   }
@@ -271,9 +272,13 @@ KeyboardPanel {
     })
   }
 
+  // The old view's targets are gone, so its index means nothing here: the
+  // rebuild starts on the first target (Back in Settings) unless a row
+  // focus is pending.
   onViewChanged: {
     if (contentFlick)
       contentFlick.contentY = 0
+    focusController.index = -1
     scheduleFocusRebuild()
   }
   onFocusShapeChanged: scheduleFocusRebuild()
