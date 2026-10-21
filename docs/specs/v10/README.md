@@ -102,6 +102,20 @@ windows keeps the prior row as stale. A plan that has never published a
 percentage still shows the dash (`PROD-031`):
 [docs/specs/v10/amendments/2026-09-21-grok-empty-reading-design.md](amendments/2026-09-21-grok-empty-reading-design.md).
 
+The popup overview redesign, approved 2026-10-21, replaces the provider
+rail and the single-provider pane with a headline band that names the
+tightest window, one row per enabled provider with an accordion detail,
+and a footer with the Settings button and key hints. Each window gains
+`windowMinutes` (`JSON-020A`, `CACHE-001B`) so the open row can show a
+pace tick and a linear pace line. Stale rows keep `UX-028`. The design adds
+`UX-075` to `UX-086`, `A11Y-024` to `A11Y-026`, `TEST-043`, and
+`TEST-044`; amends `UX-016`, `UX-017`, `UX-019`, `UX-020A` to `UX-020D`,
+`UX-028`, `A11Y-002`, `A11Y-006`, `PROD-020`, `PROD-023`, and the
+screenshot inventory; and supersedes `UX-004`, `UX-006`, `UX-013` to
+`UX-015`, `UX-018`, `UX-024`, `UX-025`, and the placement in `UX-070` to
+`UX-073`:
+[docs/specs/v10/amendments/2026-10-21-popup-overview-redesign-design.md](amendments/2026-10-21-popup-overview-redesign-design.md).
+
 ## Product statement
 
 Agent Bar v10 is an Omarchy Quattro Quickshell plugin. Its only graphical
@@ -141,7 +155,8 @@ application, an AUR product, or a cargo-binstall product.
    [2026-09-15 live Quickshell probe](amendments/2026-09-15-live-quickshell-probe-design.md),
    [2026-09-22 banked usage resets](amendments/2026-09-22-usage-resets-design.md),
    [2026-09-22 update apply in the popup](amendments/2026-09-22-update-apply-in-popup-design.md),
-   [2026-09-22 update apply detached](amendments/2026-09-22-update-apply-detached-design.md).
+   [2026-09-22 update apply detached](amendments/2026-09-22-update-apply-detached-design.md),
+   [2026-10-21 popup overview redesign](amendments/2026-10-21-popup-overview-redesign-design.md).
 
    [2026-09-15 Codex app-server only](amendments/2026-09-15-codex-app-server-only-design.md).
 

@@ -13,8 +13,10 @@ reliable glanceable answer to:
 ## Product purpose
 
 Agent Bar is a Quickshell plugin, not a general terminal application. The bar
-provides the glanceable state. The consolidated popup provides quota details,
-provider actions, Settings, an update check, and uninstall without requiring
+provides the glanceable state. The consolidated popup names the tightest
+window, lists every enabled provider in one view, and opens one provider's
+details at a time: quota windows, pace, resets, and provider actions. It
+also provides Settings, an update check, and uninstall without requiring
 the user to learn a CLI: Settings About checks for updates and, when one is
 available, offers `Update to <version>`. After one confirmation the plugin
 runs the Omarchy plugin manager and then offers `Restart shell`. The

@@ -123,7 +123,8 @@ Representative response:
           "label": "Session (5h)",
           "usedPercent": 42.0,
           "remainingPercent": 58.0,
-          "resetsAt": "2026-07-26T22:00:00Z"
+          "resetsAt": "2026-07-26T22:00:00Z",
+          "windowMinutes": 300
         }
       ],
       "lastSuccessAt": "2026-07-26T18:42:00Z",
@@ -182,6 +183,15 @@ provider_error
 - `JSON-019`: **Retired**, removed by the 2026-09-15 amendment. `account` no
   longer exists in the schema.
 - `JSON-020`: Provider windows have stable IDs and English labels.
+- `JSON-020A` (added 2026-10-21): Every window carries `windowMinutes`, the
+  nominal window length as a positive integer of whole minutes, or `null`
+  when the provider defines none. The key is always present. Codex reads
+  `windowDurationMins`; Claude reports 300 for the session and 10080 for
+  weekly windows; Antigravity reports 300 for `-5h` and 10080 for
+  `-weekly`; Grok reports 10080 only for an explicit weekly period. QML
+  reads it only for the pace tick and pace line and never derives a
+  duration from `id` or `label`. See
+  `docs/specs/v10/amendments/2026-10-21-popup-overview-redesign-design.md`.
 - `JSON-021`: `lastSuccessAt` records the data generation, not the current
   display time.
 - `JSON-022`: A provider error does not invalidate successful siblings.
