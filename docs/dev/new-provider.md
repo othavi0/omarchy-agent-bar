@@ -186,8 +186,8 @@ Tests use fake process/HTTP/filesystem data only.
 - Add the approved provider icon. Monochrome marks must be a
   white-on-transparency mask (mark-grade artwork, not a filled app icon);
   the runtime tints them to the theme foreground at render time.
-- Verify chip, rail, tooltip, provider header, every state, keyboard order, and
-  accessibility label.
+- Verify chip, tooltip, overview row (head, detail, pace line), every state,
+  keyboard order, and accessibility label.
 - Add light/dark deterministic screenshots.
 - Do not add provider-specific parsing or arbitrary fields to QML.
 

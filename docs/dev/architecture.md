@@ -48,10 +48,11 @@ Each `BarWidget.qml` exists per monitor and owns:
   ownership);
 - rendering derived from the shared service.
 
-The consolidated popup uses an icon rail (providers + Settings), a
-content-fit card height, overflow-gated vertical scrolling, one lead
-percentage window, and compact rows with a progress track. Widgets do not own
-polling, provider state, settings persistence, or cache.
+The consolidated popup shows an overview: a headline band naming the
+tightest window, one accordion row per shown provider with its primary meter
+and a pace tick, and a footer that opens Settings. The card fits its content,
+and only the rows (or the Settings body) scroll, and only on overflow.
+Widgets do not own polling, provider state, settings persistence, or cache.
 
 `Service.qml` stays declarative by delegating its logic to four JS modules
 loaded beside it: `CoreService.js` (polling, forced-refresh

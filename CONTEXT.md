@@ -9,14 +9,19 @@ new code.
 A compact provider icon and percentage rendered by `BarWidget.qml`.
 
 **Consolidated popup**
-The single logical Agent Bar popup. It opens on one monitor and shows one
-provider or Settings at a time.
+The single logical Agent Bar popup. It opens on one monitor and shows either
+the overview or Settings.
 
-**Provider rail**
-The vertical icon-only selector on the popup's left edge.
+**Overview**
+The popup view that lists every shown provider as a row under a headline band
+that names the tightest window.
 
-**Provider view**
-The selected provider's plan, state, percentage windows, resets, and actions.
+**Provider row**
+One provider in the overview. Its head shows the icon, name, plan, primary
+meter, and value, and toggles the row open; one row is open at a time.
+
+**Row detail**
+The open row's pace line, other percentage windows, resets, and actions.
 
 **Settings**
 The popup view that edits the canonical Agent Bar settings draft.
