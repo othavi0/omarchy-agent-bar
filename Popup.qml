@@ -574,6 +574,8 @@ KeyboardPanel {
       width: contentLoader.width
       overview: root.overview
       topRadius: stalledMessage.visible || restartBanner.visible ? 0 : root.innerRadius
+      flushTop: !stalledMessage.visible && !restartBanner.visible
+      frameWidth: root.verticalContentInset / 2
       foreground: Commons.Color.foreground
       fontFamily: Style.font.family
       onToggleRequested: function (id) { root.toggleRow(id) }

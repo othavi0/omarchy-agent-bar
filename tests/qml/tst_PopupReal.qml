@@ -7,6 +7,7 @@ import "ServiceHarness.js" as ServiceHarness
 import "ViewHarness.js" as ViewHarness
 import "OverviewFixtures.js" as F
 import "TestPalette.js" as Palette
+import "../../components/Tokens.js" as Tokens
 
 TestCase {
   id: testCase
@@ -903,24 +904,40 @@ TestCase {
     compare(clicks.count, 1, data.tag + ": the press still clicks")
   }
 
-  function test_rail_follows_the_card_corner() {
-    var saved = Style.cornerRadius
-    Style.cornerRadius = 12
-    try {
-      openRealPopup()
-      verify(popup.innerRadius > 0)
-      var rail = one(rows()[0], "rowRail")
-      verify(rail.visible, "the open first row has a rail")
-      var image = grabImage(rail)
-      var inner = rail.width - 1
-      for (var y = 0; y <= popup.innerRadius / 3; y++)
-        verify(!Qt.colorEqual(image.pixel(inner, y), Commons.Color.accent),
-               "the rail leaves the rounded corner empty at (" + inner + ", " + y + ")")
-      verify(Qt.colorEqual(image.pixel(0, rail.height - 1), Commons.Color.accent),
-             "the rail still paints below the corner")
-    } finally {
-      Style.cornerRadius = saved
-    }
+  function frameWidth() {
+    return popup.verticalContentInset / 2
+  }
+
+  function test_open_block_is_framed_without_doubled_sides() {
+    openRealPopup()
+    compare(byName(popup, "rowRail").length, 0, "no accent rail on the left of the open row")
+    compare(byName(popup, "rowLip").length, 0, "no thick accent lip under the open head")
+    var claude = rowById("claude")
+    var top = one(claude, "rowFrameTop")
+    var bottom = one(claude, "rowFrameBottom")
+    compare(top.visible, false, "the popup border already closes the first row's top")
+    verify(bottom.visible, "the open block closes with a bottom line")
+    compare(bottom.x, 0)
+    compare(bottom.width, claude.width, "the line spans the row; the popup border draws the sides")
+    compare(bottom.height, frameWidth(), "the line matches the popup border width")
+    verify(Qt.colorEqual(bottom.color, Commons.Color.popups.border), "the line uses the popup border colour")
+    compare(bottom.y + bottom.height, one(claude, "drawerWell").y + one(claude, "drawerWell").height,
+            "the bottom line closes the well, above the band to the next provider")
+
+    cleanup()
+    openRealPopup(F.normal(), "used", "grok")
+    var grok = rowById("grok")
+    verify(one(grok, "rowFrameTop").visible, "an open row below another provider gets a top line")
+    compare(one(grok, "rowFrameTop").y, 0)
+    compare(one(rowById("claude"), "rowFrameBottom").visible, false, "a closed row draws no frame")
+  }
+
+  function test_open_head_keeps_a_light_accent() {
+    openRealPopup()
+    var plate = one(rowById("claude"), "rowPlate").color
+    var slab = Tokens.surfaces(Commons.Color.popups.background, Commons.Color.foreground).slab
+    verify(Qt.colorEqual(plate, Tokens.mix(slab, Commons.Color.accent, 0.06)),
+           "the open head carries 6% accent, got " + plate)
   }
 
   function test_action_buttons_reserve_the_host_focus_border() {
