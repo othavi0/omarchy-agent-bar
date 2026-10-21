@@ -52,8 +52,8 @@ sits below the slab.
   an open head and 7 % under a selected closed head. A closed head shows
   `Style.hoverFill` under the pointer. The open row has a 2-unit accent lip
   under its head and a 3-unit accent rail on its left edge. The rail spans
-  the head and the drawer. The first row's tint, hover fill, and focus ring
-  still follow the popup's inner radius.
+  the head and the drawer. The first row's tint, hover fill, focus ring, and
+  rail still follow the popup's inner radius.
 - `UX-077` (amended): the head ends with a chevron in its own column. The
   chevron points right on a closed row and down on the open row, with no
   animation (`A11Y-013`). It is accent on the selected or open row and
@@ -78,9 +78,10 @@ sits below the slab.
     tall, with its content centred vertically. Window rows stack with no gap
     between them.
   - Window labels and reset labels share one label column. The column is at
-    least `Style.font.bodySmall × 8.5` wide, or as wide as the widest label.
-    Labels are bold in the foreground. Meters and reset facts start at the
-    same x.
+    least as wide as the head's name column (`Style.font.body × 8.5`), or as
+    wide as the widest label. Labels are bold in the foreground. Meters and
+    reset facts start at the same x, which is the head meter's x unless a
+    label is wider than the name column.
   - A window value is secondary text, or urgent and bold with the alert
     glyph when critical. Reset times and reset facts are tertiary. The facts
     of one reset line are joined with ` · `.
@@ -89,21 +90,28 @@ sits below the slab.
     `Button`s with no border, `Style.spacing.controlHeight` tall, one
     `Style.space(8)` apart. Both have the same width: the widest label
     either can show (`Refresh`, `Refreshing`, the retry label, `Use reset`,
-    `Using reset…`) plus the icon. Neither changes width while refreshing.
-    `Refresh` ends on the chevron's right edge. `Use reset` carries the bolt
-    glyph (U+F140B).
+    `Using reset…`) plus the icon, the padding, and the widest border the
+    host can paint on focus, hover, or selection. Neither changes width while
+    refreshing. `Refresh` ends on the chevron's right edge. `Use reset`
+    carries the bolt glyph (U+F140B).
   - Button fills are mixed into the well. `Refresh` uses the foreground,
-    10 % at rest and 16 % under the pointer or with focus. A claimable
-    `Use reset` uses the accent, 24 % at rest and 34 % under the pointer or
-    with focus. A disabled `Use reset` rests on the foreground at 4 %, and
-    its label and glyph are tertiary. The host focus border is unchanged.
+    10 % at rest, 16 % under the pointer or with focus, and 24 % while
+    pressed. A claimable `Use reset` uses the accent, 24 % at rest, 34 %
+    under the pointer or with focus, and 46 % while pressed. A disabled
+    `Use reset` rests on the foreground at 4 %, and its label and glyph are
+    tertiary. The host focus border is unchanged.
+  - Setting `color` on a host `Button` replaces its whole fill rule, press
+    included, and its `MouseArea` is private. A passive `PointHandler` in an
+    item above the host content sees the press without taking the click, and
+    drives the press tone.
 
 ### Status rows (UX-082 amended)
 
 - `UX-082` (amended): the head action (`Sign in` with the user glyph,
   `Install guide` with the external-link glyph) uses the same borderless
   accent fill as a claimable `Use reset`, mixed into the head's own tint
-  instead of the well, and is `Style.spacing.controlHeight` tall.
+  instead of the well, with the same hover, focus, and press tones, and is
+  `Style.spacing.controlHeight` tall.
 
 ### Footer (UX-083 amended)
 
@@ -163,10 +171,6 @@ sits below the slab.
 - **An inner shadow in the well.** The prototype's shadow darkens toward
   black, and on a dark theme a shade derived from the background alone is
   invisible. The lip, the rail, and the well tone carry the depth.
-- **A press fill on the action buttons.** The host `Button` keeps its press
-  state private, and a pointer handler layered over it never sees the press
-  that its `MouseArea` accepts, so the buttons show rest and hover or focus
-  only.
 - **Bold button labels and an accent-only glyph on `Use reset`.** The host
   `Button` draws its label and icon in one colour and bolds them only for
   `selected`. Re-drawing the content would duplicate the host control, and
