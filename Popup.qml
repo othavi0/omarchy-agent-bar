@@ -38,7 +38,9 @@ KeyboardPanel {
 
   property string settingsTab: "providers"
 
-  readonly property string selectedId: {
+  // The service's pick, which may name a provider Settings has since hidden.
+  // The overview falls back to a shown row, and selectedId follows it.
+  readonly property string requestedId: {
     if (!agentService)
       return ""
     if (agentService.popupOwner && agentService.popupOwner.providerId
@@ -50,6 +52,8 @@ KeyboardPanel {
       return String(visibleProviders[0].id)
     return ""
   }
+
+  readonly property string selectedId: overview.selectedId
 
   readonly property string view: Service.popupView(agentService ? agentService.popupOwner : null)
 
@@ -70,7 +74,7 @@ KeyboardPanel {
     resolvedSettings,
     nowMs,
     {
-      id: selectedId,
+      id: requestedId,
       collapsed: !!(agentService && agentService.popupOwner && agentService.popupOwner.collapsed)
     },
     {
@@ -133,6 +137,10 @@ KeyboardPanel {
   function toggleRow(providerId) {
     if (!agentService)
       return
+    // The service toggles against its own pick; hand it the row on screen
+    // first when that pick is hidden.
+    if (root.requestedId !== root.selectedId)
+      agentService.requestPopup(owner, root.selectedId, root.view)
     agentService.toggleProviderRow(owner, providerId)
   }
 
@@ -282,12 +290,17 @@ KeyboardPanel {
     scheduleFocusRebuild()
   }
   onFocusShapeChanged: scheduleFocusRebuild()
-  onSelectedIdChanged: Qt.callLater(function () {
-    if (focusController && typeof focusController.clampScroll === "function")
-      focusController.clampScroll()
-    if (typeof root.rebuildFocusTargets === "function")
-      root.rebuildFocusTargets()
-  })
+  // A new selection, a step or a fallback from a hidden provider alike,
+  // takes focus to its head.
+  onSelectedIdChanged: {
+    root.pendingRowFocus = true
+    Qt.callLater(function () {
+      if (focusController && typeof focusController.clampScroll === "function")
+        focusController.clampScroll()
+      if (typeof root.rebuildFocusTargets === "function")
+        root.rebuildFocusTargets()
+    })
+  }
 
   // After a keyboard step or an open, focus lands on the selected row's head
   // rather than on the first target.

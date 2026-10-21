@@ -649,4 +649,29 @@ TestCase {
     tryVerify(function () { return currentName() === "Back to usage" }, 1000,
               "the footer opens Settings on Back, not on " + currentName())
   }
+
+  function test_hidden_selection_moves_to_the_shown_row() {
+    openRealPopup(F.normal(), "used", "grok")
+    var settings = F.settings("used")
+    for (var i = 0; i < settings.providers.length; i++) {
+      if (settings.providers[i].id === "grok")
+        settings.providers[i].enabled = false
+    }
+    service.appliedSettings = settings
+    settle()
+    compare(popup.overview.selectedId, "claude")
+    compare(popup.selectedId, popup.overview.selectedId,
+            "the popup and the overview agree on the selected row")
+    tryVerify(function () { return headOf("claude").activeFocus }, 1000,
+              "focus follows the selection to the shown row")
+
+    headOf("claude").focusActivate()
+    settle()
+    compare(rowById("claude").row.open, false, "the first press closes the open row")
+
+    keyClick(Qt.Key_Down)
+    settle()
+    compare(popup.selectedId, "codex", "Down steps from the shown row")
+    compare(rowById("codex").row.open, true)
+  }
 }
