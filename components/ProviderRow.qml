@@ -185,6 +185,7 @@ Item {
             implicitHeight: nameText.implicitHeight
 
             UsageMeter {
+              objectName: "rowMeter"
               visible: root.reading
               anchors.left: parent.left
               anchors.right: parent.right
@@ -316,9 +317,10 @@ Item {
             foreground: root.foreground
             fontFamily: root.fontFamily
             background: Tokens.mix(root.headTone, Commons.Color.accent, Tokens.PRIMARY_REST)
-            color: actionButton.hot || actionButton.activeFocus
-                ? Tokens.mix(root.headTone, Commons.Color.accent, Tokens.PRIMARY_HOT)
-                : actionButton.background
+            color: actionPress.active ? Tokens.mix(root.headTone, Commons.Color.accent, Tokens.PRIMARY_PRESS)
+                : actionButton.hot || actionButton.activeFocus
+                    ? Tokens.mix(root.headTone, Commons.Color.accent, Tokens.PRIMARY_HOT)
+                    : actionButton.background
             Accessible.name: text
             function focusActivate() {
               if (root.action)
@@ -326,6 +328,12 @@ Item {
             }
             Accessible.onPressAction: focusActivate()
             onClicked: focusActivate()
+
+            // See RowDetail: the tonal fill owns press, which the host keeps private.
+            Item {
+              anchors.fill: parent
+              PointHandler { id: actionPress; acceptedButtons: Qt.LeftButton }
+            }
           }
         }
 
@@ -395,11 +403,20 @@ Item {
     }
   }
 
-  Rectangle {
+  // The rail is the left strip of a rounded rectangle wide enough to keep
+  // its full radius, so on the first row it follows the card's corner.
+  Item {
     objectName: "rowRail"
     visible: root.open
     width: Style.space(3)
     height: head.height + detail.height
-    color: Commons.Color.accent
+    clip: true
+
+    Rectangle {
+      width: Math.max(parent.width, root.topRadius * 2)
+      height: parent.height
+      topLeftRadius: root.topRadius
+      color: Commons.Color.accent
+    }
   }
 }

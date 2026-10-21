@@ -832,6 +832,8 @@ TestCase {
     var install = ViewHarness.buttonsWithText(rowById("codex"), ["Install guide"])
     compare(install.length, 1)
     compare(install[0].bordered, false, "the head action drops the outline too")
+    var head = one(rowById("codex"), "rowPlate").color
+    verify(!Qt.colorEqual(install[0].color, head), "the head action rests on a tint, not the bare head")
   }
 
   function luma(c) {
@@ -862,6 +864,129 @@ TestCase {
       c.foreground = saved.foreground; c.background = saved.background; c.accent = saved.accent
       c.urgent = saved.urgent; c.muted = saved.muted
       c.popups.background = saved.popups.background; c.popups.border = saved.popups.border
+    }
+  }
+
+  function test_action_buttons_show_hover_and_press_data() {
+    return [{ tag: "useReset" }, { tag: "refresh" }, { tag: "headAction" }]
+  }
+
+  // The tonal fills replace the host fill rule, so each button paints its
+  // own rest, hover or focus, and press tones, and a press still clicks.
+  function test_action_buttons_show_hover_and_press(data) {
+    var button
+    var clicks = { count: 0 }
+    if (data.tag === "headAction") {
+      openRealPopup(F.problems(), "used", "codex")
+      button = ViewHarness.buttonsWithText(rowById("codex"), ["Install guide"])[0]
+    } else {
+      openRealPopup()
+      button = one(detailOf("claude"), data.tag === "useReset" ? "useResetButton" : "refreshButton")
+    }
+    verify(button.enabled, data.tag + " is enabled")
+    button.clicked.connect(function () { clicks.count++ })
+    var rest = String(button.color)
+    button.hasCursor = true
+    var hot = String(button.color)
+    button.hasCursor = false
+    verify(hot !== rest, data.tag + ": hover (" + hot + ") differs from rest (" + rest + ")")
+    button.forceActiveFocus()
+    tryVerify(function () { return button.activeFocus }, 1000, data.tag + " takes focus")
+    compare(String(button.color), hot, data.tag + ": focus takes the hover tone")
+    mousePress(button, button.width / 2, button.height / 2, Qt.LeftButton)
+    var pressed = String(button.color)
+    verify(pressed !== hot && pressed !== rest,
+           data.tag + ": press (" + pressed + ") differs from hover (" + hot + ") and rest (" + rest + ")")
+    mouseRelease(button, button.width / 2, button.height / 2, Qt.LeftButton)
+    verify(String(button.color) !== pressed, data.tag + ": release drops the press tone")
+    compare(clicks.count, 1, data.tag + ": the press still clicks")
+  }
+
+  function test_rail_follows_the_card_corner() {
+    var saved = Style.cornerRadius
+    Style.cornerRadius = 12
+    try {
+      openRealPopup()
+      verify(popup.innerRadius > 0)
+      var rail = one(rows()[0], "rowRail")
+      verify(rail.visible, "the open first row has a rail")
+      var image = grabImage(rail)
+      var inner = rail.width - 1
+      for (var y = 0; y <= popup.innerRadius / 3; y++)
+        verify(!Qt.colorEqual(image.pixel(inner, y), Commons.Color.accent),
+               "the rail leaves the rounded corner empty at (" + inner + ", " + y + ")")
+      verify(Qt.colorEqual(image.pixel(0, rail.height - 1), Commons.Color.accent),
+             "the rail still paints below the corner")
+    } finally {
+      Style.cornerRadius = saved
+    }
+  }
+
+  function test_action_buttons_reserve_the_host_focus_border() {
+    openRealPopup()
+    var thin = one(detailOf("claude"), "refreshButton").width
+    cleanup()
+    var saved = Style.styleOverrides
+    Style.styleOverrides = { "focus-border-width": 3 }
+    try {
+      openRealPopup()
+      compare(Style.focusBorderWidth, 3)
+      var detail = detailOf("claude")
+      compare(one(detail, "refreshButton").width, thin + (3 - Style.spacing.hairline) * 2,
+              "a 3 px focus border widens the buttons by the extra border on each side")
+      compare(one(detail, "useResetButton").width, one(detail, "refreshButton").width)
+    } finally {
+      Style.styleOverrides = saved
+    }
+  }
+
+  function test_drawer_meters_start_under_the_head_meter() {
+    openRealPopup()
+    var head = one(rowById("claude"), "rowMeter")
+    var meters = byName(detailOf("claude"), "windowMeter")
+    verify(meters.length > 0)
+    for (var i = 0; i < meters.length; i++)
+      compare(leftOf(meters[i]), leftOf(head), "drawer meter " + i + " starts under the head meter")
+    compare(leftOf(one(detailOf("claude"), "resetFacts")), leftOf(head), "the reset facts too")
+  }
+
+  function contrast(a, b) {
+    function lin(v) { return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4) }
+    function lum(c) { return 0.2126 * lin(c.r) + 0.7152 * lin(c.g) + 0.0722 * lin(c.b) }
+    var la = lum(a), lb = lum(b)
+    return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05)
+  }
+
+  function over(top, base) {
+    return Qt.rgba(top.r * top.a + base.r * (1 - top.a), top.g * top.a + base.g * (1 - top.a),
+                   top.b * top.a + base.b * (1 - top.a), 1)
+  }
+
+  function test_disabled_use_reset_stays_legible_data() {
+    return [{ tag: "dark", mode: "dark" }, { tag: "light", mode: "light" }, { tag: "white", mode: "white" }]
+  }
+
+  function test_disabled_use_reset_stays_legible(data) {
+    var c = Commons.Color
+    var saved = { foreground: String(c.foreground), background: String(c.background),
+                  accent: String(c.accent), popups: { background: String(c.popups.background) } }
+    var p = Palette.themePalette(data.mode)
+    try {
+      c.foreground = p.foreground; c.background = p.background; c.accent = p.accent
+      c.popups.background = p.popups.background
+      var env = F.normal()
+      env.providers[0].resets = [F.claudeReset(false)]
+      openRealPopup(env)
+      var use = one(detailOf("claude"), "useResetButton")
+      var well = one(rowById("claude"), "drawerWell").color
+      compare(use.enabled, false)
+      verify(!Qt.colorEqual(use.color, well), data.tag + ": the disabled fill still shows on the well")
+      var label = over(use.foreground, use.color)
+      var ratio = contrast(label, use.color)
+      verify(ratio >= 3, data.tag + ": the disabled label keeps 3:1 contrast (" + ratio.toFixed(2) + ")")
+    } finally {
+      c.foreground = saved.foreground; c.background = saved.background; c.accent = saved.accent
+      c.popups.background = saved.popups.background
     }
   }
 }

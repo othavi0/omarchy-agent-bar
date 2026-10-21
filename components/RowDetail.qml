@@ -38,10 +38,11 @@ Column {
   readonly property color secondary: Util.alpha(root.foreground, Tokens.TEXT_SECONDARY)
   readonly property color tertiary: Util.alpha(root.foreground, Tokens.TEXT_TERTIARY)
 
-  // The window labels and the reset labels share one column, at least
-  // LABEL_COLUMN_EMS wide, so the meters and the reset facts start together.
+  // The window labels and the reset labels share one column, at least as
+  // wide as the head's name column, so the drawer meters and the reset facts
+  // start under the head meter.
   readonly property int labelWidth: {
-    var widest = Math.round(Style.font.bodySmall * Tokens.LABEL_COLUMN_EMS)
+    var widest = Math.round(Style.font.body * Tokens.NAME_COLUMN_EMS)
     for (var i = 0; i < root.windows.length; i++)
       widest = Math.max(widest, Math.ceil(labelMetrics.advanceWidth(String(root.windows[i].label))))
     for (var r = 0; r < root.resets.length; r++)
@@ -59,8 +60,8 @@ Column {
       widest = Math.max(widest, buttonMetrics.advanceWidth(labels[i]))
     var glyph = Math.max(glyphMetrics.advanceWidth(Tokens.GLYPH_REFRESH),
                          glyphMetrics.advanceWidth(Tokens.GLYPH_BOLT))
-    return Math.ceil(widest + glyph) + Style.spacing.controlGap
-        + Style.space(12) * 2 + Style.spacing.hairline * 2
+    var border = Math.max(Style.focusBorderWidth, Style.hoverBorderWidth, Style.selectedBorderWidth)
+    return Math.ceil(widest + glyph) + Style.spacing.controlGap + Style.space(12) * 2 + border * 2
   }
 
   width: parent ? parent.width : implicitWidth
@@ -452,9 +453,11 @@ Column {
           background: useResetButton.enabled
               ? Tokens.mix(root.well, Commons.Color.accent, Tokens.PRIMARY_REST)
               : Tokens.mix(root.well, root.foreground, Tokens.BUTTON_OFF)
-          color: useResetButton.enabled && (useResetButton.hot || useResetButton.activeFocus)
-              ? Tokens.mix(root.well, Commons.Color.accent, Tokens.PRIMARY_HOT)
-              : useResetButton.background
+          color: !useResetButton.enabled ? useResetButton.background
+              : useResetPress.active ? Tokens.mix(root.well, Commons.Color.accent, Tokens.PRIMARY_PRESS)
+              : useResetButton.hot || useResetButton.activeFocus
+                  ? Tokens.mix(root.well, Commons.Color.accent, Tokens.PRIMARY_HOT)
+                  : useResetButton.background
           Accessible.name: "Use reset"
           function focusActivate() {
             if (root.useReset.enabled && root.useReset.resetId)
@@ -462,6 +465,14 @@ Column {
           }
           Accessible.onPressAction: focusActivate()
           onClicked: focusActivate()
+
+          // Setting `color` replaces the host fill rule, press included, and
+          // the host MouseArea is private. A passive handler above it sees
+          // the press without taking the click.
+          Item {
+            anchors.fill: parent
+            PointHandler { id: useResetPress; acceptedButtons: Qt.LeftButton }
+          }
         }
 
         Button {
@@ -479,15 +490,21 @@ Column {
           foreground: root.foreground
           fontFamily: root.fontFamily
           background: Tokens.mix(root.well, root.foreground, Tokens.BUTTON_REST)
-          color: refreshButton.hot || refreshButton.activeFocus
-              ? Tokens.mix(root.well, root.foreground, Tokens.BUTTON_HOT)
-              : refreshButton.background
+          color: refreshPress.active ? Tokens.mix(root.well, root.foreground, Tokens.BUTTON_PRESS)
+              : refreshButton.hot || refreshButton.activeFocus
+                  ? Tokens.mix(root.well, root.foreground, Tokens.BUTTON_HOT)
+                  : refreshButton.background
           Accessible.name: text
           function focusActivate() {
             root.refreshRequested()
           }
           Accessible.onPressAction: focusActivate()
           onClicked: focusActivate()
+
+          Item {
+            anchors.fill: parent
+            PointHandler { id: refreshPress; acceptedButtons: Qt.LeftButton }
+          }
         }
       }
     }
