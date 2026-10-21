@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [10.7.1] - 2026-10-21
+
+### Changed
+
+- docs(spec): record the overview headline removal
+- feat(popup): drop the tightest headline band
+
 ## [10.7.0] - 2026-10-21
 
 ### Changed
