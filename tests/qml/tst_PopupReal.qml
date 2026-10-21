@@ -565,4 +565,56 @@ TestCase {
     compare(JSON.stringify(service.settingsDraft), draft, "Back keeps the unsaved draft")
     compare(rowById(selected).row.open, true, "Back reopens the selected row")
   }
+
+  // Real key presses reach the catcher only when the focused control leaves
+  // them alone, so these tests press keys instead of emitting its signals.
+  function pressAndExpectTabWalk(steps, key) {
+    var fc = one(popup, "focusController")
+    var live = fc.liveTargets()
+    var at = live.indexOf(fc.current)
+    verify(at >= 0, "the walk starts on a live target")
+    var direction = key === Qt.Key_Backtab ? -1 : 1
+    for (var i = 1; i <= steps; i++) {
+      keyClick(key)
+      settle()
+      var want = live[((at + direction * i) % live.length + live.length) % live.length]
+      compare(fc.current, want, "step " + i + " lands on " + want.Accessible.name
+              + ", not " + (fc.current ? fc.current.Accessible.name : "none"))
+      verify(want.activeFocus, "step " + i + ": " + want.Accessible.name
+             + " holds focus, not " + testCase.Window.activeFocusItem)
+    }
+  }
+
+  function test_tab_keys_walk_the_usage_order() {
+    openRealPopup()
+    tryVerify(function () { return headOf("claude").activeFocus }, 1000)
+    var count = focusNames().length
+    compare(count, 7)
+    pressAndExpectTabWalk(count + 1, Qt.Key_Tab)
+    pressAndExpectTabWalk(count + 1, Qt.Key_Backtab)
+  }
+
+  function test_tab_keys_walk_the_general_tab() {
+    openSettingsView()
+    popup.settingsTab = "general"
+    var fc = one(popup, "focusController")
+    var group = one(popup, "metricGroup")
+    tryVerify(function () { return fc.liveTargets().indexOf(group) >= 0 }, 1000)
+    verify(fc.focusItem(group))
+    pressAndExpectTabWalk(fc.liveTargets().length + 1, Qt.Key_Tab)
+    pressAndExpectTabWalk(3, Qt.Key_Backtab)
+  }
+
+  function test_escape_closes_from_a_number_field() {
+    openSettingsView()
+    popup.settingsTab = "general"
+    var fc = one(popup, "focusController")
+    var field = one(popup, "intervalField").field
+    tryVerify(function () { return fc.liveTargets().indexOf(field) >= 0 }, 1000)
+    verify(fc.focusItem(field))
+    verify(popup.editorActive, "the field owns typing")
+    keyClick(Qt.Key_Escape)
+    settle()
+    compare(popup.isOpen, false, "Esc closes the popup from the field")
+  }
 }

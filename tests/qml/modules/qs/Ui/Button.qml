@@ -39,6 +39,9 @@ Item {
   implicitWidth: row.implicitWidth + horizontalPadding * 2
   implicitHeight: Math.max(label.implicitHeight, iconGlyph.implicitHeight) + verticalPadding * 2
   activeFocusOnTab: focusable
+  Keys.onReturnPressed: if (focusable) root.clicked()
+  Keys.onEnterPressed: if (focusable) root.clicked()
+  Keys.onSpacePressed: if (focusable) root.clicked()
 
   Rectangle {
     anchors.fill: parent

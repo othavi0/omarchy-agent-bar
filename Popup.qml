@@ -374,6 +374,21 @@ KeyboardPanel {
       objectName: "popupBody"
       anchors.fill: parent
 
+      // The catcher stands down while a number field owns typing; Tab, Backtab
+      // and Esc still leave the field.
+      Keys.onPressed: function (event) {
+        if (!root.editorActive)
+          return
+        if (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab) {
+          focusController.move(event.key === Qt.Key_Backtab
+              || (event.modifiers & Qt.ShiftModifier) ? -1 : 1)
+          event.accepted = true
+        } else if (event.key === Qt.Key_Escape) {
+          root.close()
+          event.accepted = true
+        }
+      }
+
       Column {
         id: header
         anchors.top: parent.top

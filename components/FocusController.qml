@@ -40,9 +40,24 @@ Item {
     return out
   }
 
+  // Every target leaves Qt's own Tab chain: an item that keeps
+  // activeFocusOnTab moves focus itself on Tab, the catcher never sees the
+  // key, and index goes stale. A spin box takes focus on its text input
+  // (contentItem), so that item leaves the chain too.
+  function leaveTabChain(item) {
+    if (!item)
+      return
+    if (item.activeFocusOnTab)
+      item.activeFocusOnTab = false
+    if (item.contentItem && item.contentItem.activeFocusOnTab)
+      item.contentItem.activeFocusOnTab = false
+  }
+
   function setTargets(list) {
     var previousCurrent = current
     targets = list || []
+    for (var t = 0; t < targets.length; t++)
+      leaveTabChain(targets[t])
     if (count === 0) {
       index = -1
       return

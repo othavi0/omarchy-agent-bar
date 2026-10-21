@@ -37,6 +37,9 @@ Row {
 
   spacing: 0
   activeFocusOnTab: focusable
+  Keys.onReturnPressed: root.activateFocused()
+  Keys.onEnterPressed: root.activateFocused()
+  Keys.onSpacePressed: root.activateFocused()
 
   Repeater {
     model: root.options
