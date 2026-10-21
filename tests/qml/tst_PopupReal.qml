@@ -1,5 +1,6 @@
 import QtQuick
 import QtTest
+import qs.Commons
 import "../../CoreView.js" as Core
 import "ServiceHarness.js" as ServiceHarness
 import "ViewHarness.js" as ViewHarness
@@ -686,5 +687,22 @@ TestCase {
     compare(rowById("codex").row.open, false)
     var alert = one(rowById("codex"), "rowAlert")
     verify(visibleIn(alert, popup), "the collapsed row shows the alert glyph")
+  }
+
+  function test_restart_banner_follows_the_card_corners() {
+    var saved = Style.cornerRadius
+    Style.cornerRadius = 12
+    try {
+      openRealPopup()
+      service.restartPendingVersion = "10.7.0"
+      settle()
+      var banner = one(popup, "restartBanner")
+      verify(banner.visible)
+      verify(popup.innerRadius > 0)
+      compare(banner.topLeftRadius, popup.innerRadius, "the banner fill stays inside the rounded border")
+      compare(banner.topRightRadius, popup.innerRadius)
+    } finally {
+      Style.cornerRadius = saved
+    }
   }
 }

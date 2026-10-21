@@ -439,10 +439,12 @@ KeyboardPanel {
 
         RestartBanner {
           id: restartBanner
+          objectName: "restartBanner"
           width: parent.width
           visible: !!root.agentService && root.agentService.restartPending
               && root.view !== "settings" && !stalledMessage.visible
           version: root.agentService ? root.agentService.pendingVersion : ""
+          innerRadius: root.innerRadius
           foreground: Commons.Color.foreground
           fontFamily: Style.font.family
           onRestartRequested: {

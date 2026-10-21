@@ -10,6 +10,7 @@ Rectangle {
   property string version: ""
   property color foreground: Color.foreground
   property string fontFamily: Style.font.family
+  property int innerRadius: 0
 
   signal restartRequested()
 
@@ -22,6 +23,8 @@ Rectangle {
   width: parent ? parent.width : implicitWidth
   implicitHeight: row.implicitHeight + Style.space(16) + rule.height
   color: Style.selectedFillFor(root.foreground, Color.accent)
+  topLeftRadius: root.innerRadius
+  topRightRadius: root.innerRadius
 
   RowLayout {
     id: row
