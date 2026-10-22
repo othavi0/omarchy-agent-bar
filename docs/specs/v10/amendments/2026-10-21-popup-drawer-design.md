@@ -82,7 +82,9 @@ sits below the slab.
     between them.
   - Window labels and reset labels share one label column. The column is at
     least as wide as the head's name column (`Style.font.body × 8.5`), or as
-    wide as the widest window label. Labels are bold in the foreground.
+    wide as the widest window label, and at most 35 % of the drawer content
+    width. A window label past that cap elides. Labels are bold in the
+    foreground.
     Meters and reset facts start at the same x, which is the head meter's x
     unless a window label is wider than the name column. A reset label is
     provider copy of any length and never widens the column: a reset label
