@@ -40,13 +40,15 @@ Column {
 
   // The window labels set one column, at least as wide as the head's name
   // column, so the drawer meters and the reset facts start under the head
-  // meter. A reset label is provider copy of any length: one wider than the
-  // column stacks above its facts instead of widening the column.
+  // meter. Labels are provider copy of any length, so the column stops at a
+  // share of the drawer: a longer window label elides, and a longer reset
+  // label stacks above its facts.
   readonly property int labelWidth: {
-    var widest = Math.round(Style.font.body * Tokens.NAME_COLUMN_EMS)
+    var floor = Math.round(Style.font.body * Tokens.NAME_COLUMN_EMS)
+    var widest = floor
     for (var i = 0; i < root.windows.length; i++)
       widest = Math.max(widest, Math.ceil(labelMetrics.advanceWidth(String(root.windows[i].label))))
-    return widest
+    return Math.max(floor, Math.min(widest, Math.round(root.contentWidth * Tokens.LABEL_COLUMN_MAX_SHARE)))
   }
 
   // Both action buttons take the width of the widest label either can show,
