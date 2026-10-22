@@ -625,7 +625,7 @@ TestCase {
   function test_reset_rows_cooldown_uses_the_time_format_not_the_date_format() {
     var p = { id: "claude", name: "Claude", state: "ready", windows: [],
               resets: [{ id: "cedar-ember:x", label: "X",
-                         available: 0, total: 1, clears: ["session"],
+                         available: 1, total: 1, clears: ["session"],
                          expiresAt: null, refillsAt: null,
                          cooldownUntil: "2026-09-22T18:30:00Z", claimable: false }] }
     var rows = Core.resetRows(p, "MM/dd/yyyy", "hh:mm")
