@@ -271,6 +271,47 @@ TestCase {
     compare(focusNames()[1], "Refresh")
   }
 
+  function test_long_reset_label_keeps_the_drawer_readable() {
+    var env = F.normal()
+    var reset = F.claudeReset(true)
+    reset.label = "Claude Opus 5.5 launch: one usage-limit reset for Team members"
+    env.providers[0].resets = [reset]
+    openRealPopup(env)
+    var detail = detailOf("claude")
+    waitForRendering(popup)
+    var saved = null
+    popup.grabToImage(function (result) {
+      saved = result.saveToFile(repoRoot + "/target/v10-ui-evidence/long-reset-label.png")
+    })
+    tryVerify(function () { return saved !== null }, 3000, "grabToImage finished")
+    var meters = byName(detail, "windowMeter")
+    compare(meters.length, 2)
+    for (var i = 0; i < meters.length; i++)
+      verify(meters[i].width >= detail.contentWidth / 3,
+             "window meter keeps its width, got " + meters[i].width + " of " + detail.contentWidth)
+    var label = one(detail, "resetLabel")
+    verify(label.mapToItem(detail, label.width, 0).x <= detail.width,
+           "the reset label stays inside the drawer")
+    var facts = one(detail, "resetFacts")
+    verify(facts.width >= detail.contentWidth / 2,
+           "reset facts get a readable width, got " + facts.width + " of " + detail.contentWidth)
+    verify(facts.lineCount <= 2, "reset facts wrap at most once, got " + facts.lineCount + " lines")
+  }
+
+  function test_spent_reset_hides_the_reset_section() {
+    var env = F.normal()
+    var spent = F.claudeReset(false)
+    spent.available = 0
+    spent.expiresAt = null
+    spent.cooldownUntil = F.at(60)
+    env.providers[0].resets = [spent]
+    openRealPopup(env)
+    var detail = detailOf("claude")
+    compare(byName(detail, "resetLabel").length, 0, "no reset line without a reset left")
+    compare(ViewHarness.buttonsWithText(detail, ["Use reset"])[0].visible, false,
+            "Use reset hides without a reset left")
+  }
+
   function test_status_row_carries_its_action() {
     openRealPopup(F.problems(), "used", "codex")
     var codex = rowById("codex")
