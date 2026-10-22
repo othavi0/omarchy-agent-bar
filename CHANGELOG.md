@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [11.0.2] - 2026-10-22
+
+### Changed
+
+- fix(popup): drop the minimum popup height
+- test(qml): footer sits under a lone collapsed row
+
 ## [11.0.1] - 2026-10-22
 
 ### Changed
