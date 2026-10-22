@@ -140,6 +140,8 @@ Column {
         Text {
           visible: text.length > 0
           text: root.pace ? root.pace.strong : ""
+          width: Math.min(implicitWidth, parent.width)
+          wrapMode: Text.WordWrap
           color: root.foreground
           font.family: root.fontFamily
           font.pixelSize: Style.font.bodySmall
@@ -151,6 +153,8 @@ Column {
         Text {
           visible: text.length > 0
           text: root.pace ? root.pace.rest : ""
+          width: Math.min(implicitWidth, parent.width)
+          wrapMode: Text.WordWrap
           color: root.tertiary
           font.family: root.fontFamily
           font.pixelSize: Style.font.bodySmall
