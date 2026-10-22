@@ -361,6 +361,30 @@ TestCase {
     }
   }
 
+  function test_single_collapsed_row_puts_the_footer_under_it() {
+    openRealPopup(F.envelope([F.claudeReady(25, 103)]))
+    var onlyClaude = F.settings("used")
+    for (var i = 0; i < onlyClaude.providers.length; i++)
+      onlyClaude.providers[i].enabled = onlyClaude.providers[i].id === "claude"
+    service.appliedSettings = onlyClaude
+    settle()
+    compare(rows().length, 1, "one provider row")
+    headOf("claude").focusActivate()
+    settle()
+    compare(rowById("claude").row.open, false, "the only row is collapsed")
+    waitForRendering(popup)
+    var saved = null
+    popup.grabToImage(function (result) {
+      saved = result.saveToFile(repoRoot + "/target/v10-ui-evidence/single-collapsed-row.png")
+    })
+    tryVerify(function () { return saved !== null }, 3000, "grabToImage finished")
+    var row = rowById("claude")
+    var rowBottom = row.mapToItem(popup, 0, row.height).y
+    var footer = one(popup, "popupFooter")
+    var gap = footer.mapToItem(popup, 0, 0).y - rowBottom
+    verify(gap <= 1, "the footer sits under the row, gap " + gap + " px")
+  }
+
   function test_spent_reset_hides_the_reset_section() {
     var env = F.normal()
     var spent = F.claudeReset(false)
