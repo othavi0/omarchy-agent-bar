@@ -325,6 +325,42 @@ TestCase {
       verify(!labels[i].truncated, labels[i].text + " is not elided")
   }
 
+  function overflowingTexts(root) {
+    return ViewHarness.findAll(root, function (item) {
+      if (item.textFormat === undefined || !item.text || !visibleIn(item, root))
+        return false
+      var left = item.mapToItem(root, 0, 0).x
+      return left < 0 || left + Math.max(item.width, item.contentWidth) > root.width + 1
+    }).map(function (item) { return String(item.text) })
+  }
+
+  function test_long_provider_copy_never_leaves_the_popup() {
+    var long = "Claude Opus 5.5 Extended Thinking Preview for Enterprise Team members"
+    var env = F.normal()
+    for (var p = 0; p < env.providers.length; p++) {
+      var provider = env.providers[p]
+      provider.plan = { id: "enterprise", label: long }
+      for (var w = 0; w < provider.windows.length; w++)
+        provider.windows[w].label = long + " " + w
+    }
+    var reset = F.claudeReset(true)
+    reset.label = long
+    env.providers[0].resets = [reset]
+    for (var o = 0; o < env.providers.length; o++) {
+      openRealPopup(env, "used", env.providers[o].id)
+      waitForRendering(popup)
+      var saved = null
+      popup.grabToImage(function (result) {
+        saved = result.saveToFile(repoRoot + "/target/v10-ui-evidence/long-copy-"
+                                  + env.providers[o].id + ".png")
+      })
+      tryVerify(function () { return saved !== null }, 3000, "grabToImage finished")
+      compare(JSON.stringify(overflowingTexts(popup)), "[]",
+              env.providers[o].id + " drawer keeps every text inside the popup")
+      cleanup()
+    }
+  }
+
   function test_spent_reset_hides_the_reset_section() {
     var env = F.normal()
     var spent = F.claudeReset(false)
