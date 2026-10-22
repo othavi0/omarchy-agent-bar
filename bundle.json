@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
   "pluginId": "othavi0.agent-bar",
-  "version": "11.0.0",
+  "version": "11.0.1",
   "target": "x86_64-unknown-linux-gnu",
   "omarchyContract": 1,
   "minimumQuickshellVersion": "0.3.0",
-  "sourceCommit": "20b5d43216ad9b697b4b72c2f10c6add01f89a07",
-  "buildRun": "https://github.com/othavi0/omarchy-agent-bar/actions/runs/39684599630",
+  "sourceCommit": "4de535be69a42556a818ec6a73ba049eee883701",
+  "buildRun": "https://github.com/othavi0/omarchy-agent-bar/actions/runs/39795865725",
   "files": [
     {
       "path": "BarWidget.qml",
@@ -40,8 +40,8 @@
     },
     {
       "path": "CoreView.js",
-      "sha256": "08f344f9d3aec8a53e808f356e9c95eaa447827d89d4720bf98b4ee5e67fa41d",
-      "size": 30822,
+      "sha256": "afafd8efecc8b3e8ecb1d8b28b5bc9d7fa27be5f3dae745a4dcf1e1bdc107fdb",
+      "size": 30927,
       "mode": "0644"
     },
     {
@@ -82,8 +82,8 @@
     },
     {
       "path": "bin/agent-bar",
-      "sha256": "d77d64d239afd9c14ce39f492374dba5b12d36aa91291cc73580f9eb28611c20",
-      "size": 3031440,
+      "sha256": "e1dff62a56b87b6f5c9128ea5526652dd8427b03cd9fbb2dd4032c492cb2e3c5",
+      "size": 3031504,
       "mode": "0755"
     },
     {
@@ -142,8 +142,8 @@
     },
     {
       "path": "components/RowDetail.qml",
-      "sha256": "ccaf48957326852cc16eaf25b272c4646b2abf262ce23db25b1626784e591531",
-      "size": 17194,
+      "sha256": "9f9514840622bbba75c88f8b8bd4198cb3d0fc06672f7147da11bc9647d3ff8d",
+      "size": 17757,
       "mode": "0644"
     },
     {
@@ -178,8 +178,8 @@
     },
     {
       "path": "components/Tokens.js",
-      "sha256": "0794f72eb6ed047f45946204c00484b8d99f77b0c997cd252e69013d638896a5",
-      "size": 1902,
+      "sha256": "d25ff0ebc5aa7a7c8bd3d3a9159f97e95c08454df2da7a3e8966cd2116840623",
+      "size": 1936,
       "mode": "0644"
     },
     {
@@ -214,7 +214,7 @@
     },
     {
       "path": "manifest.json",
-      "sha256": "2ceda2852e0aa4816273d39a2a1005a98e10a17ce639df5c1ee51e0d355af475",
+      "sha256": "82be353b45900d39dc575eaf47d39bc787537afdb27fb30c74b6fb8f962b7c56",
       "size": 627,
       "mode": "0644"
     },
