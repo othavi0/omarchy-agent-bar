@@ -298,6 +298,33 @@ TestCase {
     verify(facts.lineCount <= 2, "reset facts wrap at most once, got " + facts.lineCount + " lines")
   }
 
+  function test_long_window_label_keeps_the_meters() {
+    var env = F.normal()
+    env.providers[0].windows[2].label = "Claude Opus 5.5 Extended Thinking Preview for Team members"
+    openRealPopup(env)
+    var detail = detailOf("claude")
+    waitForRendering(popup)
+    var saved = null
+    popup.grabToImage(function (result) {
+      saved = result.saveToFile(repoRoot + "/target/v10-ui-evidence/long-window-label.png")
+    })
+    tryVerify(function () { return saved !== null }, 3000, "grabToImage finished")
+    var meters = byName(detail, "windowMeter")
+    compare(meters.length, 2)
+    for (var i = 0; i < meters.length; i++)
+      verify(meters[i].width >= detail.contentWidth / 4,
+             "window meter keeps its width, got " + meters[i].width + " of " + detail.contentWidth)
+  }
+
+  function test_antigravity_window_labels_stay_whole() {
+    openRealPopup(F.normal(), "used", "antigravity")
+    var detail = detailOf("antigravity")
+    var labels = byName(detail, "windowLabel")
+    verify(labels.length > 0)
+    for (var i = 0; i < labels.length; i++)
+      verify(!labels[i].truncated, labels[i].text + " is not elided")
+  }
+
   function test_spent_reset_hides_the_reset_section() {
     var env = F.normal()
     var spent = F.claudeReset(false)
