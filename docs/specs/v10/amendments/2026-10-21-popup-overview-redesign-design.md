@@ -144,6 +144,9 @@ glyph; `!` stands for the alert glyph. The letters are not literal UI.
   4. one action line: `Updated {age}` on the left, `[Use reset] [Refresh]`
      on the right, with Refresh always rightmost and always enabled.
 
+  The popup ignores a reset entry with no reset left (`available` 0): it
+  draws no fact line for it, and a provider whose entries are all spent
+  shows no `Use reset`.
   `Use reset` shows whenever the provider has resets and is enabled only
   when one entry is claimable and the reset lane is idle. It targets the
   first claimable entry of the open row's provider and keeps the
