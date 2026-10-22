@@ -23,17 +23,14 @@ function flickableInteractive(contentHeight, viewportHeight) {
   return maxContentY(contentHeight, viewportHeight) > 0
 }
 
-function fittedPopupContentHeight(bodyHeight, minCompact, maxCap) {
+function fittedPopupContentHeight(bodyHeight, maxCap) {
   var body = Number(bodyHeight)
-  var minH = Number(minCompact)
   var maxH = Number(maxCap)
   if (!isFinite(body) || body < 0)
     body = 0
-  if (!isFinite(minH) || minH < 0)
-    minH = 0
   if (!isFinite(maxH) || maxH <= 0)
     maxH = body
-  return Math.min(maxH, Math.max(minH, body))
+  return Math.min(maxH, body)
 }
 
 function clampContentY(y, contentHeight, viewportHeight) {
