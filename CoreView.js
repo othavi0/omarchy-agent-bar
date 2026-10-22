@@ -594,13 +594,15 @@ function windowLayout(provider, metric, nowMs) {
   return layout
 }
 
+// A reset with none left is nothing the user can act on, so the popup skips it.
 function resetsOf(provider) {
   if (!provider || !Kernel.isArrayLike(provider.resets))
     return []
   var out = []
   for (var i = 0; i < provider.resets.length; i++) {
-    if (provider.resets[i])
-      out.push(provider.resets[i])
+    var r = provider.resets[i]
+    if (r && Number(r.available) > 0)
+      out.push(r)
   }
   return out
 }

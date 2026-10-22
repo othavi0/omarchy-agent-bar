@@ -271,6 +271,110 @@ TestCase {
     compare(focusNames()[1], "Refresh")
   }
 
+  function test_long_reset_label_keeps_the_drawer_readable() {
+    var env = F.normal()
+    var reset = F.claudeReset(true)
+    reset.label = "Claude Opus 5.5 launch: one usage-limit reset for Team members"
+    env.providers[0].resets = [reset]
+    openRealPopup(env)
+    var detail = detailOf("claude")
+    waitForRendering(popup)
+    var saved = null
+    popup.grabToImage(function (result) {
+      saved = result.saveToFile(repoRoot + "/target/v10-ui-evidence/long-reset-label.png")
+    })
+    tryVerify(function () { return saved !== null }, 3000, "grabToImage finished")
+    var meters = byName(detail, "windowMeter")
+    compare(meters.length, 2)
+    for (var i = 0; i < meters.length; i++)
+      verify(meters[i].width >= detail.contentWidth / 3,
+             "window meter keeps its width, got " + meters[i].width + " of " + detail.contentWidth)
+    var label = one(detail, "resetLabel")
+    verify(label.mapToItem(detail, label.width, 0).x <= detail.width,
+           "the reset label stays inside the drawer")
+    var facts = one(detail, "resetFacts")
+    verify(facts.width >= detail.contentWidth / 2,
+           "reset facts get a readable width, got " + facts.width + " of " + detail.contentWidth)
+    verify(facts.lineCount <= 2, "reset facts wrap at most once, got " + facts.lineCount + " lines")
+  }
+
+  function test_long_window_label_keeps_the_meters() {
+    var env = F.normal()
+    env.providers[0].windows[2].label = "Claude Opus 5.5 Extended Thinking Preview for Team members"
+    openRealPopup(env)
+    var detail = detailOf("claude")
+    waitForRendering(popup)
+    var saved = null
+    popup.grabToImage(function (result) {
+      saved = result.saveToFile(repoRoot + "/target/v10-ui-evidence/long-window-label.png")
+    })
+    tryVerify(function () { return saved !== null }, 3000, "grabToImage finished")
+    var meters = byName(detail, "windowMeter")
+    compare(meters.length, 2)
+    for (var i = 0; i < meters.length; i++)
+      verify(meters[i].width >= detail.contentWidth / 4,
+             "window meter keeps its width, got " + meters[i].width + " of " + detail.contentWidth)
+  }
+
+  function test_antigravity_window_labels_stay_whole() {
+    openRealPopup(F.normal(), "used", "antigravity")
+    var detail = detailOf("antigravity")
+    var labels = byName(detail, "windowLabel")
+    verify(labels.length > 0)
+    for (var i = 0; i < labels.length; i++)
+      verify(!labels[i].truncated, labels[i].text + " is not elided")
+  }
+
+  function overflowingTexts(root) {
+    return ViewHarness.findAll(root, function (item) {
+      if (item.textFormat === undefined || !item.text || !visibleIn(item, root))
+        return false
+      var left = item.mapToItem(root, 0, 0).x
+      return left < 0 || left + Math.max(item.width, item.contentWidth) > root.width + 1
+    }).map(function (item) { return String(item.text) })
+  }
+
+  function test_long_provider_copy_never_leaves_the_popup() {
+    var long = "Claude Opus 5.5 Extended Thinking Preview for Enterprise Team members"
+    var env = F.normal()
+    for (var p = 0; p < env.providers.length; p++) {
+      var provider = env.providers[p]
+      provider.plan = { id: "enterprise", label: long }
+      for (var w = 0; w < provider.windows.length; w++)
+        provider.windows[w].label = long + " " + w
+    }
+    var reset = F.claudeReset(true)
+    reset.label = long
+    env.providers[0].resets = [reset]
+    for (var o = 0; o < env.providers.length; o++) {
+      openRealPopup(env, "used", env.providers[o].id)
+      waitForRendering(popup)
+      var saved = null
+      popup.grabToImage(function (result) {
+        saved = result.saveToFile(repoRoot + "/target/v10-ui-evidence/long-copy-"
+                                  + env.providers[o].id + ".png")
+      })
+      tryVerify(function () { return saved !== null }, 3000, "grabToImage finished")
+      compare(JSON.stringify(overflowingTexts(popup)), "[]",
+              env.providers[o].id + " drawer keeps every text inside the popup")
+      cleanup()
+    }
+  }
+
+  function test_spent_reset_hides_the_reset_section() {
+    var env = F.normal()
+    var spent = F.claudeReset(false)
+    spent.available = 0
+    spent.expiresAt = null
+    spent.cooldownUntil = F.at(60)
+    env.providers[0].resets = [spent]
+    openRealPopup(env)
+    var detail = detailOf("claude")
+    compare(byName(detail, "resetLabel").length, 0, "no reset line without a reset left")
+    compare(ViewHarness.buttonsWithText(detail, ["Use reset"])[0].visible, false,
+            "Use reset hides without a reset left")
+  }
+
   function test_status_row_carries_its_action() {
     openRealPopup(F.problems(), "used", "codex")
     var codex = rowById("codex")

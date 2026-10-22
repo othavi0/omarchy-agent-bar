@@ -38,16 +38,17 @@ Column {
   readonly property color secondary: Util.alpha(root.foreground, Tokens.TEXT_SECONDARY)
   readonly property color tertiary: Util.alpha(root.foreground, Tokens.TEXT_TERTIARY)
 
-  // The window labels and the reset labels share one column, at least as
-  // wide as the head's name column, so the drawer meters and the reset facts
-  // start under the head meter.
+  // The window labels set one column, at least as wide as the head's name
+  // column, so the drawer meters and the reset facts start under the head
+  // meter. Labels are provider copy of any length, so the column stops at a
+  // share of the drawer: a longer window label elides, and a longer reset
+  // label stacks above its facts.
   readonly property int labelWidth: {
-    var widest = Math.round(Style.font.body * Tokens.NAME_COLUMN_EMS)
+    var floor = Math.round(Style.font.body * Tokens.NAME_COLUMN_EMS)
+    var widest = floor
     for (var i = 0; i < root.windows.length; i++)
       widest = Math.max(widest, Math.ceil(labelMetrics.advanceWidth(String(root.windows[i].label))))
-    for (var r = 0; r < root.resets.length; r++)
-      widest = Math.max(widest, Math.ceil(labelMetrics.advanceWidth(String(root.resets[r].label))))
-    return widest
+    return Math.max(floor, Math.min(widest, Math.round(root.contentWidth * Tokens.LABEL_COLUMN_MAX_SHARE)))
   }
 
   // Both action buttons take the width of the widest label either can show,
@@ -139,6 +140,8 @@ Column {
         Text {
           visible: text.length > 0
           text: root.pace ? root.pace.strong : ""
+          width: Math.min(implicitWidth, parent.width)
+          wrapMode: Text.WordWrap
           color: root.foreground
           font.family: root.fontFamily
           font.pixelSize: Style.font.bodySmall
@@ -150,6 +153,8 @@ Column {
         Text {
           visible: text.length > 0
           text: root.pace ? root.pace.rest : ""
+          width: Math.min(implicitWidth, parent.width)
+          wrapMode: Text.WordWrap
           color: root.tertiary
           font.family: root.fontFamily
           font.pixelSize: Style.font.bodySmall
@@ -318,16 +323,21 @@ Column {
 
       Repeater {
         model: root.resets.length
-        RowLayout {
+        GridLayout {
           id: resetLine
           required property int index
           readonly property var line: root.resets[index]
+          readonly property bool stacked: !!line
+              && labelMetrics.advanceWidth(String(line.label)) > root.labelWidth
           width: parent.width
-          spacing: Style.space(12)
+          columns: stacked ? 1 : 2
+          columnSpacing: Style.space(12)
+          rowSpacing: 0
 
           Text {
             objectName: "resetLabel"
-            Layout.preferredWidth: root.labelWidth
+            Layout.preferredWidth: resetLine.stacked ? -1 : root.labelWidth
+            Layout.fillWidth: resetLine.stacked
             Layout.minimumHeight: root.lineHeight
             Layout.alignment: Qt.AlignTop
             verticalAlignment: Text.AlignVCenter
@@ -336,7 +346,7 @@ Column {
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
             font.bold: true
-            elide: Text.ElideRight
+            wrapMode: Text.WordWrap
             textFormat: Text.PlainText
             Accessible.ignored: true
           }
