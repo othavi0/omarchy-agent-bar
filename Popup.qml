@@ -21,7 +21,6 @@ KeyboardPanel {
 
   property int maxContentWidth: Style.space(520)
   property int maxContentHeight: Style.space(560)
-  property int minContentHeight: Style.space(160)
   property int contentLineHeight: Style.font.body + Style.space(8)
 
   property bool editorActive: contentLoader.item && contentLoader.item.editorOwnsFocus
@@ -116,7 +115,6 @@ KeyboardPanel {
   // border as phantom overflow and enabled a few-pixel scroll.
   contentHeight: Scroll.fittedPopupContentHeight(
     measuredBodyHeight + verticalContentInset,
-    minContentHeight,
     maxContentHeight
   )
   focusTarget: keyCatcher

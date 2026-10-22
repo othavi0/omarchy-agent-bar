@@ -60,10 +60,10 @@ TestCase {
   }
 
   function test_fitted_popup_content_height() {
-    compare(Core.fittedPopupContentHeight(120, 160, 560), 160)
-    compare(Core.fittedPopupContentHeight(400, 160, 560), 400)
-    compare(Core.fittedPopupContentHeight(900, 160, 560), 560)
-    compare(Core.fittedPopupContentHeight(100, 160, 560), 160)
+    compare(Core.fittedPopupContentHeight(120, 560), 120)
+    compare(Core.fittedPopupContentHeight(400, 560), 400)
+    compare(Core.fittedPopupContentHeight(900, 560), 560)
+    compare(Core.fittedPopupContentHeight(-5, 560), 0)
   }
 
   function test_content_y_for_item_reveals() {
