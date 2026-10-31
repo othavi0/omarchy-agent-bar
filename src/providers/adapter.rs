@@ -47,9 +47,9 @@ impl RetryAfter {
     /// `received` for a delay.
     pub fn instant(self, received: time::OffsetDateTime) -> time::OffsetDateTime {
         match self {
-            Self::Seconds(seconds) => {
-                received + time::Duration::seconds(i64::try_from(seconds).unwrap_or(i64::MAX / 2))
-            }
+            Self::Seconds(seconds) => received.saturating_add(time::Duration::seconds(
+                i64::try_from(seconds).unwrap_or(i64::MAX),
+            )),
             Self::At(at) => at,
         }
     }

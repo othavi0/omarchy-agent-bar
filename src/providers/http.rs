@@ -190,6 +190,10 @@ mod tests {
             RetryAfter::Seconds(90).instant(received),
             datetime!(2026-10-31 22:41:30 UTC)
         );
+        assert!(
+            RetryAfter::Seconds(u64::MAX).instant(received) > received,
+            "an absurd delay saturates instead of overflowing"
+        );
     }
 
     #[tokio::test]
