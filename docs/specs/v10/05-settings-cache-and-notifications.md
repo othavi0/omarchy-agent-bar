@@ -130,7 +130,7 @@ $XDG_STATE_HOME/agent-bar/maintenance.lock
   `docs/specs/v10/amendments/2026-09-15-drop-unread-status-fields-design.md`.
 - `CACHE-001B` (added 2026-10-21): A cache document written before
   `windowMinutes` (`JSON-020A`) still loads; the missing key reads as
-  `null`, so the row shows no pace until its next live collection. The
+  `null`, so the row shows no pace tick until its next live collection. The
   cache schema version stays 2. A `windowMinutes` of 0 is corrupt and
   follows `CACHE-018`. See
   `docs/specs/v10/amendments/2026-10-21-popup-overview-redesign-design.md`.

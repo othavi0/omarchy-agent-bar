@@ -47,7 +47,7 @@ and `docs/specs/v10/amendments/2026-10-21-remove-overview-headline-design.md`.
 +--------------------------------------------------+
 | [C] Claude      [========|==  ]   76%            |
 |     Max         5-hour · resets in 1h 32m        |
-|     Open row detail: pace line, other windows,   |
+|     Open row detail: other windows,              |
 |     reset facts, Updated <age> [Use reset] [R]   |
 +--------------------------------------------------+
 | [O] Codex       [=           ]    2%             |
@@ -61,7 +61,7 @@ glyph. `[R]` represents the native refresh glyph; these letters are not
 literal UI.
 
 - `UX-075` to `UX-086` (added 2026-10-21): usage view layout, row anatomy,
-  accordion, row detail, pace tick, pace line, status rows, footer,
+  accordion, row detail, pace tick, status rows, footer,
   Settings band and edges, chip alert glyph, and tokens. See
   `docs/specs/v10/amendments/2026-10-21-popup-overview-redesign-design.md`.
 - `UX-076` (superseded 2026-10-21): the headline band that named the
@@ -167,7 +167,7 @@ literal UI.
   acknowledgement is the neutral caption `Updated <age>`, in the row's sub
   line (`{label} · Updated <age>`) and in the open row's action line; the
   action line's Refresh remains the way to force a collection. A stale row
-  shows no pace tick and no pace line (`UX-080`). The typed error and
+  shows no pace tick (`UX-080`). The typed error and
   the `retry` action stay in the status JSON for `agent-bar status`; the UI
   does not surface them.
 

@@ -71,8 +71,7 @@ completed status envelope never serializes `loading`.
 - Used plus remaining equals 100 within 0.01.
 - Resets are UTC RFC 3339 or `null`.
 - `windowMinutes` is the nominal window length in whole minutes, or `null`
-  when the provider defines none. The popup uses it only for the pace tick and
-  projection. A cached window written before this key loads as `null`.
+  when the provider defines none. The popup uses it only for the pace tick. A cached window written before this key loads as `null`.
 - No `-1`, NaN, infinity, or string sentinel.
 - A connected provider may have an empty windows array.
 - Empty percentage data renders `—`; it does not fabricate a value.

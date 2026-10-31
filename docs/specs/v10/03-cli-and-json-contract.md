@@ -189,7 +189,7 @@ provider_error
   `windowDurationMins`; Claude reports 300 for the session and 10080 for
   weekly windows; Antigravity reports 300 for `-5h` and 10080 for
   `-weekly`; Grok reports 10080 only for an explicit weekly period. QML
-  reads it only for the pace tick and pace line and never derives a
+  reads it only for the pace tick and never derives a
   duration from `id` or `label`. See
   `docs/specs/v10/amendments/2026-10-21-popup-overview-redesign-design.md`.
 - `JSON-021`: `lastSuccessAt` records the data generation, not the current

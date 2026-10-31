@@ -107,7 +107,7 @@ rail and the single-provider pane with one row per enabled provider with
 an accordion detail,
 and a footer with the Settings button and key hints. Each window gains
 `windowMinutes` (`JSON-020A`, `CACHE-001B`) so the open row can show a
-pace tick and a linear pace line. Stale rows keep `UX-028`. The design adds
+pace tick. Stale rows keep `UX-028`. The design adds
 `UX-075` to `UX-086`, `A11Y-024` to `A11Y-026`, `TEST-043`, and
 `TEST-044`; amends `UX-016`, `UX-017`, `UX-019`, `UX-020A` to `UX-020D`,
 `UX-028`, `A11Y-002`, `A11Y-006`, `PROD-020`, `PROD-023`, and the

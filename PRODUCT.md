@@ -15,7 +15,7 @@ reliable glanceable answer to:
 Agent Bar is a Quickshell plugin, not a general terminal application. The bar
 provides the glanceable state. The consolidated popup lists every
 enabled provider in one view, and opens one provider's
-details at a time: quota windows, pace, resets, and provider actions. It
+details at a time: quota windows, resets, and provider actions. It
 also provides Settings, an update check, and uninstall without requiring
 the user to learn a CLI: Settings About checks for updates and, when one is
 available, offers `Update to <version>`. After one confirmation the plugin

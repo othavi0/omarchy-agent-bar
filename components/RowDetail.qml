@@ -5,8 +5,8 @@ import qs.Commons as Commons
 import qs.Ui
 import "Tokens.js" as Tokens
 
-// UX-079: the open row's drawer, top to bottom: the pace line, the other
-// windows, the reset facts, then one action line. Every section shares the
+// UX-079: the open row's drawer, top to bottom: the other windows, the
+// reset facts, then one action line. Every section shares the
 // left column under the row name and the right edge under the chevron, and
 // a full-bleed hairline separates it from the section above.
 Column {
@@ -24,7 +24,6 @@ Column {
   signal refreshRequested()
   signal resetRequested(string resetId)
 
-  readonly property var pace: root.row && root.row.pace ? root.row.pace : null
   readonly property var windows: root.row && root.row.windows ? root.row.windows : []
   readonly property var resets: root.row && root.row.resets ? root.row.resets : []
   readonly property var useReset: root.row && root.row.useReset
@@ -95,114 +94,10 @@ Column {
   }
 
   Item {
-    id: paceSection
-    visible: !!root.pace
-    width: parent.width
-    height: paceRow.height + root.sectionPadding * 2
-
-    RowLayout {
-      id: paceRow
-      x: root.indent
-      y: root.sectionPadding
-      width: root.contentWidth
-      height: Math.max(implicitHeight, root.lineHeight)
-      spacing: Style.space(10)
-
-      Text {
-        objectName: "paceGlyph"
-        Layout.alignment: Qt.AlignVCenter
-        text: root.pace ? root.pace.glyph : ""
-        color: root.pace && root.pace.critical
-            ? Commons.Color.urgent
-            : (root.pace && root.pace.kind === "runsOut" ? root.secondary : root.tertiary)
-        font.family: Style.font.family
-        font.pixelSize: Style.font.icon
-        textFormat: Text.PlainText
-        Accessible.ignored: true
-      }
-
-      Flow {
-        Layout.fillWidth: true
-        Layout.alignment: Qt.AlignVCenter
-
-        Text {
-          visible: text.length > 0
-          text: root.pace ? root.pace.text : ""
-          width: Math.min(implicitWidth, parent.width)
-          color: root.pace && root.pace.kind === "tooEarly" ? root.tertiary : root.foreground
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.bodySmall
-          wrapMode: Text.WordWrap
-          textFormat: Text.PlainText
-          Accessible.ignored: true
-        }
-
-        Text {
-          visible: text.length > 0
-          text: root.pace ? root.pace.strong : ""
-          width: Math.min(implicitWidth, parent.width)
-          wrapMode: Text.WordWrap
-          color: root.foreground
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.bodySmall
-          font.bold: true
-          textFormat: Text.PlainText
-          Accessible.ignored: true
-        }
-
-        Text {
-          visible: text.length > 0
-          text: root.pace ? root.pace.rest : ""
-          width: Math.min(implicitWidth, parent.width)
-          wrapMode: Text.WordWrap
-          color: root.tertiary
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.bodySmall
-          textFormat: Text.PlainText
-          Accessible.ignored: true
-        }
-      }
-
-      Row {
-        objectName: "paceKey"
-        visible: !!root.pace && root.pace.key.length > 0
-        Layout.alignment: Qt.AlignVCenter
-        Layout.leftMargin: Style.space(12)
-        spacing: Style.space(4)
-
-        Rectangle {
-          anchors.verticalCenter: parent.verticalCenter
-          width: Style.spacing.hairline
-          height: Style.font.icon
-          color: root.tertiary
-        }
-
-        Text {
-          anchors.verticalCenter: parent.verticalCenter
-          text: root.pace ? root.pace.key : ""
-          color: root.tertiary
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.caption
-          textFormat: Text.PlainText
-          Accessible.ignored: true
-        }
-      }
-    }
-  }
-
-  Item {
     id: windowsSection
     visible: root.windows.length > 0
     width: parent.width
     height: windowGrid.implicitHeight + root.sectionPadding * 2
-
-    PanelSeparator {
-      objectName: "drawerRule"
-      visible: paceSection.visible
-      width: parent.width
-      foreground: root.foreground
-      strength: Tokens.DRAWER_RULE
-    }
 
     GridLayout {
       id: windowGrid
@@ -309,7 +204,7 @@ Column {
 
     PanelSeparator {
       objectName: "drawerRule"
-      visible: paceSection.visible || windowsSection.visible
+      visible: windowsSection.visible
       width: parent.width
       foreground: root.foreground
       strength: Tokens.DRAWER_RULE
@@ -389,7 +284,7 @@ Column {
 
     PanelSeparator {
       objectName: "drawerRule"
-      visible: paceSection.visible || windowsSection.visible || resetsSection.visible
+      visible: windowsSection.visible || resetsSection.visible
       width: parent.width
       foreground: root.foreground
       strength: Tokens.DRAWER_RULE

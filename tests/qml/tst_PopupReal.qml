@@ -565,20 +565,21 @@ TestCase {
     compare(tight.length, 0, "nothing names a tightest window")
   }
 
-  function test_pace_line_renders_the_projection() {
+  function test_drawer_has_no_pace_line_but_keeps_the_tick() {
     openRealPopup()
     var detail = detailOf("claude")
-    var texts = ViewHarness.findAll(detail, function (item) {
-      return item.textFormat !== undefined && visibleIn(item, popup) && String(item.text).length > 0
-    }).map(function (t) { return String(t.text) })
-    verify(texts.indexOf("full in ~1h 6m") >= 0, "pace strong text: " + texts)
-    verify(texts.indexOf(", 26m before reset") >= 0)
-    verify(texts.indexOf("= time passed") >= 0)
+    var texts = visibleTexts(detail)
+    for (var i = 0; i < texts.length; i++)
+      verify(!/At this pace|Too early to project|time passed|time left|Lasts to reset/.test(texts[i]),
+             "no pace copy in the drawer: " + texts[i])
+    compare(byName(detail, "paceGlyph").length, 0)
+    compare(byName(detail, "paceKey").length, 0)
     var ticks = byName(rowById("claude"), "paceTick").filter(function (t) {
       return visibleIn(t, popup)
     })
-    verify(ticks.length >= 1, "the primary meter carries the pace tick")
+    verify(ticks.length >= 1, "the primary meter keeps its time tick")
   }
+
   function openSettingsView(env) {
     openRealPopup(env)
     popup.openSettings()
@@ -899,7 +900,7 @@ TestCase {
     compare(visibleIn(one(list[list.length - 1], "rowBand"), popup), false,
             "the footer draws the last band")
     var rules = byName(detailOf("claude"), "drawerRule").filter(function (r) { return visibleIn(r, popup) })
-    compare(rules.length, 3, "pace, windows, reset and actions are four sections with three rules")
+    compare(rules.length, 2, "windows, reset and actions are three sections with two rules")
     for (var i = 0; i < rules.length; i++) {
       assertFullBleed(rules[i], body, "drawer rule " + i)
       verify(one(list[0], "rowBand").height > rules[i].height,
@@ -931,14 +932,14 @@ TestCase {
     var row = rowById("claude")
     var detail = detailOf("claude")
     var column = leftOf(one(row, "rowName"))
-    var starts = [one(detail, "paceGlyph"), one(detail, "resetLabel"), one(detail, "updatedClock")]
+    var starts = [one(detail, "resetLabel"), one(detail, "updatedClock")]
         .concat(byName(detail, "windowLabel"))
     compare(byName(detail, "windowLabel").length, 2)
     for (var i = 0; i < starts.length; i++)
       compare(leftOf(starts[i]), column, starts[i].objectName + " starts under the provider name")
 
     var edge = rightOf(one(row, "rowChevron"))
-    var ends = [one(detail, "refreshButton"), one(detail, "paceKey")].concat(byName(detail, "windowReset"))
+    var ends = [one(detail, "refreshButton")].concat(byName(detail, "windowReset"))
     for (var e = 0; e < ends.length; e++)
       compare(rightOf(ends[e]), edge, ends[e].objectName + " ends on the chevron's edge")
 

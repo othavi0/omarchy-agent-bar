@@ -143,7 +143,6 @@ TestCase {
     for (var i = 0; i < codex.windows.length; i++)
       compare(codex.windows[i].tickPercent, -1)
     compare(codex.tickDescription, "")
-    compare(codex.pace, null)
   }
 
   function test_tick_fraction() {
@@ -163,76 +162,13 @@ TestCase {
     compare(rowOf(model(past, "used"), "claude").primary.tickPercent, 100)
   }
 
-  function test_pace_runs_out() {
-    var pace = rowOf(model(F.normal(), "used"), "claude").pace
-    compare(pace.kind, "runsOut")
-    compare(pace.glyph, Tokens.GLYPH_ALERT)
-    compare(pace.text, "At this pace ")
-    compare(pace.strong, "full in ~1h 6m")
-    compare(pace.rest, ", 26m before reset")
-    compare(pace.critical, false)
-    compare(pace.key, "= time passed")
-
-    var left = rowOf(model(F.normal(), "remaining"), "claude").pace
-    compare(left.strong, "empty in ~1h 6m")
-    compare(left.key, "= time left")
-
-    var hot = rowOf(model(F.critical(), "used"), "claude").pace
-    compare(hot.strong, "full in ~11m")
-    compare(hot.rest, ", 27m before reset")
-    compare(hot.critical, true)
-
-    var named = withProviders([
-      F.provider("claude", "Claude", "ready", [
-        F.win("session", "5-hour", 20, 300, 92),
-        F.win("weekly", "Weekly (7d)", 70, 10080, 4080)
-      ]),
-      F.provider("codex", "Codex", "ready", [F.win("session", "5-hour", 80, 300, 250)])
-    ])
-    var other = rowOf(model(named, "used"), "claude").pace
-    compare(other.kind, "runsOut")
-    compare(other.text, "At this pace Weekly (7d) is ")
-    compare(other.strong, "full in ~1d 18h")
-    compare(other.rest, ", 1d 1h before reset")
-  }
-
-  function test_pace_lasts() {
-    var pace = rowOf(model(F.normal(), "used"), "codex").pace
-    compare(pace.kind, "lasts")
-    compare(pace.glyph, Tokens.GLYPH_CHECK)
-    compare(pace.text, "")
-    compare(pace.strong, "Lasts to reset")
-    compare(pace.rest, ", Weekly (7d) ends near 66% used")
-    compare(pace.critical, false)
-    compare(pace.key, "= time passed")
-
-    compare(rowOf(model(F.normal(), "remaining"), "codex").pace.rest,
-            ", Weekly (7d) ends near 34% left")
-  }
-
-  function test_pace_too_early_and_null() {
-    var early = rowOf(model(F.early(), "used"), "claude").pace
-    compare(early.kind, "tooEarly")
-    compare(early.glyph, Tokens.GLYPH_CLOCK)
-    compare(early.text, "Too early to project, under 10% of the window has passed.")
-    compare(early.strong, "")
-    compare(early.rest, "")
-    compare(early.key, "")
-
-    compare(rowOf(model(F.normal(), "used"), "antigravity").pace, null)
-    compare(rowOf(model(F.normal(), "used"), "grok").pace, null)
-    compare(rowOf(model(F.nopct(), "used"), "claude").pace, null)
-  }
-
-  function test_pace_full_now() {
-    var pace = rowOf(model(F.full(), "used"), "claude").pace
-    compare(pace.kind, "fullNow")
-    compare(pace.glyph, Tokens.GLYPH_ALERT)
-    compare(pace.critical, true)
-    compare(pace.text, "")
-    compare(pace.strong, "Full now")
-    compare(pace.rest, "")
-    compare(rowOf(model(F.full(), "remaining"), "claude").pace.strong, "Empty now")
+  function test_rows_carry_no_pace_projection() {
+    var fixtures = [F.normal(), F.critical(), F.early(), F.full()]
+    for (var i = 0; i < fixtures.length; i++) {
+      var rows = model(fixtures[i], "used").rows
+      for (var r = 0; r < rows.length; r++)
+        verify(!("pace" in rows[r]), rows[r].id + " row has no pace model")
+    }
   }
 
   function test_status_rows() {
@@ -386,21 +322,5 @@ TestCase {
     compare(codex.alert, true, "a critical side window still flags the row")
     compare(rowOf(model(F.normal(), "used"), "codex").alert, false)
     compare(rowOf(model(F.critical(), "used"), "claude").alert, true)
-  }
-
-  function test_pace_edges_at_and_past_reset() {
-    var exact = withProviders([
-      F.provider("claude", "Claude", "ready", [F.win("session", "5-hour", 50, 300, 150)])
-    ])
-    var pace = rowOf(model(exact, "used"), "claude").pace
-    compare(pace.kind, "runsOut")
-    compare(pace.strong, "full in ~2h 30m")
-    compare(pace.rest, ", at reset", "a zero margin reads at reset, not 1m before")
-
-    var past = withProviders([
-      F.provider("claude", "Claude", "ready", [F.win("session", "5-hour", 100, 300, -5)])
-    ])
-    compare(rowOf(model(past, "used"), "claude").pace, null,
-            "a window past its reset has nothing to project")
   }
 }
