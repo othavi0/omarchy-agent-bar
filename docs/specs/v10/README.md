@@ -131,6 +131,17 @@ with borderless tonal `Use reset` and `Refresh` buttons of one width. It
 amends `UX-020B`, `UX-077`, `UX-079`, `UX-082`, `UX-083`, and `UX-086`:
 [docs/specs/v10/amendments/2026-10-21-popup-drawer-design.md](amendments/2026-10-21-popup-drawer-design.md).
 
+The popup grid layout, approved 2026-10-31, drops the accordion, the
+drawer, the chevron, and the pace tick. Every provider is a group with a
+fixed left column (name, plan, notes, stacked actions) and every window on
+the right, each a label line over a bar with its percentage in a fixed
+column. Actions come from one model list; the first is a tonal primary
+that Enter fires. The footer shows one `Updated` line and the unit once.
+It adds `UX-087` to `UX-089` and `A11Y-027`, supersedes `UX-077` to
+`UX-080`, `UX-082`, `A11Y-024`, and `A11Y-025`, and amends `UX-020A` to
+`UX-020D`, `UX-027`, `UX-028`, `UX-083`, `A11Y-002`, and `A11Y-004`:
+[docs/specs/v10/amendments/2026-10-31-popup-grid-layout-design.md](amendments/2026-10-31-popup-grid-layout-design.md).
+
 ## Product statement
 
 Agent Bar v10 is an Omarchy Quattro Quickshell plugin. Its only graphical
