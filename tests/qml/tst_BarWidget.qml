@@ -240,6 +240,24 @@ TestCase {
     compare(Core.chipPercentText(p, "used"), "8%")
   }
 
+  // Live 2026-10-31: an Ultra account has no 5-hour window, and the weekly
+  // reset carries sub-second jitter past the model window's reset.
+  function test_chip_ignores_reset_jitter_between_weekly_and_model_window() {
+    var p = {
+      id: "claude",
+      name: "Claude",
+      state: "ready",
+      windows: [
+        { id: "weekly", label: "Weekly (7d)", usedPercent: 33, remainingPercent: 67,
+          resetsAt: "2099-11-06T12:00:00.096704Z" },
+        { id: "weekly-model:fable", label: "Fable", usedPercent: 0, remainingPercent: 100,
+          resetsAt: "2099-11-06T12:00:00Z" }
+      ]
+    }
+    compare(Core.chipPercentText(p, "used"), "33%")
+    compare(Core.chipPercentText(p, "remaining"), "67%")
+  }
+
   // Live Quattro: snapshot windows arrive as array-like QVariantList where
   // Array.isArray is false but .length / [0] still work (chips stuck on "—").
   function test_array_like_windows_render_percent() {
