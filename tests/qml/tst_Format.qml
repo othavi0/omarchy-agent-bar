@@ -46,12 +46,6 @@ TestCase {
     compare(Core.resetCountdownText(null, nowMs), "")
   }
 
-  function test_reset_phrase_follows_the_countdown() {
-    compare(Core.resetPhrase("3h 1m"), "resets in")
-    compare(Core.resetPhrase("now"), "resets")
-    compare(Core.resetPhrase(""), "")
-  }
-
   function test_ago_variants() {
     compare(Core.formatAgoText("2026-07-28T14:59:30Z", nowMs), "just now")
     compare(Core.formatAgoText("2026-07-28T14:55:00Z", nowMs), "5m ago")

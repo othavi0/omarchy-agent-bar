@@ -179,7 +179,7 @@ TestCase {
   }
 
   function test_no_meta_footer() {
-    var files = ["components/ProviderRow.qml", "components/RowDetail.qml"]
+    var files = ["components/ProviderRow.qml"]
     for (var i = 0; i < files.length; i++) {
       var src = read(files[i])
       verify(src.length > 0, files[i] + " exists")
@@ -195,7 +195,7 @@ TestCase {
     var core = read("CoreView.js")
     verify(core.indexOf("formatAgoText(provider.lastSuccessAt, nowMs)") >= 0)
     verify(core.indexOf('"Updated " + ago') >= 0)
-    var files = ["components/ProviderRow.qml", "components/RowDetail.qml"]
+    var files = ["components/ProviderRow.qml"]
     for (var i = 0; i < files.length; i++) {
       var src = read(files[i])
       verify(src.length > 0, files[i] + " exists")
@@ -207,11 +207,11 @@ TestCase {
       verify(src.indexOf("errorMessage") < 0, files[i])
       verify(src.indexOf('+ " ago"') < 0, files[i])
     }
-    verify(read("components/RowDetail.qml").indexOf("row.updatedText") >= 0)
+    verify(read("components/ProviderRow.qml").indexOf("root.row.notes") >= 0)
   }
 
   function test_stale_windows_are_not_dimmed() {
-    var files = ["components/ProviderRow.qml", "components/RowDetail.qml", "components/UsageMeter.qml"]
+    var files = ["components/ProviderRow.qml", "components/UsageMeter.qml"]
     for (var i = 0; i < files.length; i++) {
       var src = read(files[i])
       verify(src.length > 0, files[i] + " exists")
@@ -226,7 +226,6 @@ TestCase {
       "Popup.qml",
       "components/OverviewList.qml",
       "components/ProviderRow.qml",
-      "components/RowDetail.qml",
       "components/UsageMeter.qml",
       "components/ProviderIcon.qml",
       "components/PopupFooter.qml",
@@ -306,13 +305,11 @@ TestCase {
     verify(meter.length > 0, "UsageMeter.qml exists")
     verify(meter.indexOf("Color.urgent") >= 0)
     verify(meter.indexOf("root.critical") >= 0)
-    verify(meter.indexOf("Tokens.THIN_FILL") >= 0)
-    verify(meter.indexOf('objectName: "paceTick"') >= 0)
     verify(meter.indexOf("Qt.rgba(") < 0)
     var fill = meter.slice(meter.indexOf("readonly property color fillColor"))
-    fill = fill.slice(0, fill.indexOf("\n\n"))
-    verify(fill.indexOf("root.critical") >= 0 && fill.indexOf("root.critical") < fill.indexOf("root.thin"),
-           "critical wins over the thin fill: " + fill)
+    fill = fill.slice(0, fill.indexOf("\n"))
+    verify(fill.indexOf("root.critical ? Commons.Color.urgent : Commons.Color.accent") >= 0,
+           "the fill is the accent, or urgent when critical: " + fill)
   }
 
   // The three QML gates never compile a file that imports qs.*, so a dangling
@@ -326,7 +323,6 @@ TestCase {
       "components/ProviderChip.qml",
       "components/OverviewList.qml",
       "components/ProviderRow.qml",
-      "components/RowDetail.qml",
       "components/UsageMeter.qml",
       "components/ProviderIcon.qml",
       "components/PopupFooter.qml",
@@ -388,6 +384,24 @@ TestCase {
     }
     compare(read("components/OverviewBand.qml"), "", "OverviewBand.qml is deleted")
     compare(read("components/HeaderTag.qml"), "", "HeaderTag.qml is deleted")
+  }
+
+  // The accordion, its drawer, the time tick and the per-provider Refresh
+  // are gone with their file; no source keeps their identifiers alive.
+  function test_accordion_and_tick_are_gone() {
+    var files = popupSourceFiles().concat(["CoreView.js", "CoreService.js", "Service.qml",
+                                           "components/Tokens.js"])
+    var dead = ["RowDetail", "rowChevron", "drawerWell", "togglePopupRow", "toggleProviderRow",
+                "collapsed", "openable", "paceTick", "tickPercent", "TICK_MIN_ELAPSED",
+                "tickDescription", "windowMinutesOf", "refreshButton", "refreshLabel",
+                "GLYPH_CHEVRON", "rowAlert"]
+    for (var i = 0; i < files.length; i++) {
+      var source = read(files[i])
+      verify(source.length > 0, files[i] + " exists")
+      for (var d = 0; d < dead.length; d++)
+        verify(source.indexOf(dead[d]) < 0, files[i] + " still references " + dead[d])
+    }
+    compare(read("components/RowDetail.qml"), "", "RowDetail.qml is deleted")
   }
 
   function test_absolute_clock_humaniser_is_gone() {
@@ -457,26 +471,17 @@ TestCase {
     verify(Service.validateProvider(withMalformed) !== null)
   }
 
-  // UX-079: the reset facts carry no button; Use reset sits in the action
-  // line next to Refresh, which stays rightmost and always enabled.
-  function test_use_reset_lives_in_the_action_line() {
-    var src = read("components/RowDetail.qml")
-    verify(src.length > 0, "RowDetail.qml exists")
-    verify(src.indexOf("signal resetRequested(string resetId)") >= 0)
-    verify(src.indexOf("signal refreshRequested()") >= 0)
-    verify(src.indexOf("visible: root.useReset.visible") >= 0)
-    verify(src.indexOf("enabled: root.useReset.enabled") >= 0)
-    var use = src.indexOf("id: useResetButton")
-    var refresh = src.indexOf("id: refreshButton")
-    verify(use > 0 && refresh > use, "Refresh is the rightmost button")
-    var refreshBlock = src.lastIndexOf("Button {", refresh)
-    var refreshSrc = src.substring(refreshBlock, blockEnd(src, refreshBlock))
-    verify(refreshSrc.indexOf("iconSpinning: root.refreshing") >= 0)
-    verify(refreshSrc.indexOf("iconText: Tokens.GLYPH_REFRESH") >= 0)
-    verify(refreshSrc.indexOf("enabled:") < 0, "Refresh is never disabled")
+  // Every group action comes from one model list: the left column draws it
+  // and Enter fires its first entry. No per-provider Refresh survives.
+  function test_group_actions_come_from_one_model() {
     var row = read("components/ProviderRow.qml")
-    verify(row.indexOf("RowDetail {") >= 0)
-    verify(row.indexOf("visible: !!(root.row && root.row.open)") >= 0)
+    verify(row.indexOf("root.row.actions") >= 0)
+    verify(row.indexOf("Core.primaryAction(root.actions)") >= 0)
+    verify(row.indexOf("refreshButton") < 0)
+    verify(row.indexOf("useResetButton") < 0)
+    var popup = read("Popup.qml")
+    verify(popup.indexOf("function runAction(providerId, action)") >= 0)
+    verify(popup.indexOf('action.kind === "use_reset"') >= 0)
   }
 
   function test_service_owns_a_dedicated_reset_lane() {

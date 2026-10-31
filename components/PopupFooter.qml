@@ -4,14 +4,17 @@ import qs.Commons as Commons
 import qs.Ui
 import "Tokens.js" as Tokens
 
-// UX-083: the Settings entry plus static key hints. Only the button takes
-// focus; the hints are read-only. The footer is a slab under the same band of
-// popup floor that separates the provider rows.
+// UX-083: the Settings entry, then one "Updated" line, the unit every
+// percentage above shares, and static key hints. Only the button takes
+// focus; the rest is read-only. The footer is a slab under the same band of
+// popup floor that separates the provider groups.
 Rectangle {
   id: root
   objectName: "popupFooter"
 
   property int innerRadius: 0
+  property string updatedText: ""
+  property string unitText: ""
   property color foreground: Commons.Color.foreground
   property string fontFamily: Style.font.family
 
@@ -78,7 +81,32 @@ Rectangle {
     anchors.rightMargin: Style.spacing.popupPadding
     y: root.bandHeight + Math.round((root.height - root.bandHeight - height) / 2)
     spacing: Style.space(4)
-    Accessible.ignored: true
+
+    Text {
+      objectName: "footerUpdated"
+      visible: text.length > 0
+      anchors.verticalCenter: parent.verticalCenter
+      text: root.updatedText.length ? root.updatedText + " ·" : ""
+      color: root.tertiary
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
+      textFormat: Text.PlainText
+      Accessible.role: Accessible.StaticText
+      Accessible.name: root.updatedText
+    }
+
+    Text {
+      objectName: "footerUnit"
+      visible: root.unitText.length > 0
+      anchors.verticalCenter: parent.verticalCenter
+      text: root.unitText + " ·"
+      color: root.tertiary
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
+      textFormat: Text.PlainText
+      Accessible.role: Accessible.StaticText
+      Accessible.name: root.unitText
+    }
 
     Repeater {
       model: root.hints.length
@@ -88,6 +116,7 @@ Rectangle {
         required property int index
         readonly property var hint: root.hints[index]
         spacing: Style.space(4)
+        Accessible.ignored: true
 
         Rectangle {
           anchors.verticalCenter: parent.verticalCenter

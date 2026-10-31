@@ -61,8 +61,8 @@ KeyboardPanel {
     owner
   )
 
-  // The countdowns and the pace tick read this clock. It ticks only while the
-  // popup is open and resyncs on every open (onIsOpenChanged).
+  // The countdowns read this clock. It ticks only while the popup is open
+  // and resyncs on every open (onIsOpenChanged).
   property double nowMs: Date.now()
   property alias nowTickRunning: nowTimer.running
 
@@ -72,10 +72,7 @@ KeyboardPanel {
     agentService ? agentService.snapshot : null,
     resolvedSettings,
     nowMs,
-    {
-      id: requestedId,
-      collapsed: !!(agentService && agentService.popupOwner && agentService.popupOwner.collapsed)
-    },
+    { id: requestedId },
     {
       refreshing: agentService ? !!agentService.refreshing : false,
       resetUi: resetUi,
@@ -85,14 +82,15 @@ KeyboardPanel {
     }
   )
 
-  // Rows that open, close, change kind or gain an action change the focus
-  // targets; rebuilding on this signature keeps the order live.
+  // Groups that change kind or gain, lose, enable or disable an action
+  // change the focus targets; rebuilding on this signature keeps the order
+  // live.
   readonly property string focusShape: {
     var rows = overview.rows
     var parts = []
     for (var i = 0; i < rows.length; i++) {
-      parts.push([rows[i].id, rows[i].kind, rows[i].open, !!rows[i].action,
-                  rows[i].useReset.visible].join(":"))
+      var actions = rows[i].actions.map(function (a) { return a.id + (a.enabled ? "+" : "-") })
+      parts.push([rows[i].id, rows[i].kind].concat(actions).join(":"))
     }
     return parts.join("|")
   }
@@ -132,16 +130,6 @@ KeyboardPanel {
     agentService.requestPopup(owner, providerId, "usage")
   }
 
-  function toggleRow(providerId) {
-    if (!agentService)
-      return
-    // The service toggles against its own pick; hand it the row on screen
-    // first when that pick is hidden.
-    if (root.requestedId !== root.selectedId)
-      agentService.requestPopup(owner, root.selectedId, root.view)
-    agentService.toggleProviderRow(owner, providerId)
-  }
-
   function openSettings() {
     if (!agentService)
       return
@@ -163,20 +151,20 @@ KeyboardPanel {
     agentService.refreshProvider(providerId, true)
   }
 
-  function onAction(providerId, kind, target) {
-    if (!agentService)
+  // One entry point for every group action, from a button or from Enter.
+  function runAction(providerId, action) {
+    if (!agentService || !action || !action.enabled)
       return
+    if (action.kind === "use_reset") {
+      if (action.target)
+        agentService.requestReset(providerId, String(action.target))
+      return
+    }
     agentService.dispatchAction(providerId, {
-      kind: kind,
+      kind: action.kind,
       label: "",
-      target: target
+      target: action.target
     })
-  }
-
-  function onResetRequested(providerId, resetId) {
-    if (!agentService)
-      return
-    agentService.requestReset(providerId, resetId)
   }
 
   readonly property var resetConfirmRow: {
@@ -206,8 +194,8 @@ KeyboardPanel {
     return ids
   }
 
-  // Up/Down select and open the next row (A11Y-002, UX-078); the deferred
-  // rebuild in onSelectedIdChanged then moves focus to its head.
+  // Up/Down select the next group (A11Y-002, UX-078); the deferred rebuild
+  // in onSelectedIdChanged then moves focus to its head.
   function stepProvider(delta) {
     var next = Scroll.routeProviderDelta(providerIds(), root.selectedId, delta)
     if (!next)
@@ -533,6 +521,8 @@ KeyboardPanel {
           width: parent.width
           visible: root.view !== "settings"
           innerRadius: root.innerRadius
+          updatedText: root.overview.updatedText
+          unitText: root.overview.unitText
           foreground: Commons.Color.foreground
           fontFamily: Style.font.family
           onSettingsRequested: root.openSettings()
@@ -572,14 +562,10 @@ KeyboardPanel {
       width: contentLoader.width
       overview: root.overview
       topRadius: stalledMessage.visible || restartBanner.visible ? 0 : root.innerRadius
-      flushTop: !stalledMessage.visible && !restartBanner.visible
-      frameWidth: root.verticalContentInset / 2
       foreground: Commons.Color.foreground
       fontFamily: Style.font.family
-      onToggleRequested: function (id) { root.toggleRow(id) }
-      onRefreshRequested: function (id) { root.onRefresh(id) }
-      onActionRequested: function (id, kind, target) { root.onAction(id, kind, target) }
-      onResetRequested: function (id, resetId) { root.onResetRequested(id, resetId) }
+      onSelectRequested: function (id) { root.selectProvider(id) }
+      onActionRequested: function (id, action) { root.runAction(id, action) }
     }
   }
 

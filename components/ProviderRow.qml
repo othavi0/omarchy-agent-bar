@@ -1,15 +1,16 @@
 import QtQuick
-import QtQuick.Layouts
 import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
+import "../CoreView.js" as Core
 import "Tokens.js" as Tokens
 
-// UX-077/078: one provider, drawn as a slab. The head is the accordion
-// toggle and its chevron turns down while the drawer below it is open; lines
-// above and below frame the open block. A band of popup floor ends every row
-// but the last.
-// Every field comes from the row model.
+// One provider group, drawn as a slab in two columns. The left column has a
+// fixed width: icon and name, plan, short notes, then the actions stacked.
+// The right column stacks every window: a label line with the reset on the
+// right, then a full-width bar with the percentage in a fixed column, so
+// every bar in the popup shares one width. A band of popup floor ends every
+// group but the last. Every field comes from the row model.
 Item {
   id: root
   objectName: "providerRow"
@@ -17,33 +18,33 @@ Item {
   property var row: null
   property bool last: false
   property int topRadius: 0
-  // True when the row meets the popup's top border with nothing above it.
-  property bool flushTop: false
-  property real frameWidth: 1
   property color foreground: Commons.Color.foreground
   property string fontFamily: Style.font.family
 
-  signal toggleRequested(string id)
-  signal actionRequested(string id, string kind, var target)
-  signal refreshRequested(string id)
-  signal resetRequested(string id, string resetId)
+  signal selectRequested(string id)
+  signal actionRequested(string id, var action)
 
   readonly property Item headItem: headHit
   readonly property string rowId: root.row ? root.row.id : ""
-  readonly property string kind: root.row ? root.row.kind : "loading"
-  readonly property bool reading: root.kind === "reading"
-  readonly property bool statusKind: root.kind === "status"
-  readonly property bool critical: !!(root.row && root.row.critical)
-  readonly property var action: root.row && root.row.action ? root.row.action : null
-  readonly property int bigIcon: Math.round(Style.font.iconLarge * Tokens.ROW_ICON_SCALE)
-  readonly property color tertiary: Util.alpha(root.foreground, Tokens.TEXT_TERTIARY)
-  readonly property bool open: !!(root.row && root.row.open)
   readonly property bool selected: !!(root.row && root.row.selected)
+  readonly property var windows: root.row && root.row.windows ? root.row.windows : []
+  readonly property var notes: root.row && root.row.notes ? root.row.notes : []
+  readonly property var actions: root.row && root.row.actions ? root.row.actions : []
+  readonly property string detail: root.row ? root.row.detail : ""
   readonly property var tones: Tokens.surfaces(Commons.Color.popups.background, root.foreground)
-  readonly property color headTone: root.open
-      ? Tokens.mix(root.tones.slab, Commons.Color.accent, Tokens.HEAD_OPEN)
-      : (root.selected ? Tokens.mix(root.tones.slab, Commons.Color.accent, Tokens.HEAD_SELECTED)
-                       : root.tones.slab)
+  readonly property color plateColor: root.selected
+      ? Tokens.mix(root.tones.slab, Commons.Color.accent, Tokens.GROUP_SELECTED)
+      : root.tones.slab
+  readonly property color secondary: Util.alpha(root.foreground, Tokens.TEXT_SECONDARY)
+  readonly property color tertiary: Util.alpha(root.foreground, Tokens.TEXT_TERTIARY)
+  readonly property color accentText: Tokens.readableAccent(
+      Commons.Color.accent,
+      Tokens.mix(root.plateColor, Commons.Color.accent, Tokens.PRIMARY_PRESS),
+      root.foreground)
+  readonly property int sideWidth: Style.space(Tokens.SIDE_COLUMN_PX)
+  readonly property int inset: Style.spacing.popupPadding
+  readonly property int gutter: Style.space(12)
+  readonly property int percentWidth: Math.ceil(percentMetrics.advanceWidth("100%"))
 
   width: parent ? parent.width : implicitWidth
   implicitHeight: body.implicitHeight
@@ -53,24 +54,28 @@ Item {
     var out = []
     if (!root.row)
       return out
-    if (root.row.openable)
-      out.push(headHit)
-    if (actionButton.visible)
-      out.push(actionButton)
-    if (root.row.open)
-      out = out.concat(detail.collectFocusTargets())
+    out.push(headHit)
+    for (var i = 0; i < actionRepeater.count; i++) {
+      var button = actionRepeater.itemAt(i)
+      if (button && button.visible && button.enabled)
+        out.push(button)
+    }
     return out
   }
 
-  // UX-020B: the slab takes an accent tint under an open head and a lighter
-  // one under a selected head; a closed head shows the hover fill under the
-  // pointer.
+  FontMetrics {
+    id: percentMetrics
+    font.family: root.fontFamily
+    font.pixelSize: Style.font.body
+    font.weight: Font.Medium
+  }
+
   Rectangle {
     objectName: "rowPlate"
     anchors.fill: parent
     topLeftRadius: root.topRadius
     topRightRadius: root.topRadius
-    color: root.headTone
+    color: root.plateColor
   }
 
   Column {
@@ -78,27 +83,30 @@ Item {
     width: parent.width
 
     Item {
-      id: head
+      id: group
       width: parent.width
-      height: Math.max(grid.implicitHeight, Style.spacing.popupRowHeight) + Style.space(24)
+      height: Math.max(side.implicitHeight, main.implicitHeight) + Style.space(12) * 2
 
       Rectangle {
         objectName: "rowHover"
         anchors.fill: parent
         topLeftRadius: root.topRadius
         topRightRadius: root.topRadius
-        visible: headMouse.containsMouse && !!root.row && root.row.openable && !root.row.open
+        visible: headMouse.containsMouse && !root.selected
         color: Style.hoverFill
       }
 
+      // The group is one focus stop. Enter runs its primary action; a click
+      // selects it.
       Item {
         id: headHit
         objectName: "rowHead"
         anchors.fill: parent
 
         function focusActivate() {
-          if (root.row && root.row.openable)
-            root.toggleRequested(root.row.id)
+          var action = Core.primaryAction(root.actions)
+          if (action)
+            root.actionRequested(root.rowId, action)
         }
 
         Keys.onReturnPressed: headHit.focusActivate()
@@ -107,24 +115,21 @@ Item {
 
         Accessible.role: Accessible.Button
         Accessible.name: root.row ? root.row.accessibleName : ""
-        Accessible.description: root.row ? root.row.tickDescription : ""
-        Accessible.expandable: !!(root.row && root.row.openable)
-        Accessible.expanded: !!(root.row && root.row.open)
+        Accessible.description: root.detail
         Accessible.onPressAction: headHit.focusActivate()
 
         MouseArea {
           id: headMouse
           anchors.fill: parent
           hoverEnabled: true
-          cursorShape: root.row && root.row.openable ? Qt.PointingHandCursor : Qt.ArrowCursor
-          onClicked: headHit.focusActivate()
+          onClicked: root.selectRequested(root.rowId)
         }
 
         Rectangle {
           objectName: "rowFocusRing"
           anchors.fill: parent
-          topLeftRadius: root.topRadius
-          topRightRadius: root.topRadius
+          anchors.margins: Style.space(4)
+          radius: Style.cornerRadius
           color: "transparent"
           border.color: Commons.Color.accent
           border.width: Style.spacing.hairline
@@ -132,252 +137,233 @@ Item {
         }
       }
 
-      RowLayout {
-        id: grid
-        x: Style.spacing.popupPadding
-        width: parent.width - Style.spacing.popupPadding * 2
-        anchors.verticalCenter: parent.verticalCenter
-        spacing: Style.space(12)
+      Column {
+        id: side
+        objectName: "sideColumn"
+        x: root.inset
+        y: Style.space(12)
+        width: root.sideWidth
+        spacing: Style.space(4)
 
-        ProviderIcon {
-          Layout.alignment: Qt.AlignVCenter
-          providerId: root.rowId
-          size: root.bigIcon
-          dimmed: !!(root.row && root.row.dimIcon)
-          foreground: root.foreground
-        }
+        Row {
+          width: parent.width
+          spacing: Style.space(8)
 
-        ColumnLayout {
-          Layout.preferredWidth: Math.round(Style.font.body * Tokens.NAME_COLUMN_EMS)
-          Layout.maximumWidth: Math.round(Style.font.body * Tokens.NAME_COLUMN_EMS)
-          Layout.alignment: Qt.AlignVCenter
-          spacing: Style.space(4)
+          ProviderIcon {
+            id: icon
+            anchors.verticalCenter: parent.verticalCenter
+            providerId: root.rowId
+            size: Style.font.iconLarge
+            dimmed: !!(root.row && root.row.dimIcon)
+            foreground: root.foreground
+          }
 
           Text {
-            id: nameText
             objectName: "rowName"
-            Layout.fillWidth: true
+            anchors.verticalCenter: parent.verticalCenter
+            width: parent.width - icon.width - parent.spacing
             text: root.row ? root.row.name : ""
             color: root.foreground
             font.family: root.fontFamily
             font.pixelSize: Style.font.subtitle
-            font.bold: true
-            elide: Text.ElideRight
-            textFormat: Text.PlainText
-            Accessible.ignored: true
-          }
-
-          Text {
-            Layout.fillWidth: true
-            text: root.row ? root.row.plan : ""
-            color: root.open ? Util.alpha(root.foreground, Tokens.TEXT_SECONDARY) : root.tertiary
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.bodySmall
+            font.weight: Font.DemiBold
             elide: Text.ElideRight
             textFormat: Text.PlainText
             Accessible.ignored: true
           }
         }
 
-        ColumnLayout {
-          Layout.fillWidth: true
-          Layout.alignment: Qt.AlignVCenter
-          spacing: Style.space(4)
+        Text {
+          objectName: "rowPlan"
+          visible: text.length > 0
+          width: parent.width
+          text: root.row ? root.row.plan : ""
+          color: root.tertiary
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.bodySmall
+          wrapMode: Text.Wrap
+          textFormat: Text.PlainText
+          Accessible.ignored: true
+        }
 
-          Item {
-            Layout.fillWidth: true
-            implicitHeight: nameText.implicitHeight
-
-            UsageMeter {
-              objectName: "rowMeter"
-              visible: root.reading
-              anchors.left: parent.left
-              anchors.right: parent.right
-              anchors.verticalCenter: parent.verticalCenter
-              percent: root.reading && root.row.primary ? root.row.primary.percent : -1
-              critical: root.critical
-              tickPercent: root.reading && root.row.primary ? root.row.primary.tickPercent : -1
-              foreground: root.foreground
-            }
-
-            Row {
-              visible: root.statusKind
-              anchors.verticalCenter: parent.verticalCenter
-              spacing: Style.space(6)
-
-              Text {
-                visible: text.length > 0
-                anchors.verticalCenter: parent.verticalCenter
-                text: root.row ? root.row.statusGlyph : ""
-                color: root.foreground
-                font.family: Style.font.family
-                font.pixelSize: Style.font.icon
-                textFormat: Text.PlainText
-                Accessible.ignored: true
-              }
-
-              Text {
-                anchors.verticalCenter: parent.verticalCenter
-                text: root.row ? root.row.statusWord : ""
-                color: root.foreground
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.body
-                font.bold: true
-                textFormat: Text.PlainText
-                Accessible.ignored: true
-              }
-            }
-          }
-
+        Repeater {
+          model: root.notes.length
           Text {
-            visible: root.reading
-            Layout.fillWidth: true
-            text: root.row ? root.row.subText : ""
-            color: root.tertiary
+            required property int index
+            objectName: "groupNote"
+            width: side.width
+            text: root.notes[index] || ""
+            color: root.secondary
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
-            wrapMode: Text.WordWrap
-            textFormat: Text.PlainText
-            Accessible.ignored: true
-          }
-
-          Text {
-            visible: root.statusKind && text.length > 0
-            Layout.fillWidth: true
-            text: root.row ? root.row.statusBody : ""
-            color: root.tertiary
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.bodySmall
-            wrapMode: Text.WordWrap
+            wrapMode: Text.Wrap
             textFormat: Text.PlainText
             Accessible.ignored: true
           }
         }
 
-        ColumnLayout {
-          Layout.preferredWidth: actionButton.visible
-              ? actionButton.implicitWidth
-              : Math.round(Style.font.title * Tokens.VALUE_COLUMN_EMS)
-          Layout.alignment: Qt.AlignVCenter
-          spacing: 0
+        Item {
+          visible: root.actions.length > 0
+          width: parent.width
+          height: Style.space(4)
+        }
 
-          Row {
-            visible: !actionButton.visible
-            Layout.alignment: Qt.AlignRight
-            spacing: Style.space(4)
+        Repeater {
+          id: actionRepeater
+          model: root.actions.length
 
-            // Any critical window raises the glyph, the main one or not, as
-            // on the bar chip.
-            Text {
-              objectName: "rowAlert"
-              visible: !!(root.row && root.row.alert)
-              anchors.verticalCenter: parent.verticalCenter
-              text: Tokens.GLYPH_ALERT
-              color: Commons.Color.urgent
-              font.family: Style.font.family
-              font.pixelSize: Style.font.icon
-              textFormat: Text.PlainText
-              Accessible.ignored: true
-            }
-
-            Text {
-              anchors.verticalCenter: parent.verticalCenter
-              text: root.row ? root.row.valueText : ""
-              color: root.critical
-                  ? Commons.Color.urgent
-                  : (root.reading ? root.foreground : root.tertiary)
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.title
-              font.bold: true
-              textFormat: Text.PlainText
-              Accessible.ignored: true
-            }
-          }
-
-          Text {
-            visible: !actionButton.visible && text.length > 0
-            Layout.alignment: Qt.AlignRight
-            text: root.row ? root.row.unitText : ""
-            color: root.tertiary
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
-            textFormat: Text.PlainText
-            Accessible.ignored: true
-          }
-
+          // Tonal primary: the accent at a low share over the slab, its label
+          // the accent pulled to readable contrast. A secondary action is
+          // text alone. Both paint their own hover, focus and press tones.
           Button {
             id: actionButton
-            visible: root.statusKind && !!root.action
-            Layout.alignment: Qt.AlignRight
-            Layout.preferredHeight: Style.spacing.controlHeight
-            text: root.action ? root.action.label : ""
-            iconText: root.action && root.action.kind === "view_installation"
-                ? Tokens.GLYPH_EXTERNAL
-                : (root.action && root.action.kind === "login" ? Tokens.GLYPH_USER : "")
+            required property int index
+            readonly property var action: root.actions[index] || null
+            readonly property bool primary: !!(action && action.primary)
+            readonly property color fillTo: primary ? Commons.Color.accent : root.foreground
+            objectName: primary ? "primaryAction" : "secondaryAction"
+            visible: !!action
+            enabled: !!(action && action.enabled)
+            width: Math.min(actionButton.implicitWidth, root.sideWidth)
+            height: Style.spacing.controlHeight
+            text: action ? action.label : ""
             bordered: false
             focusable: true
-            horizontalPadding: Style.space(12)
+            horizontalPadding: Style.space(8)
             fontSize: Style.font.bodySmall
-            foreground: root.foreground
             fontFamily: root.fontFamily
-            background: Tokens.mix(root.headTone, Commons.Color.accent, Tokens.PRIMARY_REST)
-            color: actionPress.active ? Tokens.mix(root.headTone, Commons.Color.accent, Tokens.PRIMARY_PRESS)
+            foreground: !actionButton.enabled ? root.tertiary
+                : (actionButton.primary ? root.accentText : root.secondary)
+            background: !actionButton.primary ? "transparent"
+                : (actionButton.enabled
+                    ? Tokens.mix(root.plateColor, Commons.Color.accent, Tokens.PRIMARY_REST)
+                    : Tokens.mix(root.plateColor, root.foreground, Tokens.BUTTON_OFF))
+            color: !actionButton.enabled ? actionButton.background
+                : actionPress.active
+                    ? Tokens.mix(root.plateColor, actionButton.fillTo,
+                                 actionButton.primary ? Tokens.PRIMARY_PRESS : Tokens.BUTTON_PRESS)
                 : actionButton.hot || actionButton.activeFocus
-                    ? Tokens.mix(root.headTone, Commons.Color.accent, Tokens.PRIMARY_HOT)
+                    ? Tokens.mix(root.plateColor, actionButton.fillTo,
+                                 actionButton.primary ? Tokens.PRIMARY_HOT : Tokens.BUTTON_HOT)
                     : actionButton.background
             Accessible.name: text
             function focusActivate() {
-              if (root.action)
-                root.actionRequested(root.rowId, String(root.action.kind), root.action.target)
+              if (actionButton.action && actionButton.action.enabled)
+                root.actionRequested(root.rowId, actionButton.action)
             }
             Accessible.onPressAction: focusActivate()
             onClicked: focusActivate()
 
-            // See RowDetail: the tonal fill owns press, which the host keeps private.
+            // Setting `color` replaces the host fill rule, press included, and
+            // the host MouseArea is private. A passive handler above it sees
+            // the press without taking the click.
             Item {
               anchors.fill: parent
               PointHandler { id: actionPress; acceptedButtons: Qt.LeftButton }
             }
           }
         }
+      }
 
-        Item {
-          objectName: "rowChevron"
-          Layout.preferredWidth: Style.font.icon
-          Layout.preferredHeight: Style.font.icon
-          Layout.alignment: Qt.AlignVCenter
-          rotation: root.open ? Tokens.CHEVRON_OPEN_DEGREES : 0
+      Column {
+        id: main
+        objectName: "windowColumn"
+        x: root.inset + root.sideWidth + root.gutter
+        y: Style.space(12)
+        width: Math.max(0, root.width - x - root.inset)
+        spacing: Style.space(8)
 
-          Text {
-            anchors.centerIn: parent
-            visible: !!(root.row && root.row.openable)
-            text: Tokens.GLYPH_CHEVRON
-            color: root.open || root.selected ? Commons.Color.accent : root.tertiary
-            font.family: Style.font.family
-            font.pixelSize: Style.font.icon
-            textFormat: Text.PlainText
-            Accessible.ignored: true
+        Repeater {
+          model: root.windows.length
+
+          Column {
+            id: windowLine
+            required property int index
+            readonly property var line: root.windows[index] || null
+            objectName: "windowLine"
+            width: main.width
+            spacing: Style.space(4)
+
+            Item {
+              width: parent.width
+              height: Math.max(windowLabel.implicitHeight, windowReset.implicitHeight)
+
+              Text {
+                id: windowLabel
+                objectName: "windowLabel"
+                width: parent.width - windowReset.implicitWidth
+                    - (windowReset.text.length ? Style.space(8) : 0)
+                text: windowLine.line ? windowLine.line.label : ""
+                color: root.secondary
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.body
+                elide: Text.ElideRight
+                textFormat: Text.PlainText
+                Accessible.ignored: true
+              }
+
+              Text {
+                id: windowReset
+                objectName: "windowReset"
+                anchors.right: parent.right
+                anchors.baseline: windowLabel.baseline
+                text: windowLine.line ? windowLine.line.resetText : ""
+                color: root.tertiary
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.bodySmall
+                font.features: ({ "tnum": 1 })
+                textFormat: Text.PlainText
+                Accessible.ignored: true
+              }
+            }
+
+            Item {
+              width: parent.width
+              height: Math.max(meter.implicitHeight, windowPercent.implicitHeight)
+
+              UsageMeter {
+                id: meter
+                objectName: "windowMeter"
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                width: parent.width - root.percentWidth - Style.space(8)
+                percent: windowLine.line ? windowLine.line.percent : -1
+                critical: !!(windowLine.line && windowLine.line.critical)
+                foreground: root.foreground
+              }
+
+              Text {
+                id: windowPercent
+                objectName: "windowPercent"
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                width: root.percentWidth
+                horizontalAlignment: Text.AlignRight
+                text: windowLine.line ? windowLine.line.percentText : ""
+                color: windowLine.line && windowLine.line.critical ? Commons.Color.urgent : root.foreground
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.body
+                font.weight: Font.Medium
+                font.features: ({ "tnum": 1 })
+                textFormat: Text.PlainText
+                Accessible.ignored: true
+              }
+            }
           }
         }
-      }
-    }
 
-    Rectangle {
-      objectName: "drawerWell"
-      width: parent.width
-      height: detail.height
-      visible: !!(root.row && root.row.open)
-      color: root.tones.well
-
-      RowDetail {
-        id: detail
-        width: parent.width
-        row: root.row
-        well: root.tones.well
-        foreground: root.foreground
-        fontFamily: root.fontFamily
-        onRefreshRequested: root.refreshRequested(root.rowId)
-        onResetRequested: function (resetId) { root.resetRequested(root.rowId, resetId) }
+        Text {
+          objectName: "groupDetail"
+          visible: text.length > 0
+          width: parent.width
+          text: root.detail
+          color: root.secondary
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.body
+          wrapMode: Text.Wrap
+          textFormat: Text.PlainText
+          Accessible.ignored: true
+        }
       }
     }
 
@@ -396,25 +382,5 @@ Item {
       foreground: root.foreground
       strength: Tokens.RIM
     }
-  }
-
-  // The open block closes with a line above and below, in the popup border's
-  // colour and width. The popup border itself draws the sides, and on a row
-  // that meets the popup's top edge it draws the top too, so no line doubles.
-  Rectangle {
-    objectName: "rowFrameTop"
-    visible: root.open && !root.flushTop
-    width: parent.width
-    height: root.frameWidth
-    color: Commons.Color.popups.border
-  }
-
-  Rectangle {
-    objectName: "rowFrameBottom"
-    visible: root.open
-    y: head.height + detail.height - height
-    width: parent.width
-    height: root.frameWidth
-    color: Commons.Color.popups.border
   }
 }

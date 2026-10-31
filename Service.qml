@@ -167,12 +167,6 @@ Item {
       selectedProviderId = String(providerId)
   }
 
-  function toggleProviderRow(owner, providerId) {
-    popupOwner = Core.togglePopupRow(popupOwner, owner, providerId)
-    if (popupOwner && popupOwner.owner === owner && providerId)
-      selectedProviderId = String(providerId)
-  }
-
   function closePopup(owner) {
     popupOwner = Core.closePopup(popupOwner, owner)
     if (!popupOwner) {

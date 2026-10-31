@@ -131,13 +131,12 @@ TestCase {
   function test_overview_row_name_and_plan() {
     var env = { providers: [firstProvider("ready.json")] }
     var row = Core.overviewModel(env, null, Date.parse("2026-07-28T15:00:00Z"),
-                                 { id: "", collapsed: false },
+                                 { id: "" },
                                  { refreshing: true, resetUi: null, resetBusy: false,
                                    dateFormat: "", timeFormat: "" }).rows[0]
     verify(row.name.length > 0)
     verify(row.plan.length > 0)
     verify(row.connection === undefined)
-    compare(row.refreshing, true)
     verify(row.showStale === undefined)
   }
 
@@ -158,9 +157,9 @@ TestCase {
   function test_overview_selection_falls_back_to_the_first_row() {
     var env = loadFixture("valid-multi-provider.json")
     var ui = { refreshing: false, resetUi: null, resetBusy: false, dateFormat: "", timeFormat: "" }
-    var picked = Core.overviewModel(env, null, Date.now(), { id: "codex", collapsed: false }, ui)
+    var picked = Core.overviewModel(env, null, Date.now(), { id: "codex" }, ui)
     compare(picked.selectedId, "codex")
-    var first = Core.overviewModel(env, null, Date.now(), { id: "", collapsed: false }, ui)
+    var first = Core.overviewModel(env, null, Date.now(), { id: "" }, ui)
     compare(first.selectedId, "claude")
   }
 
@@ -464,15 +463,14 @@ TestCase {
     compare(layout.lead.remainingPercent, 69)
     compare(layout.lead.percentText, "69%")
     compare(layout.lead.resetCountdown, "2h 59m")
-    compare(layout.lead.resetPhrase, "resets in")
   }
 
   function test_chip_state_cue_stale_is_silent() {
     compare(Core.chipStateCue({ state: "stale" }), "")
     var view = read("CoreView.js")
-    var detail = read("components/RowDetail.qml")
+    var detail = read("components/ProviderRow.qml")
     verify(view.length > 0)
-    verify(detail.length > 0, "RowDetail.qml exists")
+    verify(detail.length > 0, "ProviderRow.qml exists")
     verify(view.indexOf("󰅐") < 0)
     verify(detail.indexOf("󰅐") < 0)
   }

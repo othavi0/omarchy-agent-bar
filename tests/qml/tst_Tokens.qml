@@ -38,7 +38,6 @@ TestCase {
       "components/RestartBanner.qml",
       "components/OverviewList.qml",
       "components/ProviderRow.qml",
-      "components/RowDetail.qml",
       "components/UsageMeter.qml",
       "components/ProviderIcon.qml",
       "components/PopupFooter.qml",
@@ -55,20 +54,42 @@ TestCase {
   function test_tokens_values() {
     var alphas = {
       TEXT_SECONDARY: 0.72, TEXT_TERTIARY: 0.55, TRACK: 0.12, DIMMED: 0.45,
-      LOCKED: 0.55, THIN_FILL: 0.6, URGENT_RULE: 0.55,
-      ROW_ICON_SCALE: 1.2, NAME_COLUMN_EMS: 8.5, VALUE_COLUMN_EMS: 3.6,
-      TICK_MIN_ELAPSED: 0.1
+      LOCKED: 0.55, URGENT_RULE: 0.55, SIDE_COLUMN_PX: 118,
+      PRIMARY_REST: 0.16, MIN_TEXT_CONTRAST: 4.5
     }
     for (var k in alphas)
       compare(Tokens[k], alphas[k], k)
+    var gone = ["THIN_FILL", "TICK_MIN_ELAPSED", "ROW_ICON_SCALE", "NAME_COLUMN_EMS",
+                "VALUE_COLUMN_EMS", "LABEL_COLUMN_MAX_SHARE", "CHEVRON_OPEN_DEGREES",
+                "GLYPH_CHEVRON", "WELL_LIFT", "WELL_SINK", "DRAWER_RULE", "HEAD_OPEN"]
+    for (var d = 0; d < gone.length; d++)
+      compare(Tokens[gone[d]], undefined, gone[d] + " left with the accordion and the tick")
     var glyphs = {
-      GLYPH_ALERT: 0xF0026, GLYPH_CLOCK: 0xF0954,
-      GLYPH_REFRESH: 0xF0450, GLYPH_SETTINGS: 0xF0493, GLYPH_BACK: 0xF0141,
-      GLYPH_UP: 0xF0143, GLYPH_DOWN: 0xF0140, GLYPH_EXTERNAL: 0xF03CC,
-      GLYPH_PLUG: 0xF06A5, GLYPH_USER: 0xF0004, GLYPH_WIFI_OFF: 0xF05AA
+      GLYPH_ALERT: 0xF0026, GLYPH_SETTINGS: 0xF0493, GLYPH_BACK: 0xF0141,
+      GLYPH_UP: 0xF0143, GLYPH_DOWN: 0xF0140
     }
     for (var g in glyphs)
       compare(Tokens[g], String.fromCodePoint(glyphs[g]), g)
+  }
+
+  function test_tonal_label_reaches_readable_contrast_data() {
+    return [
+      { tag: "dark", accent: "#60a5fa", slab: "#222225", fg: "#e4e4e7" },
+      { tag: "dark-dim-accent", accent: "#3b4261", slab: "#1f2335", fg: "#c0caf5" },
+      { tag: "light", accent: "#2563eb", slab: "#f4f4f5", fg: "#18181b" },
+      { tag: "light-pale-accent", accent: "#7dd3fc", slab: "#f4f4f5", fg: "#18181b" },
+      { tag: "white", accent: "#0057d8", slab: "#ffffff", fg: "#000000" }
+    ]
+  }
+
+  // The tonal button's label is the accent pulled toward the theme
+  // foreground until it reads at 4.5:1 on the strongest fill it sits on.
+  function test_tonal_label_reaches_readable_contrast(data) {
+    var accent = Qt.color(data.accent)
+    var fill = Tokens.mix(Qt.color(data.slab), accent, Tokens.PRIMARY_PRESS)
+    var label = Tokens.readableAccent(accent, fill, Qt.color(data.fg))
+    verify(contrast(label, fill) >= 4.5,
+           data.tag + ": label " + label + " on " + fill + " reads at " + contrast(label, fill).toFixed(2))
   }
 
   function test_no_qt_darker() {
