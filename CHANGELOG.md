@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [11.0.4] - 2026-10-31
+
+### Changed
+
+- docs(spec): record the popup grid layout
+- feat(popup): show every window in a grid layout
+
 ## [11.0.3] - 2026-10-31
 
 ### Changed
