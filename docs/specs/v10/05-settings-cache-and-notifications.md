@@ -16,11 +16,14 @@
   },
   "refreshIntervalSeconds": 60,
   "notifications": {
-    "enabled": true,
-    "reminderMinutes": 120
+    "enabled": true
   }
 }
 ```
+
+There is no `notifications.reminderMinutes` key in the product schema. A
+document written through 11.0.2 that still carries it reads (`NOTIFY-014`);
+the key is ignored and never written back.
 
 There is no `updates` block in the product schema. A document written by
 10.3.24 through 10.5.1 that still carries `"updates": {"automatic": <bool>}`
@@ -130,7 +133,7 @@ $XDG_STATE_HOME/agent-bar/maintenance.lock
   `docs/specs/v10/amendments/2026-09-15-drop-unread-status-fields-design.md`.
 - `CACHE-001B` (added 2026-10-21): A cache document written before
   `windowMinutes` (`JSON-020A`) still loads; the missing key reads as
-  `null`, so the row shows no pace until its next live collection. The
+  `null`, so the row shows no pace tick until its next live collection. The
   cache schema version stays 2. A `windowMinutes` of 0 is corrupt and
   follows `CACHE-018`. See
   `docs/specs/v10/amendments/2026-10-21-popup-overview-redesign-design.md`.
@@ -225,6 +228,14 @@ the entire cache document.
 - `CACHE-024`: `lastSuccessAt` remains the timestamp of the retained data.
 - `CACHE-025`: A provider refresh affects only that provider; an all-provider
   refresh preserves sibling results independently.
+- `CACHE-026` (added 2026-10-31): When Claude answers 429 with
+  `Retry-After` (delay seconds or an HTTP date), the row written for that
+  collection stays fresh until that instant, capped at one hour past the
+  collection. `cache use` serves it instead of calling the endpoint again: the
+  retained `stale` reading when last good data exists, otherwise the
+  `rate_limited` row. A 429 without `Retry-After` follows `CACHE-006` and is
+  re-collected on the next poll. `cache bypass` still collects. The hold lives
+  in the cache row's `expiresAt`; status JSON does not change.
 
 ## Notifications
 
@@ -241,9 +252,10 @@ critical: used >= 95
   derive it from their own clock and return a different value for the same
   window on every collection.
 - `NOTIFY-002`: Notifications only escalate normal -> warning -> critical.
-- `NOTIFY-003`: While a window stays at the same severity, the alert repeats at
-  most once per `notifications.reminderMinutes`, measured from the last
-  successful dispatch.
+- `NOTIFY-003` (amended 2026-10-31): Each window alerts once when it crosses
+  90% (warning) and once when it crosses 95% (critical). The same level never
+  repeats inside one window, and dropping back to warning does not rearm
+  critical. Only a new window (`NOTIFY-005`) or a higher level speaks again.
 - `NOTIFY-004`: Runtime notification state persists across shell restarts.
 - `NOTIFY-005`: Recovery below 90, a change between `null` and a timestamp, or
   a reset moving by more than the jitter tolerance silently rearms. A window a
@@ -271,9 +283,12 @@ critical: used >= 95
 - `NOTIFY-013`: Two observed resets describe the same window when they differ
   by at most 60 seconds. Sub-second drift is expected: a provider may compute
   `resets_at` from its own clock per response.
-- `NOTIFY-014`: `notifications.reminderMinutes` is an integer in `15..=1440`,
-  default `120`. It is optional on read so documents written before the field
-  existed stay valid, and is written on every explicit apply.
+- `NOTIFY-014` (amended 2026-10-31): `notifications.reminderMinutes` is
+  removed with the repeat it configured. A document written through 11.0.2
+  that still carries an integer in `15..=1440` reads (`SET-007`), on
+  `config show`, `status`, and `config apply` alike; the key is ignored and
+  never written back. Any
+  other value is rejected under `SET-006`.
 
 Notification evaluation acquires `notification.lock`, reloads state, evaluates,
 dispatches, and persists before releasing the lock. Entries are processed in
@@ -300,8 +315,7 @@ The state document is closed and sorted by provider/window:
 ```
 
 `resetAt` is either a UTC RFC 3339 string or `null`. `notifiedAt` is the UTC
-RFC 3339 timestamp of the last successful dispatch for this key; `NOTIFY-003`
-measures the reminder from it. Allowed persisted levels are `warning` and
+RFC 3339 timestamp of the last successful dispatch for this key. Allowed persisted levels are `warning` and
 `critical`; normal/rearmed keys are removed. Duplicate provider/window keys,
 unknown providers, unknown fields, or invalid timestamps quarantine the state
 and start a safe empty evaluation.

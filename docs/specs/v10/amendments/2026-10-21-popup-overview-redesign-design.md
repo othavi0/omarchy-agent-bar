@@ -165,7 +165,8 @@ reset: `elapsed = clamp(1 - (resetsAt - now) / windowMinutes, 0, 1)`.
   (remaining metric). Stale rows have no tick, because their fill is frozen
   at `lastSuccessAt`. The row head's accessible description reads
   `{N}% of the window has passed.`
-- `UX-081`: the pace line applies only to ready rows. Candidates are the
+- `UX-081` (superseded by `2026-10-31-ultra-plans-quiet-notices-design.md`;
+  the pace line is removed): the pace line applies only to ready rows. Candidates are the
   windows that show a tick and whose reset is still ahead; a window past its
   reset holds the old period's reading. The projection is linear (`projected = used /
   elapsed`) and is labelled `At this pace`. Durations use the countdown

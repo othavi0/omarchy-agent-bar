@@ -1,7 +1,7 @@
 use std::time::Duration;
 
-pub use super::adapter::HttpResponse;
 use super::adapter::{BoxFuture, HttpClient, HttpError};
+pub use super::adapter::{HttpResponse, RetryAfter};
 
 /// Production reqwest client: HTTPS only, no redirects, body size limit.
 #[derive(Debug, Clone)]
@@ -46,6 +46,11 @@ impl ReqwestHttpClient {
             if response.status().is_redirection() {
                 return Err(HttpError::RedirectRefused(final_url));
             }
+            let retry_after = response
+                .headers()
+                .get(reqwest::header::RETRY_AFTER)
+                .and_then(|value| value.to_str().ok())
+                .and_then(RetryAfter::parse);
             let mut body = Vec::new();
             let mut stream = response.bytes_stream();
             use futures::StreamExt;
@@ -60,6 +65,7 @@ impl ReqwestHttpClient {
                 status,
                 final_url,
                 body,
+                retry_after,
             })
         })
     }
@@ -167,6 +173,28 @@ impl HttpClient for ScriptedHttpClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use time::macros::datetime;
+
+    #[test]
+    fn retry_after_reads_delay_seconds_and_http_dates() {
+        assert_eq!(RetryAfter::parse("120"), Some(RetryAfter::Seconds(120)));
+        assert_eq!(RetryAfter::parse(" 0 "), Some(RetryAfter::Seconds(0)));
+        assert_eq!(
+            RetryAfter::parse("Sat, 31 Oct 2026 22:50:00 GMT"),
+            Some(RetryAfter::At(datetime!(2026-10-31 22:50:00 UTC)))
+        );
+        assert_eq!(RetryAfter::parse("-5"), None);
+        assert_eq!(RetryAfter::parse("soon"), None);
+        let received = datetime!(2026-10-31 22:40:00 UTC);
+        assert_eq!(
+            RetryAfter::Seconds(90).instant(received),
+            datetime!(2026-10-31 22:41:30 UTC)
+        );
+        assert!(
+            RetryAfter::Seconds(u64::MAX).instant(received) > received,
+            "an absurd delay saturates instead of overflowing"
+        );
+    }
 
     #[tokio::test]
     async fn scripted_post_records_url_headers_and_body() {
@@ -174,6 +202,7 @@ mod tests {
             status: 200,
             final_url: "https://api.anthropic.com/x".into(),
             body: b"{}".to_vec(),
+            retry_after: None,
         }));
         let result = http
             .post(
@@ -204,11 +233,13 @@ mod tests {
             status: 200,
             final_url: "https://api.anthropic.com/x".into(),
             body: b"{}".to_vec(),
+            retry_after: None,
         }));
         http.responses.lock().unwrap().push(Ok(HttpResponse {
             status: 200,
             final_url: "https://api.anthropic.com/y".into(),
             body: b"{}".to_vec(),
+            retry_after: None,
         }));
         let _ = http.post("https://x/", &[], b"body".to_vec(), 1024).await;
         let _ = http.get("https://y/", &[], 1024).await;

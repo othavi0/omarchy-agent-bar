@@ -76,7 +76,7 @@ TestCase {
       ],
       display: { metric: "remaining" },
       refreshIntervalSeconds: 60,
-      notifications: { enabled: true, reminderMinutes: 120 }
+      notifications: { enabled: true }
     }
   }
 
@@ -394,7 +394,7 @@ TestCase {
     compare(rows[0].id, s.resetUi.resetId)
     var model = View.resetConfirmModel(provider, rows[0])
     compare(model.title, "Use reset?")
-    compare(model.message, "Claude: Launch reset (1/1). Clears session and weekly.")
+    compare(model.message, "Claude: Launch reset (1/1). Clears 5-hour and weekly.")
     compare(model.confirmText, "Use reset")
 
     s.confirmReset()

@@ -88,26 +88,26 @@ TestCase {
     var claude = rowOf(m, "claude")
     compare(claude.kind, "reading")
     compare(claude.primary.id, "session")
-    compare(claude.subText, "Session (5h) · resets in 1h 32m")
+    compare(claude.subText, "5-hour · resets in 1h 32m")
     compare(claude.windows.map(function (w) { return w.id }), ["weekly", "weekly-model:fable"])
-    compare(claude.accessibleName, "Claude, 76% used, Session (5h) · resets in 1h 32m")
+    compare(claude.accessibleName, "Claude, 76% used, 5-hour · resets in 1h 32m")
 
     var codex = rowOf(m, "codex")
-    compare(codex.subText, "Session (5h) · resets in 4h 10m")
-    compare(codex.accessibleName, "Codex, 2% used, Session (5h) · resets in 4h 10m")
+    compare(codex.subText, "5-hour · resets in 4h 10m")
+    compare(codex.accessibleName, "Codex, 2% used, 5-hour · resets in 4h 10m")
 
     var hot = rowOf(model(F.critical(), "used"), "claude")
-    compare(hot.accessibleName, "Claude, 96% used, critical, Session (5h) · resets in 38m")
+    compare(hot.accessibleName, "Claude, 96% used, critical, 5-hour · resets in 38m")
 
     var weeklyHighest = withProviders([
       F.provider("claude", "Claude", "ready", [
-        F.win("session", "Session (5h)", 76, 300, 92),
+        F.win("session", "5-hour", 76, 300, 92),
         F.win("weekly", "Weekly (7d)", 97, 10080, 4080)
       ])
     ])
     var row = rowOf(model(weeklyHighest, "used"), "claude")
     compare(row.primary.id, "session")
-    compare(row.subText, "Session (5h) · resets in 1h 32m")
+    compare(row.subText, "5-hour · resets in 1h 32m")
     compare(windowOf(row, "weekly").resetCellText, "resets in 2d 20h",
             "the fullest window shows its reset like any other window")
   }
@@ -115,10 +115,10 @@ TestCase {
   function test_reset_cell_clock_only_under_a_day() {
     var env = withProviders([
       F.provider("claude", "Claude", "ready", [
-        F.win("session", "Session (5h)", 10, 300, 200),
+        F.win("session", "5-hour", 10, 300, 200),
         F.win("weekly", "Weekly (7d)", 20, 10080, 92)
       ]),
-      F.provider("codex", "Codex", "ready", [F.win("session", "Session (5h)", 50, 300, 250)])
+      F.provider("codex", "Codex", "ready", [F.win("session", "5-hour", 50, 300, 250)])
     ])
     var weekly = windowOf(rowOf(model(env, "used"), "claude"), "weekly")
     var clock = Qt.formatTime(new Date(Date.parse(F.at(92))), timeFormat)
@@ -134,7 +134,7 @@ TestCase {
     compare(codex.state, "stale")
     compare(codex.critical, true)
     compare(codex.valueText, "96%")
-    compare(codex.subText, "Session (5h) · Updated 14m ago")
+    compare(codex.subText, "5-hour · Updated 14m ago")
     compare(codex.updatedText, "", "the subline already shows the age, so the open detail does not repeat it")
     compare(codex.statusWord, "")
     compare(codex.dimIcon, false)
@@ -143,7 +143,6 @@ TestCase {
     for (var i = 0; i < codex.windows.length; i++)
       compare(codex.windows[i].tickPercent, -1)
     compare(codex.tickDescription, "")
-    compare(codex.pace, null)
   }
 
   function test_tick_fraction() {
@@ -158,81 +157,18 @@ TestCase {
     compare(rowOf(model(F.normal(), "used"), "antigravity").primary.tickPercent, -1)
 
     var past = withProviders([
-      F.provider("claude", "Claude", "ready", [F.win("session", "Session (5h)", 50, 300, -5)])
+      F.provider("claude", "Claude", "ready", [F.win("session", "5-hour", 50, 300, -5)])
     ])
     compare(rowOf(model(past, "used"), "claude").primary.tickPercent, 100)
   }
 
-  function test_pace_runs_out() {
-    var pace = rowOf(model(F.normal(), "used"), "claude").pace
-    compare(pace.kind, "runsOut")
-    compare(pace.glyph, Tokens.GLYPH_ALERT)
-    compare(pace.text, "At this pace ")
-    compare(pace.strong, "full in ~1h 6m")
-    compare(pace.rest, ", 26m before reset")
-    compare(pace.critical, false)
-    compare(pace.key, "= time passed")
-
-    var left = rowOf(model(F.normal(), "remaining"), "claude").pace
-    compare(left.strong, "empty in ~1h 6m")
-    compare(left.key, "= time left")
-
-    var hot = rowOf(model(F.critical(), "used"), "claude").pace
-    compare(hot.strong, "full in ~11m")
-    compare(hot.rest, ", 27m before reset")
-    compare(hot.critical, true)
-
-    var named = withProviders([
-      F.provider("claude", "Claude", "ready", [
-        F.win("session", "Session (5h)", 20, 300, 92),
-        F.win("weekly", "Weekly (7d)", 70, 10080, 4080)
-      ]),
-      F.provider("codex", "Codex", "ready", [F.win("session", "Session (5h)", 80, 300, 250)])
-    ])
-    var other = rowOf(model(named, "used"), "claude").pace
-    compare(other.kind, "runsOut")
-    compare(other.text, "At this pace Weekly (7d) is ")
-    compare(other.strong, "full in ~1d 18h")
-    compare(other.rest, ", 1d 1h before reset")
-  }
-
-  function test_pace_lasts() {
-    var pace = rowOf(model(F.normal(), "used"), "codex").pace
-    compare(pace.kind, "lasts")
-    compare(pace.glyph, Tokens.GLYPH_CHECK)
-    compare(pace.text, "")
-    compare(pace.strong, "Lasts to reset")
-    compare(pace.rest, ", Weekly (7d) ends near 66% used")
-    compare(pace.critical, false)
-    compare(pace.key, "= time passed")
-
-    compare(rowOf(model(F.normal(), "remaining"), "codex").pace.rest,
-            ", Weekly (7d) ends near 34% left")
-  }
-
-  function test_pace_too_early_and_null() {
-    var early = rowOf(model(F.early(), "used"), "claude").pace
-    compare(early.kind, "tooEarly")
-    compare(early.glyph, Tokens.GLYPH_CLOCK)
-    compare(early.text, "Too early to project, under 10% of the window has passed.")
-    compare(early.strong, "")
-    compare(early.rest, "")
-    compare(early.key, "")
-
-    compare(rowOf(model(F.normal(), "used"), "antigravity").pace, null)
-    compare(rowOf(model(F.normal(), "used"), "grok").pace, null)
-    compare(rowOf(model(F.nopct(), "used"), "claude").pace, null)
-  }
-
-  function test_pace_full_now() {
-    var pace = rowOf(model(F.full(), "used"), "claude").pace
-    compare(pace.kind, "fullNow")
-    compare(pace.glyph, Tokens.GLYPH_ALERT)
-    compare(pace.critical, true)
-    compare(pace.text, "")
-    compare(pace.strong, "Full now")
-    compare(pace.rest, "")
-    compare(rowOf(model(F.full(), "remaining"), "claude").pace.strong, "Empty now")
+  function test_rows_carry_no_pace_projection() {
+    var fixtures = [F.normal(), F.critical(), F.early(), F.full()]
+    for (var i = 0; i < fixtures.length; i++) {
+      var rows = model(fixtures[i], "used").rows
+      for (var r = 0; r < rows.length; r++)
+        verify(!("pace" in rows[r]), rows[r].id + " row has no pace model")
+    }
   }
 
   function test_status_rows() {
@@ -336,7 +272,7 @@ TestCase {
     compare(claude.resets[0].label, "Usage reset")
     compare(claude.resets[0].facts, [
       "1 of 1 available",
-      "clears session and weekly",
+      "clears 5-hour and weekly",
       "until " + Qt.formatDate(new Date(Date.parse(F.at(2 * 1440))), "MM/dd/yyyy")
     ])
 
@@ -374,9 +310,9 @@ TestCase {
 
   function test_critical_side_window_raises_the_row_alert() {
     var env = withProviders([
-      F.provider("claude", "Claude", "ready", [F.win("session", "Session (5h)", 98, 300, 30)]),
+      F.provider("claude", "Claude", "ready", [F.win("session", "5-hour", 98, 300, 30)]),
       F.provider("codex", "Codex", "ready", [
-        F.win("session", "Session (5h)", 10, 300, 200),
+        F.win("session", "5-hour", 10, 300, 200),
         F.win("weekly", "Weekly (7d)", 97, 10080, 600)
       ])
     ])
@@ -386,21 +322,5 @@ TestCase {
     compare(codex.alert, true, "a critical side window still flags the row")
     compare(rowOf(model(F.normal(), "used"), "codex").alert, false)
     compare(rowOf(model(F.critical(), "used"), "claude").alert, true)
-  }
-
-  function test_pace_edges_at_and_past_reset() {
-    var exact = withProviders([
-      F.provider("claude", "Claude", "ready", [F.win("session", "Session (5h)", 50, 300, 150)])
-    ])
-    var pace = rowOf(model(exact, "used"), "claude").pace
-    compare(pace.kind, "runsOut")
-    compare(pace.strong, "full in ~2h 30m")
-    compare(pace.rest, ", at reset", "a zero margin reads at reset, not 1m before")
-
-    var past = withProviders([
-      F.provider("claude", "Claude", "ready", [F.win("session", "Session (5h)", 100, 300, -5)])
-    ])
-    compare(rowOf(model(past, "used"), "claude").pace, null,
-            "a window past its reset has nothing to project")
   }
 }

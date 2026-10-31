@@ -475,7 +475,7 @@ function formatAgoText(iso, nowMs) {
 }
 
 // The JSON contract allows a positive integer or null; anything else reads
-// as "no known length", so pace never guesses a duration.
+// as "no known length", so the tick never guesses a duration.
 function windowMinutesOf(w) {
   if (!w || typeof w.windowMinutes !== "number" || !isFinite(w.windowMinutes))
     return null
@@ -607,7 +607,7 @@ function resetsOf(provider) {
   return out
 }
 
-// "Session (5h)" -> "session"; falls back to a humanized window id when the
+// "Weekly (7d)" -> "weekly", "5-hour" -> "5-hour"; falls back to a humanized window id when the
 // provider carries no matching window (e.g. a stale clears list).
 function clearWord(provider, windowId) {
   if (provider && Kernel.isArrayLike(provider.windows)) {
@@ -794,114 +794,13 @@ function overviewWindow(line, provider, metric, nowMs, timeFormat) {
     elapsed = Math.max(0, Math.min(1, 1 - (resetMs - nowMs) / (line.windowMinutes * 60000)))
   var tick = -1
   if (String(provider.state || "") === "ready" && elapsed !== null
-      && elapsed >= Tokens.PACE_MIN_ELAPSED)
+      && elapsed >= Tokens.TICK_MIN_ELAPSED)
     tick = Math.round((metric === "used" ? elapsed : 1 - elapsed) * 100)
   line.critical = line.severity === "critical"
   line.elapsed = elapsed
   line.tickPercent = tick
   line.resetCellText = overviewResetCellText(line, nowMs, timeFormat)
   return line
-}
-
-function paceDuration(minutes) {
-  return countdownText(Math.max(60000, Math.round(minutes) * 60000))
-}
-
-// Linear projection over the windows whose tick shows. lines are WindowModels
-// in delivered order.
-function paceModel(provider, lines, primaryId, metric, nowMs) {
-  if (!provider || String(provider.state || "") !== "ready" || !lines.length)
-    return null
-  var full = metric === "used" ? "full" : "empty"
-  var key = metric === "used" ? "= time passed" : "= time left"
-  var candidates = []
-  var timed = false
-  for (var i = 0; i < lines.length; i++) {
-    // A window past its reset holds the old period's reading; it has
-    // nothing to project.
-    if (!(parseIsoMs(lines[i].resetsAt) > nowMs))
-      continue
-    if (lines[i].elapsed !== null)
-      timed = true
-    if (lines[i].tickPercent >= 0 && lines[i].usedPercent !== null)
-      candidates.push(lines[i])
-  }
-  if (!candidates.length) {
-    if (!timed)
-      return null
-    return {
-      kind: "tooEarly",
-      glyph: Tokens.GLYPH_CLOCK,
-      critical: false,
-      text: "Too early to project, under " + Math.round(Tokens.PACE_MIN_ELAPSED * 100)
-          + "% of the window has passed.",
-      strong: "",
-      rest: "",
-      key: ""
-    }
-  }
-
-  function prefixOf(w) {
-    return w.id === primaryId ? "" : w.label + " is "
-  }
-
-  for (var f = 0; f < candidates.length; f++) {
-    if (candidates[f].usedPercent < 100)
-      continue
-    var fullPrefix = prefixOf(candidates[f])
-    return {
-      kind: "fullNow",
-      glyph: Tokens.GLYPH_ALERT,
-      critical: true,
-      text: fullPrefix,
-      strong: fullPrefix.length ? full + " now" : full.charAt(0).toUpperCase() + full.slice(1) + " now",
-      rest: "",
-      key: key
-    }
-  }
-
-  var soonest = null
-  var soonestMin = Infinity
-  var widest = null
-  var widestProjected = -Infinity
-  for (var c = 0; c < candidates.length; c++) {
-    var w = candidates[c]
-    var projected = w.usedPercent / w.elapsed
-    if (projected >= 100) {
-      var toFull = (100 - w.usedPercent) / (w.usedPercent / (w.elapsed * w.windowMinutes))
-      if (toFull < soonestMin) {
-        soonest = w
-        soonestMin = toFull
-      }
-    } else if (projected > widestProjected) {
-      widest = w
-      widestProjected = projected
-    }
-  }
-
-  if (soonest) {
-    var margin = (parseIsoMs(soonest.resetsAt) - nowMs) / 60000 - soonestMin
-    return {
-      kind: "runsOut",
-      glyph: Tokens.GLYPH_ALERT,
-      critical: soonest.critical,
-      text: "At this pace " + prefixOf(soonest),
-      strong: full + " in ~" + paceDuration(soonestMin),
-      rest: Math.round(margin) < 1 ? ", at reset" : ", " + paceDuration(margin) + " before reset",
-      key: key
-    }
-  }
-
-  var n = Math.min(99, Math.round(widestProjected))
-  return {
-    kind: "lasts",
-    glyph: Tokens.GLYPH_CHECK,
-    critical: false,
-    text: "",
-    strong: "Lasts to reset",
-    rest: ", " + widest.label + " ends near " + (metric === "used" ? n + "% used" : (100 - n) + "% left"),
-    key: key
-  }
 }
 
 function statusGlyph(state) {
@@ -1024,7 +923,6 @@ function overviewRow(provider, metric, nowMs, ui) {
     action: action,
     refreshLabel: refreshLabel,
     updatedText: state === "stale" ? "" : updatedText,
-    pace: reading ? paceModel(provider, layout.lines, primary.id, metric, nowMs) : null,
     tickDescription: primary && primary.tickPercent >= 0
         ? Math.round(primary.elapsed * 100) + "% of the window has passed."
         : "",

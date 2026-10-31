@@ -57,7 +57,7 @@ TestCase {
       ],
       display: { metric: "remaining" },
       refreshIntervalSeconds: 60,
-      notifications: { enabled: true, reminderMinutes: 120 }
+      notifications: { enabled: true }
     }
   }
 
@@ -518,18 +518,18 @@ TestCase {
     s.openSettings("monitor-a")
     finishLane(s, "settingsRead", 0, JSON.stringify(validSettings()))
     s.setDisplayMetric("used")
-    s.setReminderMinutes(240)
+    s.setRefreshInterval(240)
     verify(s.saveSettings())
     compare(JSON.parse(s.pendingSettingsPayload).display.metric, "used")
-    compare(JSON.parse(s.pendingSettingsPayload).notifications.reminderMinutes, 240)
+    compare(JSON.parse(s.pendingSettingsPayload).refreshIntervalSeconds, 240)
 
     s.setDisplayMetric("remaining")
-    s.setReminderMinutes(60)
+    s.setRefreshInterval(60)
 
     compare(JSON.parse(s.pendingSettingsPayload).display.metric, "used")
-    compare(JSON.parse(s.pendingSettingsPayload).notifications.reminderMinutes, 240)
+    compare(JSON.parse(s.pendingSettingsPayload).refreshIntervalSeconds, 240)
     compare(s.settingsState.pendingPayload.display.metric, "used")
-    compare(s.settingsState.pendingPayload.notifications.reminderMinutes, 240)
+    compare(s.settingsState.pendingPayload.refreshIntervalSeconds, 240)
     compare(s.lanes.settingsWrite.stdinText.indexOf('"metric":"used"') >= 0, true)
   }
 

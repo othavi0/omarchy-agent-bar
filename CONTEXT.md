@@ -21,7 +21,7 @@ One provider in the overview. Its head shows the icon, name, plan, primary
 meter, and value, and toggles the row open; one row is open at a time.
 
 **Row detail**
-The open row's pace line, other percentage windows, resets, and actions.
+The open row's other percentage windows, resets, and actions.
 
 **Settings**
 The popup view that edits the canonical Agent Bar settings draft.

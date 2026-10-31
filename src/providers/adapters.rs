@@ -171,7 +171,7 @@ impl ProviderAdapter for GrokAdapter {
                         _ => credits,
                     }
                 }
-                other => http_failure(&GROK, "billing", login, other, false, true),
+                other => http_failure(&GROK, "billing", login, other, true),
             }
         })
     }
@@ -196,7 +196,7 @@ async fn grok_monthly_fallback(
     let resp = match response {
         Ok(resp) if (200..300).contains(&resp.status) => resp,
         Ok(resp) if resp.status < 500 => return credits,
-        other => return http_failure(&GROK, "billing", login, other, false, true),
+        other => return http_failure(&GROK, "billing", login, other, true),
     };
     let monthly = grok_from_billing_json(&resp.body, now, login);
     match (monthly, credits) {
@@ -233,7 +233,6 @@ fn http_failure(
     resource: &str,
     login: bool,
     response: Result<HttpResponse, HttpError>,
-    rate_limit_429: bool,
     retryable_5xx: bool,
 ) -> ProviderResult {
     let id = descriptor.id;
@@ -247,11 +246,6 @@ fn http_failure(
             descriptor.installation_url,
             false,
         ),
-        Ok(resp) if rate_limit_429 && resp.status == 429 => ProviderResult::RateLimited {
-            id,
-            name: name.to_owned(),
-            message: format!("{name} rate limited the request."),
-        },
         Ok(resp) => ProviderResult::ProviderError {
             id,
             name: name.to_owned(),
@@ -501,7 +495,15 @@ impl ProviderAdapter for ClaudeAdapter {
                     let _ = resp.final_url;
                     claude_from_usage_json(&resp.body, context.clock.now_utc(), creds.plan, login)
                 }
-                other => http_failure(&CLAUDE, "usage", login, other, true, false),
+                Ok(resp) if resp.status == 429 => ProviderResult::RateLimited {
+                    id: ProviderId::Claude,
+                    name: CLAUDE.display_name.to_owned(),
+                    message: format!("{} rate limited the request.", CLAUDE.display_name),
+                    retry_at: resp
+                        .retry_after
+                        .map(|after| after.instant(context.clock.now_utc())),
+                },
+                other => http_failure(&CLAUDE, "usage", login, other, false),
             }
         })
     }
@@ -606,32 +608,32 @@ fn parse_claude_credentials(bytes: &[u8]) -> Option<ClaudeCredentials> {
     })
 }
 
+/// Plan names Anthropic sells today, keyed by a substring of `rateLimitTier`.
+/// Max 20x became Ultra on 2026-10-30; the tier string did not change.
+const CLAUDE_TIER_LABELS: &[(&str, &str)] =
+    &[("ultra", "Ultra"), ("max_20x", "Ultra"), ("max_5x", "Max")];
+
 fn claude_plan(subscription_type: Option<&str>, rate_limit_tier: Option<&str>) -> Option<Plan> {
-    if let Some(tier) = rate_limit_tier.filter(|t| !t.is_empty()) {
-        if let Some(pos) = tier.find("max_") {
-            let suffix = &tier[pos + 4..];
-            let digits = suffix.strip_suffix('x').unwrap_or("");
-            if !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit()) {
-                return Some(Plan {
-                    id: tier.to_owned(),
-                    label: format!("Max {suffix}"),
-                });
-            }
-        }
-        return Some(Plan {
-            id: tier.to_owned(),
-            label: capitalize_ascii(tier),
-        });
-    }
-    let sub = subscription_type.filter(|s| !s.is_empty())?;
+    let raw = rate_limit_tier
+        .filter(|t| !t.is_empty())
+        .or_else(|| subscription_type.filter(|s| !s.is_empty()))?;
+    let label = CLAUDE_TIER_LABELS
+        .iter()
+        .find(|(needle, _)| raw.contains(needle))
+        .map(|(_, label)| (*label).to_owned())
+        .unwrap_or_else(|| humanize_tier(raw));
     Some(Plan {
-        id: sub.to_owned(),
-        label: capitalize_ascii(sub),
+        id: raw.to_owned(),
+        label,
     })
 }
 
-fn capitalize_ascii(raw: &str) -> String {
-    let mut chars = raw.chars();
+fn humanize_tier(raw: &str) -> String {
+    let words = raw
+        .strip_prefix("default_claude_")
+        .unwrap_or(raw)
+        .replace('_', " ");
+    let mut chars = words.chars();
     match chars.next() {
         Some(first) => first.to_ascii_uppercase().to_string() + chars.as_str(),
         None => String::new(),
@@ -955,6 +957,7 @@ mod tests {
             status: 500,
             final_url: CLAUDE_USAGE_URL.into(),
             body: br#"{"error":"authorization server unavailable"}"#.to_vec(),
+            retry_after: None,
         }));
         let process = ScriptedProcess::one(fake_process_output(0, "", ""));
         let mut fs = MapFileSystem::default();
@@ -1028,6 +1031,7 @@ mod tests {
             status: 200,
             final_url: GROK_BILLING_URL.into(),
             body: body.to_vec(),
+            retry_after: None,
         }));
         let result = grok_ctx_collect(&http).await;
         assert_eq!(
@@ -1056,11 +1060,13 @@ mod tests {
                 status: 200,
                 final_url: GROK_BILLING_URL.into(),
                 body: credits.to_vec(),
+                retry_after: None,
             },
             Ok(HttpResponse {
                 status: 200,
                 final_url: GROK_MONTHLY_BILLING_URL.into(),
                 body: monthly.to_vec(),
+                retry_after: None,
             }),
         );
         let result = grok_ctx_collect(&http).await;
@@ -1088,6 +1094,7 @@ mod tests {
                 status: 200,
                 final_url: GROK_BILLING_URL.into(),
                 body: credits.to_vec(),
+                retry_after: None,
             },
             Err(HttpError::Network("offline".into())),
         );
@@ -1107,11 +1114,13 @@ mod tests {
                 status: 200,
                 final_url: GROK_BILLING_URL.into(),
                 body: credits.to_vec(),
+                retry_after: None,
             },
             Ok(HttpResponse {
                 status: 503,
                 final_url: GROK_MONTHLY_BILLING_URL.into(),
                 body: b"{}".to_vec(),
+                retry_after: None,
             }),
         );
         let result = grok_ctx_collect(&http).await;
@@ -1137,11 +1146,13 @@ mod tests {
                     status: 200,
                     final_url: GROK_BILLING_URL.into(),
                     body: credits.to_vec(),
+                    retry_after: None,
                 },
                 Ok(HttpResponse {
                     status,
                     final_url: GROK_MONTHLY_BILLING_URL.into(),
                     body: b"{}".to_vec(),
+                    retry_after: None,
                 }),
             );
             let result = grok_ctx_collect(&http).await;
@@ -1165,11 +1176,13 @@ mod tests {
                 status: 200,
                 final_url: GROK_BILLING_URL.into(),
                 body: credits.to_vec(),
+                retry_after: None,
             },
             Ok(HttpResponse {
                 status: 200,
                 final_url: GROK_MONTHLY_BILLING_URL.into(),
                 body: monthly.to_vec(),
+                retry_after: None,
             }),
         );
         let result = grok_ctx_collect(&http).await;
@@ -1194,11 +1207,13 @@ mod tests {
                 status: 200,
                 final_url: GROK_BILLING_URL.into(),
                 body: credits.to_vec(),
+                retry_after: None,
             },
             Ok(HttpResponse {
                 status: 200,
                 final_url: GROK_MONTHLY_BILLING_URL.into(),
                 body: monthly.to_vec(),
+                retry_after: None,
             }),
         );
         let result = grok_ctx_collect(&http).await;
@@ -1220,6 +1235,7 @@ mod tests {
             status: 200,
             final_url: GROK_BILLING_URL.into(),
             body: body.to_vec(),
+            retry_after: None,
         }));
         let result = grok_ctx_collect(&http).await;
         assert!(matches!(result, ProviderResult::Ready { .. }), "{result:?}");
@@ -1235,6 +1251,7 @@ mod tests {
             status: 500,
             final_url: GROK_BILLING_URL.into(),
             body: br#"{"error":"authorization server unavailable"}"#.to_vec(),
+            retry_after: None,
         }));
         let process = empty_process();
         let mut fs = MapFileSystem::default();
@@ -1278,6 +1295,7 @@ mod tests {
             status: 200,
             final_url: CLAUDE_USAGE_URL.into(),
             body: body.to_vec(),
+            retry_after: None,
         }));
         let process = ScriptedProcess::one(ProcessOutput {
             exit_code: Some(0),
@@ -1380,6 +1398,7 @@ mod tests {
                     status: 200,
                     final_url: CLAUDE_USAGE_URL.into(),
                     body: body.to_vec(),
+                    retry_after: None,
                 }),
                 Err(crate::providers::adapter::HttpError::Network("blip".into())),
             ]),
@@ -1489,6 +1508,7 @@ mod tests {
             status: 200,
             final_url: CLAUDE_USAGE_URL.into(),
             body: body.to_vec(),
+            retry_after: None,
         }));
         let process = ScriptedProcess::one(fake_process_output(0, "2.1.280 (Claude Code)\n", ""));
         let fs = claude_creds_fs();
@@ -1534,6 +1554,7 @@ mod tests {
             status: 200,
             final_url: CLAUDE_USAGE_URL.into(),
             body: body.to_vec(),
+            retry_after: None,
         }));
         let process = ScriptedProcess::one(fake_process_output(0, "2.1.280\n", ""));
         let fs = claude_creds_fs();
@@ -1559,6 +1580,7 @@ mod tests {
             status: 200,
             final_url: CLAUDE_USAGE_URL.into(),
             body: body.to_vec(),
+            retry_after: None,
         }));
         // No discovered executable: the version probe has nothing to run.
         let process = ScriptedProcess::one(fake_process_output(0, "", ""));
@@ -1593,6 +1615,7 @@ mod tests {
             status: 200,
             final_url: CLAUDE_USAGE_URL.into(),
             body: body.to_vec(),
+            retry_after: None,
         }));
         let process = ScriptedProcess::one(fake_process_output(0, "not-a-version", ""));
         let fs = claude_creds_fs();
@@ -1617,14 +1640,21 @@ mod tests {
     }
 
     #[test]
-    fn claude_plan_formats_rate_limit_tier() {
-        let plan = claude_plan(Some("max"), Some("max_20x"));
-        assert_eq!(plan.as_ref().map(|p| p.label.as_str()), Some("Max 20x"));
-        assert_eq!(plan.as_ref().map(|p| p.id.as_str()), Some("max_20x"));
+    fn claude_plan_maps_rate_limit_tiers_to_current_names() {
+        let label = |tier: &str| claude_plan(Some("max"), Some(tier)).map(|p| p.label);
+        assert_eq!(label("max_5x").as_deref(), Some("Max"));
+        assert_eq!(label("default_claude_max_5x").as_deref(), Some("Max"));
+        assert_eq!(label("max_20x").as_deref(), Some("Ultra"));
+        assert_eq!(label("default_claude_max_20x").as_deref(), Some("Ultra"));
+        assert_eq!(label("default_claude_ultra").as_deref(), Some("Ultra"));
+        assert_eq!(label("claude_ultra_2026").as_deref(), Some("Ultra"));
+        assert_eq!(
+            label("default_claude_team_premium").as_deref(),
+            Some("Team premium")
+        );
+        assert_eq!(label("default_claude_x").as_deref(), Some("X"));
 
-        // Real-world tier shape observed live: prefix before max_.
         let real = claude_plan(Some("max"), Some("default_claude_max_20x"));
-        assert_eq!(real.as_ref().map(|p| p.label.as_str()), Some("Max 20x"));
         assert_eq!(
             real.as_ref().map(|p| p.id.as_str()),
             Some("default_claude_max_20x")
@@ -1669,6 +1699,7 @@ mod tests {
             status: 200,
             final_url: GROK_BILLING_URL.into(),
             body: body.to_vec(),
+            retry_after: None,
         }));
         let process = empty_process();
         let mut fs = MapFileSystem::default();
@@ -1729,6 +1760,7 @@ mod tests {
             status: 401,
             final_url: GROK_BILLING_URL.into(),
             body: br#"{"error":"unauthorized"}"#.to_vec(),
+            retry_after: None,
         }));
         let process = empty_process();
         let mut fs = MapFileSystem::default();
@@ -1833,6 +1865,7 @@ mod tests {
             status: 200,
             final_url: GROK_BILLING_URL.into(),
             body: body.to_vec(),
+            retry_after: None,
         }))
     }
 
@@ -2578,6 +2611,7 @@ exit 2
             status: 404,
             final_url: ANTIGRAVITY_REACHABILITY_URL.to_owned(),
             body: Vec::new(),
+            retry_after: None,
         }))
     }
 

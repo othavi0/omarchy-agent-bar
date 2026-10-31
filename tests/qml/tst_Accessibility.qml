@@ -135,11 +135,7 @@ TestCase {
     var propEnd = src.indexOf("readonly property var state", prop)
     verify(propEnd > prop)
     var body = src.substring(prop, propEnd)
-    // A11Y-008 must cover every NumberField editor, not just the refresh
-    // interval — a user editing the reminder field is entitled to the same
-    // stay-open protection as one editing the refresh interval.
     verify(body.indexOf("intervalField") >= 0)
-    verify(body.indexOf("reminderField") >= 0)
     // The selectable update command line takes focus too (UX-042).
     verify(body.indexOf("maintenanceView.editorOwnsFocus") >= 0)
     var view = read("MaintenanceView.qml")

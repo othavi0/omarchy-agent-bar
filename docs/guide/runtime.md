@@ -79,6 +79,11 @@ written by 10.3.24 through 10.5.1 that still carries
 `"updates": { "automatic": <bool> }` is tolerated on read and dropped on the
 next write; any other key inside it is still rejected.
 
+Alerts fire once per window at 90% used and once at 95%; they never repeat
+on a timer. A document written through 11.0.2 that still carries
+`notifications.reminderMinutes` is tolerated on read and dropped on the next
+write.
+
 Unknown keys and invalid/duplicate/missing providers are rejected. Reads never
 rewrite. Applies validate before lock and atomic replacement. File mode is
 `0600`.
@@ -107,6 +112,10 @@ re-collected on the next poll, so on a fresh install or after the cache is
 cleared a transient failure is visible for at most one refresh interval. When
 last good data exists, the retained `stale` reading is served for the
 provider's TTL instead.
+
+When Claude rate-limits the usage request with a `Retry-After` header, the
+cache holds the row until that instant (at most one hour), so automatic polls
+do not ask again before Claude allows it. Refresh still collects.
 
 ## Update state
 

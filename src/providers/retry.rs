@@ -51,6 +51,7 @@ mod tests {
             status: 200,
             final_url: "https://example.invalid/".into(),
             body: b"{}".to_vec(),
+            retry_after: None,
         }
     }
 

@@ -349,7 +349,7 @@ TestCase {
 
   function test_single_window_leads_with_no_rest() {
     var layout = layoutOf([
-      { id: "session", label: "Session (5h)", usedPercent: 42, remainingPercent: 58,
+      { id: "session", label: "5-hour", usedPercent: 42, remainingPercent: 58,
         resetsAt: "2026-07-28T18:00:00Z" }
     ], "2026-07-28T15:00:00Z")
     compare(layout.lead.id, "session")
@@ -374,7 +374,7 @@ TestCase {
 
   function test_session_window_leads_over_sooner_weekly_reset() {
     var windows = [
-      { id: "session", label: "Session (5h)", usedPercent: 21, remainingPercent: 79,
+      { id: "session", label: "5-hour", usedPercent: 21, remainingPercent: 79,
         resetsAt: "2026-09-04T03:10:00Z" },
       { id: "weekly", label: "Weekly (7d)", usedPercent: 64, remainingPercent: 36,
         resetsAt: "2026-09-04T12:00:00Z" },
@@ -386,7 +386,7 @@ TestCase {
     compare(Core.chipPercentText(readyWith(windows), "used", morning), "21%")
 
     var active = layoutOf([
-      { id: "session", label: "Session (5h)", usedPercent: 3, remainingPercent: 97,
+      { id: "session", label: "5-hour", usedPercent: 3, remainingPercent: 97,
         resetsAt: "2026-09-04T16:00:00Z" },
       { id: "weekly", label: "Weekly (7d)", usedPercent: 64, remainingPercent: 36,
         resetsAt: "2026-09-04T12:00:00Z" }
@@ -398,7 +398,7 @@ TestCase {
 
   function test_session_window_leads_over_critical_weekly() {
     var provider = readyWith([
-      { id: "session", label: "Session (5h)", usedPercent: 10, remainingPercent: 90,
+      { id: "session", label: "5-hour", usedPercent: 10, remainingPercent: 90,
         resetsAt: "2026-09-04T16:00:00Z" },
       { id: "weekly-model:fable", label: "Fable", usedPercent: 96, remainingPercent: 4,
         resetsAt: "2026-09-11T12:00:00Z" }
@@ -457,7 +457,7 @@ TestCase {
 
   function test_lines_carry_raw_percentages_and_countdown() {
     var layout = layoutOf([
-      { id: "session", label: "Session (5h)", usedPercent: 31, remainingPercent: 69,
+      { id: "session", label: "5-hour", usedPercent: 31, remainingPercent: 69,
         resetsAt: "2026-07-28T17:59:59Z" }
     ], "2026-07-28T15:00:00Z")
     compare(layout.lead.usedPercent, 31)
@@ -568,7 +568,7 @@ TestCase {
     return {
       id: "claude", name: "Claude", state: "ready",
       windows: [
-        { id: "session", label: "Session (5h)", usedPercent: 10, remainingPercent: 90 },
+        { id: "session", label: "5-hour", usedPercent: 10, remainingPercent: 90 },
         { id: "weekly", label: "Weekly (7d)", usedPercent: 20, remainingPercent: 80 }
       ].concat(extraWindows || []),
       resets: [
@@ -597,14 +597,14 @@ TestCase {
     var rows = Core.resetRows(p, "MM/dd/yyyy", "hh:mm")
     compare(rows.length, 2)
     compare(rows[0].id, "cedar-ember:opus55-launch-promax-20260921")
-    compare(rows[0].clearsText, "session and weekly")
+    compare(rows[0].clearsText, "5-hour and weekly")
     compare(rows[0].countText, "1/1")
     compare(rows[0].dateText, "until " + Qt.formatDate(new Date(Date.parse("2026-10-22T16:00:00Z")), "MM/dd/yyyy"))
     compare(rows[0].claimable, true)
     verify(rows[0].accessibleName.indexOf("Claude Opus 5.5 launch") >= 0)
     verify(rows[0].accessibleName.indexOf("1 of 1") >= 0)
     compare(rows[1].id, "juniper-tide")
-    compare(rows[1].clearsText, "session")
+    compare(rows[1].clearsText, "5-hour")
     compare(rows[1].dateText, "next " + Qt.formatDate(new Date(Date.parse("2026-09-25T12:00:00Z")), "MM/dd/yyyy"))
   }
 
@@ -673,6 +673,6 @@ TestCase {
     compare(model.confirmText, "Use reset")
     verify(model.message.indexOf("Claude") >= 0)
     verify(model.message.indexOf("1/1") >= 0)
-    verify(model.message.indexOf("session and weekly") >= 0)
+    verify(model.message.indexOf("5-hour and weekly") >= 0)
   }
 }

@@ -110,7 +110,7 @@ function claudeResetEnvelope(resets) {
       source: "live",
       plan: null,
       windows: [
-        { id: "session", label: "Session (5h)", usedPercent: 100, remainingPercent: 0, resetsAt: null },
+        { id: "session", label: "5-hour", usedPercent: 100, remainingPercent: 0, resetsAt: null },
         { id: "weekly", label: "Weekly (7d)", usedPercent: 40, remainingPercent: 60, resetsAt: null }
       ],
       resets: resets !== undefined ? resets : [{

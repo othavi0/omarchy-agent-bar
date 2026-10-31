@@ -89,7 +89,7 @@ Notifications: enabled
    row open (amended 2026-10-21, `docs/specs/v10/amendments/2026-10-21-popup-overview-redesign-design.md`).
 3. The popup lists one row
    per enabled provider with its plan, primary window, and typed
-   error/action state. The open row shows the pace line, the other windows,
+   error/action state. The open row shows the other windows,
    reset times, and the last-success age as a neutral caption while a
    reading is retained (`UX-028`).
 4. Clicking the same chip closes the popup; clicking another chip opens

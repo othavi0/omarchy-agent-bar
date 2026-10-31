@@ -127,9 +127,29 @@ TestCase {
     compare(p.selectedId, "claude")
     verify(p.width > 0 && p.height > 0, "the panel stub sizes the popup from its content")
     var texts = ViewHarness.findAll(p, function (item) {
-      return item.textFormat !== undefined && String(item.text).indexOf("Session (5h)") >= 0
+      return item.textFormat !== undefined && String(item.text).indexOf("5-hour") >= 0
     })
     verify(texts.length > 0, "the real popup renders the session window label")
+  }
+
+  function test_claude_without_session_window_renders() {
+    failOnWarning(/TypeError|ReferenceError|Unable to assign|Cannot read|undefined|NaN/)
+    var env = F.normal()
+    env.providers[0] = F.claudeUltraNoSession()
+    compare(Core.chipPercentText(env.providers[0], "used"), "29%")
+    openRealPopup(env, "used", "claude")
+    var head = headOf("claude")
+    verify(head.visible)
+    var detail = detailOf("claude")
+    var labels = byName(detail, "windowLabel").map(function (l) { return String(l.text) })
+    verify(labels.indexOf("Fable") >= 0, "Fable window renders: " + labels)
+    verify(byName(detail, "windowMeter").length > 0, "detail keeps its meters")
+    var row = rowById("claude")
+    var sessionTexts = ViewHarness.findAll(row, function (item) {
+      return item.textFormat !== undefined && visibleIn(item, row)
+          && /5h|5-hour/.test(String(item.text))
+    })
+    compare(sessionTexts.length, 0, "no 5-hour copy for a provider without that window")
   }
 
   function test_real_popup_grabs_to_an_image() {
@@ -241,10 +261,10 @@ TestCase {
     openRealPopup()
     tryVerify(function () { return focusNames().length > 0 }, 1000)
     compare(JSON.stringify(focusNames()), JSON.stringify([
-      "Claude, 76% used, Session (5h) · resets in 1h 32m",
+      "Claude, 76% used, 5-hour · resets in 1h 32m",
       "Use reset",
       "Refresh",
-      "Codex, 2% used, Session (5h) · resets in 4h 10m",
+      "Codex, 2% used, 5-hour · resets in 4h 10m",
       "Grok, 30% used, Monthly · resets in 13d 21h",
       "Antigravity, 0% used, Gemini · 5h",
       "Settings"
@@ -254,8 +274,8 @@ TestCase {
     settle()
     tryVerify(function () { return focusNames().length === 5 }, 1000,
               "a collapsed row contributes its head only: " + JSON.stringify(focusNames()))
-    compare(focusNames()[0], "Claude, 76% used, Session (5h) · resets in 1h 32m")
-    compare(focusNames()[1], "Codex, 2% used, Session (5h) · resets in 4h 10m")
+    compare(focusNames()[0], "Claude, 76% used, 5-hour · resets in 1h 32m")
+    compare(focusNames()[1], "Codex, 2% used, 5-hour · resets in 4h 10m")
   }
 
   function test_focus_skips_a_disabled_use_reset() {
@@ -536,7 +556,7 @@ TestCase {
     var texts = ViewHarness.findAll(popup, function (item) {
       return item.textFormat !== undefined && visibleIn(item, popup) && String(item.text).length > 0
     }).map(function (t) { return String(t.text) })
-    verify(texts.indexOf("Session (5h) · resets in 38m") >= 0,
+    verify(texts.indexOf("5-hour · resets in 38m") >= 0,
            "the fullest row reads its own reset: " + texts)
     var tight = ViewHarness.findAll(popup, function (item) {
       return /tightest/i.test(String(item.text === undefined ? "" : item.text))
@@ -545,20 +565,21 @@ TestCase {
     compare(tight.length, 0, "nothing names a tightest window")
   }
 
-  function test_pace_line_renders_the_projection() {
+  function test_drawer_has_no_pace_line_but_keeps_the_tick() {
     openRealPopup()
     var detail = detailOf("claude")
-    var texts = ViewHarness.findAll(detail, function (item) {
-      return item.textFormat !== undefined && visibleIn(item, popup) && String(item.text).length > 0
-    }).map(function (t) { return String(t.text) })
-    verify(texts.indexOf("full in ~1h 6m") >= 0, "pace strong text: " + texts)
-    verify(texts.indexOf(", 26m before reset") >= 0)
-    verify(texts.indexOf("= time passed") >= 0)
+    var texts = visibleTexts(detail)
+    for (var i = 0; i < texts.length; i++)
+      verify(!/At this pace|Too early to project|time passed|time left|Lasts to reset/.test(texts[i]),
+             "no pace copy in the drawer: " + texts[i])
+    compare(byName(detail, "paceGlyph").length, 0)
+    compare(byName(detail, "paceKey").length, 0)
     var ticks = byName(rowById("claude"), "paceTick").filter(function (t) {
       return visibleIn(t, popup)
     })
-    verify(ticks.length >= 1, "the primary meter carries the pace tick")
+    verify(ticks.length >= 1, "the primary meter keeps its time tick")
   }
+
   function openSettingsView(env) {
     openRealPopup(env)
     popup.openSettings()
@@ -609,16 +630,12 @@ TestCase {
     tryVerify(function () { return fc.liveTargets().indexOf(one(popup, "metricGroup")) >= 0 }, 1000,
               "the General body joins the focus order")
     var general = fc.liveTargets().slice(tabs.length)
-    compare(general.length, 5)
+    compare(general.length, 4)
     compare(general[0], one(popup, "metricGroup"))
     compare(general[1], one(popup, "intervalField").field)
     compare(general[2], one(popup, "notificationsToggle"))
-    compare(general[3], one(popup, "reminderField").field)
-    compare(String(general[4].Accessible.name), "Restore defaults")
-
-    service.setNotificationsEnabled(false)
-    tryVerify(function () { return fc.liveTargets().indexOf(one(popup, "reminderField").field) < 0 },
-              1000, "the reminder field leaves the order while notifications are off")
+    compare(String(general[3].Accessible.name), "Restore defaults")
+    compare(byName(popup, "reminderField").length, 0)
 
     popup.settingsTab = "about"
     tryVerify(function () { return focusNames().indexOf("Check for updates") >= 0 }, 1000,
@@ -814,9 +831,9 @@ TestCase {
 
   function test_collapsed_row_shows_a_critical_side_window() {
     openRealPopup(F.envelope([
-      F.provider("claude", "Claude", "ready", [F.win("session", "Session (5h)", 98, 300, 30)]),
+      F.provider("claude", "Claude", "ready", [F.win("session", "5-hour", 98, 300, 30)]),
       F.provider("codex", "Codex", "ready", [
-        F.win("session", "Session (5h)", 10, 300, 200),
+        F.win("session", "5-hour", 10, 300, 200),
         F.win("weekly", "Weekly (7d)", 97, 10080, 600)
       ])
     ]))
@@ -879,7 +896,7 @@ TestCase {
     compare(visibleIn(one(list[list.length - 1], "rowBand"), popup), false,
             "the footer draws the last band")
     var rules = byName(detailOf("claude"), "drawerRule").filter(function (r) { return visibleIn(r, popup) })
-    compare(rules.length, 3, "pace, windows, reset and actions are four sections with three rules")
+    compare(rules.length, 2, "windows, reset and actions are three sections with two rules")
     for (var i = 0; i < rules.length; i++) {
       assertFullBleed(rules[i], body, "drawer rule " + i)
       verify(one(list[0], "rowBand").height > rules[i].height,
@@ -911,14 +928,14 @@ TestCase {
     var row = rowById("claude")
     var detail = detailOf("claude")
     var column = leftOf(one(row, "rowName"))
-    var starts = [one(detail, "paceGlyph"), one(detail, "resetLabel"), one(detail, "updatedClock")]
+    var starts = [one(detail, "resetLabel"), one(detail, "updatedClock")]
         .concat(byName(detail, "windowLabel"))
     compare(byName(detail, "windowLabel").length, 2)
     for (var i = 0; i < starts.length; i++)
       compare(leftOf(starts[i]), column, starts[i].objectName + " starts under the provider name")
 
     var edge = rightOf(one(row, "rowChevron"))
-    var ends = [one(detail, "refreshButton"), one(detail, "paceKey")].concat(byName(detail, "windowReset"))
+    var ends = [one(detail, "refreshButton")].concat(byName(detail, "windowReset"))
     for (var e = 0; e < ends.length; e++)
       compare(rightOf(ends[e]), edge, ends[e].objectName + " ends on the chevron's edge")
 

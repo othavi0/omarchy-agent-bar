@@ -9,13 +9,7 @@ use crate::cli::ProviderId;
 const SCHEMA_VERSION: u32 = 1;
 const MIN_REFRESH: u32 = 30;
 const MAX_REFRESH: u32 = 3600;
-const MIN_REMINDER_MINUTES: u32 = 15;
-const MAX_REMINDER_MINUTES: u32 = 1440;
-const DEFAULT_REMINDER_MINUTES: u32 = 120;
-
-pub(crate) fn default_reminder_minutes() -> u32 {
-    DEFAULT_REMINDER_MINUTES
-}
+const LEGACY_REMINDER_MINUTES: std::ops::RangeInclusive<u64> = 15..=1440;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -65,10 +59,6 @@ pub struct DisplaySettings {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct NotificationSettings {
     pub enabled: bool,
-    /// Minutes between repeats of an alert that is still above its threshold.
-    /// Optional on read so documents written before this field stay valid.
-    #[serde(default = "default_reminder_minutes")]
-    pub reminder_minutes: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -162,10 +152,7 @@ impl Settings {
                 metric: DisplayMetric::Remaining,
             },
             refresh_interval_seconds: 60,
-            notifications: NotificationSettings {
-                enabled: true,
-                reminder_minutes: DEFAULT_REMINDER_MINUTES,
-            },
+            notifications: NotificationSettings { enabled: true },
         }
     }
 
@@ -189,6 +176,7 @@ impl Settings {
         if let Some(obj) = value.as_object_mut() {
             obj.remove("updates");
         }
+        strip_legacy_reminder_minutes(&mut value)?;
         strip_legacy_amp_provider_entries(&mut value);
         let mut settings: Self = serde_json::from_value(value)
             .map_err(|err| SettingsError::new(format!("invalid settings document: {err}")))?;
@@ -222,13 +210,6 @@ impl Settings {
         if !(MIN_REFRESH..=MAX_REFRESH).contains(&self.refresh_interval_seconds) {
             return Err(SettingsError::new(format!(
                 "refreshIntervalSeconds must be in {MIN_REFRESH}..={MAX_REFRESH}"
-            )));
-        }
-        if !(MIN_REMINDER_MINUTES..=MAX_REMINDER_MINUTES)
-            .contains(&self.notifications.reminder_minutes)
-        {
-            return Err(SettingsError::new(format!(
-                "reminderMinutes must be in {MIN_REMINDER_MINUTES}..={MAX_REMINDER_MINUTES}"
             )));
         }
         let mut seen = HashSet::new();
@@ -312,6 +293,29 @@ fn validate_legacy_updates_block(value: &Value) -> Result<(), SettingsError> {
         return Err(SettingsError::new("updates.automatic is required"));
     }
     Ok(())
+}
+
+/// `notifications.reminderMinutes` (written through 11.0.2) set how often an
+/// alert repeated. Alerts no longer repeat, so a stored value still reads,
+/// within the range those releases accepted, and the next write drops it.
+fn strip_legacy_reminder_minutes(value: &mut Value) -> Result<(), SettingsError> {
+    let Some(notifications) = value
+        .get_mut("notifications")
+        .and_then(Value::as_object_mut)
+    else {
+        return Ok(());
+    };
+    let Some(minutes) = notifications.remove("reminderMinutes") else {
+        return Ok(());
+    };
+    match minutes.as_u64() {
+        Some(n) if LEGACY_REMINDER_MINUTES.contains(&n) => Ok(()),
+        _ => Err(SettingsError::new(format!(
+            "reminderMinutes must be an integer in {}..={}",
+            LEGACY_REMINDER_MINUTES.start(),
+            LEGACY_REMINDER_MINUTES.end()
+        ))),
+    }
 }
 
 #[cfg(test)]
@@ -422,37 +426,31 @@ mod tests {
     }
 
     #[test]
-    fn reminder_minutes_defaults_when_absent() {
-        let doc = br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":true},{"id":"grok","enabled":true},{"id":"antigravity","enabled":false}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true}}"#;
+    fn legacy_reminder_minutes_is_tolerated_on_read_and_dropped_on_write() {
+        let doc = br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"grok","enabled":true},{"id":"antigravity","enabled":false}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true,"reminderMinutes":120}}"#;
         let parsed = Settings::parse_strict(doc).unwrap();
-        assert_eq!(
-            parsed.notifications.reminder_minutes,
-            DEFAULT_REMINDER_MINUTES
+        assert!(parsed.notifications.enabled);
+        let line = parsed.to_canonical_json_line().unwrap();
+        assert!(!line.contains("reminderMinutes"), "{line}");
+        assert!(
+            line.contains(r#""notifications":{"enabled":true}"#),
+            "{line}"
         );
-        assert_eq!(parsed.notifications.reminder_minutes, 120);
     }
 
     #[test]
-    fn reminder_minutes_round_trips_and_rejects_out_of_range() {
-        let mut doc = Settings::defaults();
-        doc.notifications.reminder_minutes = MIN_REMINDER_MINUTES;
-        doc.validate().unwrap();
-        doc.notifications.reminder_minutes = MAX_REMINDER_MINUTES;
-        doc.validate().unwrap();
-
-        doc.notifications.reminder_minutes = MIN_REMINDER_MINUTES - 1;
-        let err = doc.validate().unwrap_err();
-        assert!(err.message().contains("reminderMinutes"));
-
-        doc.notifications.reminder_minutes = MAX_REMINDER_MINUTES + 1;
-        assert!(doc.validate().is_err());
-    }
-
-    #[test]
-    fn reminder_minutes_survives_the_hand_written_allowlist() {
-        let doc = br#"{"schemaVersion":1,"providers":[{"id":"claude","enabled":true},{"id":"codex","enabled":true},{"id":"amp","enabled":true},{"id":"grok","enabled":true},{"id":"antigravity","enabled":false}],"display":{"metric":"remaining"},"refreshIntervalSeconds":60,"notifications":{"enabled":true,"reminderMinutes":240}}"#;
-        let parsed = Settings::parse_strict(doc).unwrap();
-        assert_eq!(parsed.notifications.reminder_minutes, 240);
+    fn legacy_reminder_minutes_rejects_a_value_no_release_wrote() {
+        for bad in ["5", "1441", "\"120\"", "12.5", "null"] {
+            let doc = format!(
+                r#"{{"schemaVersion":1,"providers":[{{"id":"claude","enabled":true}},{{"id":"codex","enabled":true}},{{"id":"grok","enabled":true}},{{"id":"antigravity","enabled":false}}],"display":{{"metric":"remaining"}},"refreshIntervalSeconds":60,"notifications":{{"enabled":true,"reminderMinutes":{bad}}}}}"#
+            );
+            let err = Settings::parse_strict(doc.as_bytes()).unwrap_err();
+            assert!(
+                err.message().contains("reminderMinutes"),
+                "{bad}: {}",
+                err.message()
+            );
+        }
     }
 
     #[test]

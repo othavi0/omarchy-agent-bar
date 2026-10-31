@@ -21,6 +21,38 @@ pub struct HttpResponse {
     pub status: u16,
     pub final_url: String,
     pub body: Vec<u8>,
+    /// Parsed `Retry-After`, the only response header collectors read.
+    pub retry_after: Option<RetryAfter>,
+}
+
+/// `Retry-After` (RFC 9110 section 10.2.3): delay seconds or an HTTP date.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RetryAfter {
+    Seconds(u64),
+    At(time::OffsetDateTime),
+}
+
+impl RetryAfter {
+    pub fn parse(raw: &str) -> Option<Self> {
+        let raw = raw.trim();
+        if let Ok(seconds) = raw.parse::<u64>() {
+            return Some(Self::Seconds(seconds));
+        }
+        time::OffsetDateTime::parse(raw, &time::format_description::well_known::Rfc2822)
+            .ok()
+            .map(Self::At)
+    }
+
+    /// The instant the provider allows the next request, measured from
+    /// `received` for a delay.
+    pub fn instant(self, received: time::OffsetDateTime) -> time::OffsetDateTime {
+        match self {
+            Self::Seconds(seconds) => received.saturating_add(time::Duration::seconds(
+                i64::try_from(seconds).unwrap_or(i64::MAX),
+            )),
+            Self::At(at) => at,
+        }
+    }
 }
 
 /// Typed HTTP failure at the collection boundary.
