@@ -30,7 +30,7 @@ omarchy bar move othavi0.agent-bar --section center
 ![Agent Bar chips and popup](docs/images/bar-popup.png)
 
 Each chip shows used or remaining percentage, whichever you pick in
-Settings. The popup shows the plan tag (`MAX 20X`, for example), the lead
+Settings. The popup shows the plan tag (`ULTRA`, for example), the lead
 window with its countdown and reset time, and one row per other window.
 
 ![Claude popup with session, weekly, and model windows](docs/images/popup-claude.png)

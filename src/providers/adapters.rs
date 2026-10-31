@@ -606,32 +606,32 @@ fn parse_claude_credentials(bytes: &[u8]) -> Option<ClaudeCredentials> {
     })
 }
 
+/// Plan names Anthropic sells today, keyed by a substring of `rateLimitTier`.
+/// Max 20x became Ultra on 2026-10-30; the tier string did not change.
+const CLAUDE_TIER_LABELS: &[(&str, &str)] =
+    &[("ultra", "Ultra"), ("max_20x", "Ultra"), ("max_5x", "Max")];
+
 fn claude_plan(subscription_type: Option<&str>, rate_limit_tier: Option<&str>) -> Option<Plan> {
-    if let Some(tier) = rate_limit_tier.filter(|t| !t.is_empty()) {
-        if let Some(pos) = tier.find("max_") {
-            let suffix = &tier[pos + 4..];
-            let digits = suffix.strip_suffix('x').unwrap_or("");
-            if !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit()) {
-                return Some(Plan {
-                    id: tier.to_owned(),
-                    label: format!("Max {suffix}"),
-                });
-            }
-        }
-        return Some(Plan {
-            id: tier.to_owned(),
-            label: capitalize_ascii(tier),
-        });
-    }
-    let sub = subscription_type.filter(|s| !s.is_empty())?;
+    let raw = rate_limit_tier
+        .filter(|t| !t.is_empty())
+        .or_else(|| subscription_type.filter(|s| !s.is_empty()))?;
+    let label = CLAUDE_TIER_LABELS
+        .iter()
+        .find(|(needle, _)| raw.contains(needle))
+        .map(|(_, label)| (*label).to_owned())
+        .unwrap_or_else(|| humanize_tier(raw));
     Some(Plan {
-        id: sub.to_owned(),
-        label: capitalize_ascii(sub),
+        id: raw.to_owned(),
+        label,
     })
 }
 
-fn capitalize_ascii(raw: &str) -> String {
-    let mut chars = raw.chars();
+fn humanize_tier(raw: &str) -> String {
+    let words = raw
+        .strip_prefix("default_claude_")
+        .unwrap_or(raw)
+        .replace('_', " ");
+    let mut chars = words.chars();
     match chars.next() {
         Some(first) => first.to_ascii_uppercase().to_string() + chars.as_str(),
         None => String::new(),
@@ -1617,14 +1617,21 @@ mod tests {
     }
 
     #[test]
-    fn claude_plan_formats_rate_limit_tier() {
-        let plan = claude_plan(Some("max"), Some("max_20x"));
-        assert_eq!(plan.as_ref().map(|p| p.label.as_str()), Some("Max 20x"));
-        assert_eq!(plan.as_ref().map(|p| p.id.as_str()), Some("max_20x"));
+    fn claude_plan_maps_rate_limit_tiers_to_current_names() {
+        let label = |tier: &str| claude_plan(Some("max"), Some(tier)).map(|p| p.label);
+        assert_eq!(label("max_5x").as_deref(), Some("Max"));
+        assert_eq!(label("default_claude_max_5x").as_deref(), Some("Max"));
+        assert_eq!(label("max_20x").as_deref(), Some("Ultra"));
+        assert_eq!(label("default_claude_max_20x").as_deref(), Some("Ultra"));
+        assert_eq!(label("default_claude_ultra").as_deref(), Some("Ultra"));
+        assert_eq!(label("claude_ultra_2026").as_deref(), Some("Ultra"));
+        assert_eq!(
+            label("default_claude_team_premium").as_deref(),
+            Some("Team premium")
+        );
+        assert_eq!(label("default_claude_x").as_deref(), Some("X"));
 
-        // Real-world tier shape observed live: prefix before max_.
         let real = claude_plan(Some("max"), Some("default_claude_max_20x"));
-        assert_eq!(real.as_ref().map(|p| p.label.as_str()), Some("Max 20x"));
         assert_eq!(
             real.as_ref().map(|p| p.id.as_str()),
             Some("default_claude_max_20x")
