@@ -163,25 +163,13 @@ TestCase {
     compare(Core.validateSettingsDraft(bad).ok, false)
   }
 
-  function test_reminder_minutes_bounds() {
+  function test_notifications_carry_no_reminder() {
     var d = Service.defaultSettings()
-    compare(d.notifications.reminderMinutes, 120)
+    compare(JSON.stringify(d.notifications), '{"enabled":true}')
     compare(Core.validateSettingsDraft(d).ok, true)
-
-    d = Core.setReminderMinutes(d, 15)
-    compare(d.notifications.reminderMinutes, 15)
-    d = Core.setReminderMinutes(d, 1440)
-    compare(d.notifications.reminderMinutes, 1440)
-
-    var bad = Core.setReminderMinutes(d, 5)
-    compare(Core.validateSettingsDraft(bad).ok, false)
-    bad = Core.setReminderMinutes(d, 2000)
-    compare(Core.validateSettingsDraft(bad).ok, false)
+    compare(Core.setReminderMinutes, undefined)
   }
 
-  // omacom/omarchy-plugin-marketplace#4979: the product no longer runs
-  // updates on its own, so the settings document never carries an
-  // `updates` block by default.
   function test_default_settings_has_no_updates_block() {
     var d = Service.defaultSettings()
     compare(d.updates, undefined)
@@ -317,13 +305,13 @@ TestCase {
     verify(src.indexOf("Chip number") < 0)
     verify(src.indexOf("Refresh every") >= 0)
     verify(src.indexOf("Refresh interval (seconds)") < 0)
-    verify(src.indexOf("Warn me before a quota runs out.") >= 0)
+    verify(src.indexOf("Warn me once at 90% and once at 95% used.") >= 0)
     verify(src.indexOf("Usage threshold alerts") < 0)
     verify(src.indexOf('text: "Loading\\u2026"') >= 0)
     verify(src.indexOf("Loading settings") < 0)
     verify(src.indexOf('text: "seconds"') >= 0)
-    verify(src.indexOf("Remind me every") >= 0)
-    verify(src.indexOf('text: "minutes"') >= 0)
+    verify(src.indexOf("Remind me every") < 0)
+    verify(src.indexOf("reminderField") < 0)
   }
 
   function test_settings_view_is_tabbed_with_line_headers() {

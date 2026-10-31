@@ -50,6 +50,7 @@
           "type": "boolean"
         },
         "reminderMinutes": {
+          "description": "Legacy alert-repeat interval written through 11.0.2. Tolerated on read and ignored; the current release never writes it back.",
           "type": "integer",
           "minimum": 15,
           "maximum": 1440

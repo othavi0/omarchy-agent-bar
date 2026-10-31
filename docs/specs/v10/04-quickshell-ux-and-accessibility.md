@@ -197,8 +197,7 @@ edge instead of a full-width separator:
   `Hidden`, each with its enable switch and, on the bar section, order
   controls;
 - `General`: the used/remaining selector with a preview of the chip number,
-  a native numeric refresh interval control, the notification toggle, and the
-  reminder interval, disabled while notifications are off;
+  a native numeric refresh interval control, and the notification toggle;
 - `About`: the installed version with the update controls and the danger
   zone. There is no automatic-updates toggle.
 

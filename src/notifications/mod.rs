@@ -127,9 +127,6 @@ impl<'a, D: NotificationDispatcher> NotificationEvaluator<'a, D> {
         if !self.settings.notifications.enabled {
             return Ok(());
         }
-        let reminder =
-            time::Duration::minutes(i64::from(self.settings.notifications.reminder_minutes));
-
         let mut state = self.store.load().map_err(|err| err.to_string())?;
         let order: Vec<ProviderId> = self.settings.providers.iter().map(|p| p.id.0).collect();
 
@@ -154,20 +151,13 @@ impl<'a, D: NotificationDispatcher> NotificationEvaluator<'a, D> {
                     continue;
                 };
                 let saved = state.entry_for(id, window.id()).cloned();
+                // One alert per level per window: only a new window or a
+                // higher level speaks again.
                 let should_emit = match saved.as_ref() {
                     None => true,
-                    Some(prev) if !NotificationState::same_window(prev.reset_at, observed) => true,
-                    Some(prev) if level > prev.level => true,
-                    Some(prev) if level == prev.level => self.now - prev.notified_at >= reminder,
                     Some(prev) => {
-                        state.upsert(NotificationEntry {
-                            provider_id: id.as_str().to_owned(),
-                            window_id: window.id().to_owned(),
-                            reset_at: observed,
-                            level,
-                            notified_at: prev.notified_at,
-                        });
-                        false
+                        !NotificationState::same_window(prev.reset_at, observed)
+                            || level > prev.level
                     }
                 };
                 if should_emit {
@@ -585,107 +575,95 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn the_same_level_repeats_only_after_the_reminder_elapses() {
-        let dir = tempfile::tempdir().unwrap();
-        let store = store_in(&dir);
-        let runner = ScriptedNotify {
+    async fn evaluate_at(
+        store: &NotificationStateStore,
+        dispatcher: &NotifySendDispatcher<ScriptedNotify>,
+        now: time::OffsetDateTime,
+        envelope: &StatusEnvelope,
+    ) {
+        let settings = SettingsDocument::defaults();
+        NotificationEvaluator {
+            store,
+            dispatcher,
+            settings: &settings,
+            now,
+        }
+        .evaluate(envelope)
+        .await
+        .unwrap();
+    }
+
+    fn quiet_dispatcher() -> NotifySendDispatcher<ScriptedNotify> {
+        NotifySendDispatcher::new(ScriptedNotify {
             specs: Mutex::new(Vec::new()),
             fail: false,
-        };
-        let dispatcher = NotifySendDispatcher::new(runner);
-        let settings = SettingsDocument::defaults();
-        let reset = datetime!(2026-08-21 22:00:00 UTC);
-        let first = datetime!(2026-08-21 10:00:00 UTC);
-        let envelope = envelope_with_reset(96.0, reset);
-
-        NotificationEvaluator {
-            store: &store,
-            dispatcher: &dispatcher,
-            settings: &settings,
-            now: first,
-        }
-        .evaluate(&envelope)
-        .await
-        .unwrap();
-
-        NotificationEvaluator {
-            store: &store,
-            dispatcher: &dispatcher,
-            settings: &settings,
-            now: first + time::Duration::minutes(119),
-        }
-        .evaluate(&envelope)
-        .await
-        .unwrap();
-        assert_eq!(
-            dispatcher.runner.specs.lock().unwrap().len(),
-            1,
-            "one minute short of the reminder must stay silent"
-        );
-
-        NotificationEvaluator {
-            store: &store,
-            dispatcher: &dispatcher,
-            settings: &settings,
-            now: first + time::Duration::minutes(120),
-        }
-        .evaluate(&envelope)
-        .await
-        .unwrap();
-        assert_eq!(dispatcher.runner.specs.lock().unwrap().len(), 2);
+        })
     }
 
     #[tokio::test]
-    async fn de_escalation_lowers_the_tracked_level_without_notifying() {
+    async fn the_same_level_never_repeats_inside_one_window() {
         let dir = tempfile::tempdir().unwrap();
         let store = store_in(&dir);
-        let runner = ScriptedNotify {
-            specs: Mutex::new(Vec::new()),
-            fail: false,
-        };
-        let dispatcher = NotifySendDispatcher::new(runner);
-        let settings = SettingsDocument::defaults();
+        let dispatcher = quiet_dispatcher();
         let reset = datetime!(2026-08-21 22:00:00 UTC);
         let first = datetime!(2026-08-21 10:00:00 UTC);
 
-        NotificationEvaluator {
-            store: &store,
-            dispatcher: &dispatcher,
-            settings: &settings,
-            now: first,
+        for minutes in [0, 119, 120, 600, 700] {
+            let envelope = envelope_with_reset(96.0, reset);
+            evaluate_at(
+                &store,
+                &dispatcher,
+                first + time::Duration::minutes(minutes),
+                &envelope,
+            )
+            .await;
         }
-        .evaluate(&envelope_with_reset(96.0, reset))
-        .await
-        .unwrap();
-
-        NotificationEvaluator {
-            store: &store,
-            dispatcher: &dispatcher,
-            settings: &settings,
-            now: first + time::Duration::minutes(5),
-        }
-        .evaluate(&envelope_with_reset(92.0, reset))
-        .await
-        .unwrap();
         assert_eq!(
             dispatcher.runner.specs.lock().unwrap().len(),
             1,
-            "dropping a level never speaks"
+            "critical speaks once per window, however long it stays critical"
+        );
+
+        let next = datetime!(2026-08-22 03:00:00 UTC);
+        evaluate_at(
+            &store,
+            &dispatcher,
+            first + time::Duration::minutes(720),
+            &envelope_with_reset(96.0, next),
+        )
+        .await;
+        assert_eq!(
+            dispatcher.runner.specs.lock().unwrap().len(),
+            2,
+            "a new window speaks again"
+        );
+    }
+
+    #[tokio::test]
+    async fn dipping_a_level_and_climbing_back_stays_silent() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = store_in(&dir);
+        let dispatcher = quiet_dispatcher();
+        let reset = datetime!(2026-08-21 22:00:00 UTC);
+        let first = datetime!(2026-08-21 10:00:00 UTC);
+
+        for (minutes, used) in [(0, 96.0), (5, 92.0), (10, 95.5), (130, 92.0), (260, 96.0)] {
+            let envelope = envelope_with_reset(used, reset);
+            evaluate_at(
+                &store,
+                &dispatcher,
+                first + time::Duration::minutes(minutes),
+                &envelope,
+            )
+            .await;
+        }
+        assert_eq!(
+            dispatcher.runner.specs.lock().unwrap().len(),
+            1,
+            "an oscillation around 95% inside one window never repeats the alert"
         );
         let state = store.load().unwrap();
-        assert_eq!(state.entries[0].level, NotificationLevel::Warning);
-
-        NotificationEvaluator {
-            store: &store,
-            dispatcher: &dispatcher,
-            settings: &settings,
-            now: first + time::Duration::minutes(121),
-        }
-        .evaluate(&envelope_with_reset(92.0, reset))
-        .await
-        .unwrap();
-        assert_eq!(dispatcher.runner.specs.lock().unwrap().len(), 2);
+        assert_eq!(state.entries[0].level, NotificationLevel::Critical);
     }
 
     #[tokio::test]

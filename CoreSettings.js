@@ -246,8 +246,7 @@ var SETTINGS_TABS = [
 var FIELD_TABS = [
   { tab: "general", read: function (d) { return d.display ? d.display.metric : undefined } },
   { tab: "general", read: function (d) { return d.refreshIntervalSeconds } },
-  { tab: "general", read: function (d) { return d.notifications ? d.notifications.enabled : undefined } },
-  { tab: "general", read: function (d) { return d.notifications ? d.notifications.reminderMinutes : undefined } }
+  { tab: "general", read: function (d) { return d.notifications ? d.notifications.enabled : undefined } }
 ]
 
 function barOrderKey(d) {
@@ -318,17 +317,6 @@ function setNotificationsEnabled(draft, enabled) {
   return next
 }
 
-function setReminderMinutes(draft, minutes) {
-  var next = cloneDraft(draft)
-  if (!next.notifications)
-    next.notifications = { enabled: true, reminderMinutes: 120 }
-  var n = Math.round(Number(minutes))
-  if (!isFinite(n))
-    n = 120
-  next.notifications.reminderMinutes = n
-  return next
-}
-
 function validateSettingsDraft(draft) {
   if (!draft || typeof draft !== "object")
     return { ok: false, reason: "not an object" }
@@ -341,10 +329,6 @@ function validateSettingsDraft(draft) {
     return { ok: false, reason: "refreshIntervalSeconds" }
   if (!draft.notifications || typeof draft.notifications.enabled !== "boolean")
     return { ok: false, reason: "notifications" }
-  var reminder = Number(draft.notifications.reminderMinutes)
-  if (!isFinite(reminder) || reminder !== Math.floor(reminder)
-      || reminder < 15 || reminder > 1440)
-    return { ok: false, reason: "notifications.reminderMinutes" }
   if (!Array.isArray(draft.providers))
     return { ok: false, reason: "providers length" }
   var seen = {}

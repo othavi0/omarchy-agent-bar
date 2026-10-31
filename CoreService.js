@@ -478,6 +478,6 @@ function defaultSettings() {
     }),
     display: { metric: "remaining" },
     refreshIntervalSeconds: 60,
-    notifications: { enabled: true, reminderMinutes: 120 }
+    notifications: { enabled: true }
   }
 }

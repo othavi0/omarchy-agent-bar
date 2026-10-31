@@ -18,9 +18,6 @@ Item {
   property bool editorOwnsFocus: (intervalField && intervalField.field
         ? !!intervalField.field.activeFocus
         : false)
-      || (reminderField && reminderField.field
-        ? !!reminderField.field.activeFocus
-        : false)
       || maintenanceView.editorOwnsFocus
 
   readonly property var state: agentService ? agentService.settingsState : null
@@ -63,23 +60,16 @@ Item {
     return true
   }
 
-  readonly property int reminderMinutes: {
-    if (draft && draft.notifications
-        && isFinite(Number(draft.notifications.reminderMinutes)))
-      return Number(draft.notifications.reminderMinutes)
-    return 120
-  }
-
   // UX-084: the view spans the popup; text and controls carry this inset and
   // the rows and section rules run to the border.
   readonly property int inset: Style.spacing.popupPadding
   readonly property int edgeGap: Style.space(12)
 
   // A change here rebuilds the popup focus order: the tab, the provider
-  // rows (the Repeaters rebuild their delegates on every draft change), the
-  // reminder field and the About buttons.
+  // rows (the Repeaters rebuild their delegates on every draft change) and
+  // the About buttons.
   readonly property string focusShape: [
-    root.tab, root.phase, root.loadFailed, root.locked, root.notificationsOn,
+    root.tab, root.phase, root.loadFailed, root.locked,
     root.sectionIds(root.sections.shown), root.sectionIds(root.sections.hidden),
     maintenanceView.ui.phase, maintenanceView.notesAvailable
   ].join("|")
@@ -152,8 +142,6 @@ Item {
         out = out.concat(rows[i].collectFocusTargets())
     } else if (root.tab === "general") {
       out.push(metricGroup, intervalField.field, notificationsToggle)
-      if (root.notificationsOn)
-        out.push(reminderField.field)
     } else if (root.tab === "about") {
       out = out.concat(maintenanceView.collectFocusTargets())
     }
@@ -471,56 +459,13 @@ Item {
           width: parent.width
           label: "Notifications"
           Accessible.name: "Notifications"
-          description: "Warn me before a quota runs out."
+          description: "Warn me once at 90% and once at 95% used."
           checked: root.notificationsOn
           foreground: root.foreground
           fontFamily: root.fontFamily
           onClicked: {
             if (root.agentService)
               root.agentService.setNotificationsEnabled(!root.notificationsOn)
-          }
-        }
-
-        RowLayout {
-          width: parent.width
-          spacing: Style.space(8)
-          enabled: root.notificationsOn
-          opacity: root.notificationsOn ? 1.0 : Tokens.LOCKED
-
-          Text {
-            Layout.fillWidth: true
-            text: "Remind me every"
-            color: root.foreground
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.body
-            textFormat: Text.PlainText
-          }
-
-          NumberField {
-            id: reminderField
-            objectName: "reminderField"
-            fieldWidth: Style.space(88)
-            value: root.reminderMinutes
-            from: 15
-            to: 1440
-            stepSize: 15
-            foreground: root.foreground
-            fontFamily: root.fontFamily
-            Accessible.name: "Remind me every, in minutes"
-            onModified: function (v) {
-              if (root.agentService)
-                root.agentService.setReminderMinutes(v)
-            }
-          }
-
-          Text {
-            Layout.preferredWidth: Style.space(52)
-            text: "minutes"
-            color: Util.alpha(root.foreground, Tokens.TEXT_SECONDARY)
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.bodySmall
-            textFormat: Text.PlainText
-            Accessible.ignored: true
           }
         }
       }

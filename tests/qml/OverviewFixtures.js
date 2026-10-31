@@ -56,7 +56,7 @@ function settings(metric) {
     ],
     display: { metric: metric === "used" ? "used" : "remaining" },
     refreshIntervalSeconds: 60,
-    notifications: { enabled: true, reminderMinutes: 120 }
+    notifications: { enabled: true }
   }
 }
 

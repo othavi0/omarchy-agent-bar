@@ -630,16 +630,12 @@ TestCase {
     tryVerify(function () { return fc.liveTargets().indexOf(one(popup, "metricGroup")) >= 0 }, 1000,
               "the General body joins the focus order")
     var general = fc.liveTargets().slice(tabs.length)
-    compare(general.length, 5)
+    compare(general.length, 4)
     compare(general[0], one(popup, "metricGroup"))
     compare(general[1], one(popup, "intervalField").field)
     compare(general[2], one(popup, "notificationsToggle"))
-    compare(general[3], one(popup, "reminderField").field)
-    compare(String(general[4].Accessible.name), "Restore defaults")
-
-    service.setNotificationsEnabled(false)
-    tryVerify(function () { return fc.liveTargets().indexOf(one(popup, "reminderField").field) < 0 },
-              1000, "the reminder field leaves the order while notifications are off")
+    compare(String(general[3].Accessible.name), "Restore defaults")
+    compare(byName(popup, "reminderField").length, 0)
 
     popup.settingsTab = "about"
     tryVerify(function () { return focusNames().indexOf("Check for updates") >= 0 }, 1000,

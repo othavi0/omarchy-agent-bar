@@ -79,6 +79,11 @@ written by 10.3.24 through 10.5.1 that still carries
 `"updates": { "automatic": <bool> }` is tolerated on read and dropped on the
 next write; any other key inside it is still rejected.
 
+Alerts fire once per window at 90% used and once at 95%; they never repeat
+on a timer. A document written through 11.0.2 that still carries
+`notifications.reminderMinutes` is tolerated on read and dropped on the next
+write.
+
 Unknown keys and invalid/duplicate/missing providers are rejected. Reads never
 rewrite. Applies validate before lock and atomic replacement. File mode is
 `0600`.
