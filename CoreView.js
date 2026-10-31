@@ -542,16 +542,20 @@ function electLeadIndex(lines) {
   if (best >= 0)
     return best
 
-  var bestMs = NaN
+  // Providers stamp one shared reset with sub-second jitter per window, so
+  // resets in the same minute tie and the tighter window wins the tie.
+  var bestMinute = NaN
   for (i = 0; i < lines.length; i++) {
     if (!lines[i].resetCountdown.length || lines[i].resetCountdown === "now")
       continue
     var ms = parseIsoMs(lines[i].resetsAt)
     if (!isFinite(ms))
       continue
-    if (best < 0 || ms < bestMs) {
+    var minute = Math.floor(ms / 60000)
+    if (best < 0 || minute < bestMinute
+        || (minute === bestMinute && remainingRank(lines[i]) < remainingRank(lines[best]))) {
       best = i
-      bestMs = ms
+      bestMinute = minute
     }
   }
   if (best >= 0)
