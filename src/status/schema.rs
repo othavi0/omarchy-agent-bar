@@ -991,6 +991,9 @@ pub enum ProviderResult {
         id: ProviderId,
         name: String,
         message: String,
+        /// When the provider allows the next request (`Retry-After`). Cache
+        /// policy only; never serialized.
+        retry_at: Option<OffsetDateTime>,
     },
     NetworkError {
         id: ProviderId,

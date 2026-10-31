@@ -113,6 +113,10 @@ cleared a transient failure is visible for at most one refresh interval. When
 last good data exists, the retained `stale` reading is served for the
 provider's TTL instead.
 
+When Claude rate-limits the usage request with a `Retry-After` header, the
+cache holds the row until that instant (at most one hour), so automatic polls
+do not ask again before Claude allows it. Refresh still collects.
+
 ## Update state
 
 `update apply` and `update run` talk to each other only through two files

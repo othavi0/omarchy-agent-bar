@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::cache::{entry_from_status, CacheCoordinator, CachePaths, CacheStore};
+use crate::cache::{entry_from_status, CacheCoordinator, CachePaths, CacheStore, CachedProvider};
 use crate::cli::{CacheMode, NotificationMode, ProviderId, StatusFormat};
 use crate::notifications::{
     NotificationEvaluator, NotificationPaths, NotificationStateStore, NotifySendDispatcher,
@@ -15,9 +15,11 @@ use crate::settings::schema::Settings as SettingsDocument;
 use crate::settings::SettingsStore;
 use crate::status::collect::provider_status_from_result;
 use crate::status::schema::{
-    ProviderError, ProviderState, ProviderStatus, SchemaError, StatusEnvelope, StatusRequest,
+    ProviderError, ProviderResult, ProviderState, ProviderStatus, SchemaError, StatusEnvelope,
+    StatusRequest,
 };
 use crate::support::{Clock, FileSystem, RealFileSystem, SharedMaintenanceGate, SystemClock};
+use time::OffsetDateTime;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CollectRequest {
@@ -161,21 +163,20 @@ where
             let started = self.clock.now_utc();
             let rev = self.cache_coord.start_generation(id, started);
             let prior = cache_doc.get(id).map(|e| e.status.clone());
-            let live = self.collect_one(id).await;
+            let (live, retry_at) = self.collect_one(id).await;
             let status = apply_stale_retention(live, prior.as_ref());
             let completed = self.clock.now_utc();
-            (id, rev, started, completed, status)
+            (id, rev, started, completed, status, retry_at)
         }))
         .await;
 
         let mut entries = Vec::with_capacity(outcomes.len());
-        for (id, rev, started, completed, status) in outcomes {
+        for (id, rev, started, completed, status, retry_at) in outcomes {
             let status = status?;
             let ttl = descriptor_ttl(id);
-            entries.push((
-                id,
-                entry_from_status(status.clone(), started, completed, ttl),
-            ));
+            let mut entry = entry_from_status(status.clone(), started, completed, ttl);
+            entry.expires_at = hold_expiry(&entry, retry_at);
+            entries.push((id, entry));
             self.cache_coord.complete_generation(rev, completed);
             statuses.retain(|s| s.id() != id);
             statuses.push(status);
@@ -222,7 +223,8 @@ where
         Ok(envelope)
     }
 
-    async fn collect_one(&self, id: ProviderId) -> ProviderStatus {
+    /// The status plus the provider's `Retry-After` instant, if it sent one.
+    async fn collect_one(&self, id: ProviderId) -> (ProviderStatus, Option<OffsetDateTime>) {
         let adapter = adapter_for(id);
         let discovery = adapter
             .discover(&self.env)
@@ -236,8 +238,29 @@ where
             plugin_root: None,
         };
         let result = adapter.collect(&ctx, &discovery).await;
-        provider_status_from_result(result)
-            .unwrap_or_else(|err| fallback_provider_error(id, err.message()))
+        let retry_at = match &result {
+            ProviderResult::RateLimited { retry_at, .. } => *retry_at,
+            _ => None,
+        };
+        let status = provider_status_from_result(result)
+            .unwrap_or_else(|err| fallback_provider_error(id, err.message()));
+        (status, retry_at)
+    }
+}
+
+/// Longest a provider's `Retry-After` may hold the cached row.
+const MAX_RETRY_HOLD: time::Duration = time::Duration::hours(1);
+
+/// A row collected under `Retry-After` stays fresh until that instant (at
+/// most [`MAX_RETRY_HOLD`]), so `cache use` serves it instead of asking
+/// again. A rate-limited row without one expires at once and the next poll
+/// retries, like every other failure row.
+fn hold_expiry(entry: &CachedProvider, retry_at: Option<OffsetDateTime>) -> OffsetDateTime {
+    let hold = retry_at.map(|at| at.min(entry.completed_at + MAX_RETRY_HOLD));
+    match (entry.status.state(), hold) {
+        (ProviderState::RateLimited, hold) => hold.unwrap_or(entry.completed_at),
+        (_, Some(hold)) => entry.expires_at.max(hold),
+        (_, None) => entry.expires_at,
     }
 }
 
@@ -450,6 +473,7 @@ mod tests {
                     status: 401,
                     final_url,
                     body: br#"{"error":"unauthorized"}"#.to_vec(),
+                    retry_after: None,
                 })
             })
         }
@@ -467,6 +491,7 @@ mod tests {
                     status: 401,
                     final_url,
                     body: br#"{"error":"unauthorized"}"#.to_vec(),
+                    retry_after: None,
                 })
             })
         }
@@ -515,6 +540,172 @@ mod tests {
             ),
             gate,
         }
+    }
+
+    struct TooManyRequests {
+        retry_after: Option<crate::providers::adapter::RetryAfter>,
+        calls: std::sync::atomic::AtomicUsize,
+    }
+
+    impl TooManyRequests {
+        fn new(retry_after: Option<crate::providers::adapter::RetryAfter>) -> Self {
+            Self {
+                retry_after,
+                calls: std::sync::atomic::AtomicUsize::new(0),
+            }
+        }
+
+        fn calls(&self) -> usize {
+            self.calls.load(std::sync::atomic::Ordering::SeqCst)
+        }
+    }
+
+    impl HttpClient for TooManyRequests {
+        fn get(
+            &self,
+            url: &str,
+            _headers: &[(&str, &str)],
+            _max_body_bytes: usize,
+        ) -> BoxFuture<'_, Result<HttpResponse, HttpError>> {
+            self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let response = HttpResponse {
+                status: 429,
+                final_url: url.to_owned(),
+                body: br#"{"error":"rate_limited"}"#.to_vec(),
+                retry_after: self.retry_after,
+            };
+            Box::pin(async move { Ok(response) })
+        }
+
+        fn post(
+            &self,
+            _url: &str,
+            _headers: &[(&str, &str)],
+            _body: Vec<u8>,
+            _max_body_bytes: usize,
+        ) -> BoxFuture<'_, Result<HttpResponse, HttpError>> {
+            Box::pin(async { Err(HttpError::Network("no post fixture".into())) })
+        }
+    }
+
+    fn rate_limited_claude(
+        dir: &Path,
+        now: OffsetDateTime,
+        retry_after: Option<crate::providers::adapter::RetryAfter>,
+    ) -> StatusCoordinator<FixedClock, MapFs, NoopProcess, TooManyRequests> {
+        let coord = coord_with_http(dir, now, TooManyRequests::new(retry_after));
+        coord.fs.files.lock().unwrap().insert(
+            dir.join("home/.claude/.credentials.json"),
+            br#"{"claudeAiOauth":{"accessToken":"SYNTH_TOKEN_NOT_REAL","expiresAt":4102444800000,"rateLimitTier":"default_claude_max_20x"}}"#.to_vec(),
+        );
+        coord
+    }
+
+    async fn poll_claude<H: HttpClient>(
+        coord: &StatusCoordinator<FixedClock, MapFs, NoopProcess, H>,
+    ) -> ProviderStatus {
+        let envelope = coord
+            .collect(CollectRequest {
+                format: StatusFormat::Json,
+                provider: Some(ProviderId::Claude),
+                cache: CacheMode::Use,
+                notifications: NotificationMode::Skip,
+            })
+            .await
+            .unwrap();
+        envelope.providers()[0].clone()
+    }
+
+    #[tokio::test]
+    async fn claude_retry_after_serves_the_cached_reading_until_it_passes() {
+        use crate::providers::adapter::RetryAfter;
+        let dir = tempfile::tempdir().unwrap();
+        let t0 = datetime!(2026-10-31 22:00:00 UTC);
+        let seed = coord_at(dir.path(), t0);
+        seed.cache_store
+            .merge_provider(
+                ProviderId::Claude,
+                entry_from_status(ready_claude(t0), t0, t0, CLAUDE.cache_ttl),
+                t0,
+            )
+            .unwrap();
+
+        let t1 = t0 + time::Duration::seconds(400);
+        let first = rate_limited_claude(dir.path(), t1, Some(RetryAfter::Seconds(900)));
+        assert_eq!(poll_claude(&first).await.state(), ProviderState::Stale);
+        assert_eq!(first.http.calls(), 1);
+
+        let held = rate_limited_claude(dir.path(), t1 + time::Duration::seconds(600), None);
+        let row = poll_claude(&held).await;
+        assert_eq!(held.http.calls(), 0, "no request before Retry-After passes");
+        assert_eq!(row.state(), ProviderState::Stale);
+        assert_eq!(row.source(), Some(DataSource::Cache));
+        assert_eq!(row.windows().len(), 1, "the last reading stays on screen");
+
+        let after = rate_limited_claude(dir.path(), t1 + time::Duration::seconds(901), None);
+        poll_claude(&after).await;
+        assert_eq!(
+            after.http.calls(),
+            1,
+            "the endpoint is asked again once Retry-After passes"
+        );
+    }
+
+    #[tokio::test]
+    async fn claude_retry_after_without_a_reading_holds_the_rate_limited_row() {
+        use crate::providers::adapter::RetryAfter;
+        let dir = tempfile::tempdir().unwrap();
+        let t1 = datetime!(2026-10-31 22:00:00 UTC);
+        let first = rate_limited_claude(dir.path(), t1, Some(RetryAfter::Seconds(120)));
+        assert_eq!(
+            poll_claude(&first).await.state(),
+            ProviderState::RateLimited
+        );
+
+        let held = rate_limited_claude(dir.path(), t1 + time::Duration::seconds(60), None);
+        assert_eq!(poll_claude(&held).await.state(), ProviderState::RateLimited);
+        assert_eq!(held.http.calls(), 0, "no request before Retry-After passes");
+
+        let after = rate_limited_claude(dir.path(), t1 + time::Duration::seconds(121), None);
+        poll_claude(&after).await;
+        assert_eq!(after.http.calls(), 1);
+    }
+
+    #[tokio::test]
+    async fn claude_429_without_retry_after_retries_on_the_next_poll() {
+        let dir = tempfile::tempdir().unwrap();
+        let t1 = datetime!(2026-10-31 22:00:00 UTC);
+        let first = rate_limited_claude(dir.path(), t1, None);
+        assert_eq!(
+            poll_claude(&first).await.state(),
+            ProviderState::RateLimited
+        );
+
+        let next = rate_limited_claude(dir.path(), t1 + time::Duration::seconds(60), None);
+        poll_claude(&next).await;
+        assert_eq!(
+            next.http.calls(),
+            1,
+            "a failure row without a hold is never served"
+        );
+    }
+
+    #[tokio::test]
+    async fn claude_retry_after_hold_is_capped_at_one_hour() {
+        use crate::providers::adapter::RetryAfter;
+        let dir = tempfile::tempdir().unwrap();
+        let t1 = datetime!(2026-10-31 22:00:00 UTC);
+        let far = RetryAfter::At(t1 + time::Duration::days(3));
+        let first = rate_limited_claude(dir.path(), t1, Some(far));
+        poll_claude(&first).await;
+
+        let held = rate_limited_claude(dir.path(), t1 + time::Duration::seconds(3599), None);
+        poll_claude(&held).await;
+        assert_eq!(held.http.calls(), 0);
+
+        let after = rate_limited_claude(dir.path(), t1 + time::Duration::seconds(3601), None);
+        poll_claude(&after).await;
+        assert_eq!(after.http.calls(), 1);
     }
 
     fn ready_claude(now: OffsetDateTime) -> ProviderStatus {
@@ -1021,6 +1212,7 @@ mod tests {
                     status: 200,
                     final_url: "https://cli-chat-proxy.grok.com/v1/billing".into(),
                     body: br#"{"creditUsagePercent": 10.0}"#.to_vec(),
+                    retry_after: None,
                 })
             })
         }

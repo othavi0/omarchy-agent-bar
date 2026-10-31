@@ -402,6 +402,7 @@ mod tests {
             status: 200,
             final_url: "https://api.anthropic.com/x".into(),
             body: body.to_vec(),
+            retry_after: None,
         })
     }
 
@@ -605,6 +606,7 @@ mod tests {
                 status: 500,
                 final_url: "https://api.anthropic.com/x".into(),
                 body: b"{}".to_vec(),
+                retry_after: None,
             }),
             ok(b"{}"),
         );
@@ -861,6 +863,7 @@ mod tests {
                 status: 401,
                 final_url: "https://api.anthropic.com/x".into(),
                 body: b"{}".to_vec(),
+                retry_after: None,
             }),
         );
         let ctx = ResetContext {

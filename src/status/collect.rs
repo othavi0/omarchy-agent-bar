@@ -43,7 +43,9 @@ pub fn provider_status_from_result(result: ProviderResult) -> Result<ProviderSta
                 action,
             )
         }
-        ProviderResult::RateLimited { id, name, message } => ProviderStatus::rate_limited(
+        ProviderResult::RateLimited {
+            id, name, message, ..
+        } => ProviderStatus::rate_limited(
             id,
             name,
             ProviderError::new(message, true),

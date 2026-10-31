@@ -64,17 +64,19 @@ impl CacheDocument {
     }
 
     /// A row is fresh only while inside its TTL AND holding usable data.
-    /// Failure rows (cli_missing, unauthenticated, rate_limited,
-    /// network_error, provider_error) are written for stale retention and
-    /// singleflight bookkeeping but are never served from cache, so the next
-    /// `cache use` collection retries live (CACHE-004/006 amendment,
+    /// Failure rows (cli_missing, unauthenticated, network_error,
+    /// provider_error) are written for stale retention and singleflight
+    /// bookkeeping but are never served from cache, so the next `cache use`
+    /// collection retries live (CACHE-004/006 amendment,
     /// docs/specs/v10/amendments/2026-08-25-login-state-visibility-design.md D4).
+    /// A rate_limited row is served only while the provider's `Retry-After`
+    /// holds it; without one it is written already expired.
     pub fn is_fresh(&self, id: ProviderId, now: OffsetDateTime) -> bool {
         self.get(id).is_some_and(|entry| {
             now < entry.expires_at
                 && matches!(
                     entry.status.state(),
-                    ProviderState::Ready | ProviderState::Stale
+                    ProviderState::Ready | ProviderState::Stale | ProviderState::RateLimited
                 )
         })
     }

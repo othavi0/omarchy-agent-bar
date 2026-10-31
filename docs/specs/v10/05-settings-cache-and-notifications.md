@@ -228,6 +228,14 @@ the entire cache document.
 - `CACHE-024`: `lastSuccessAt` remains the timestamp of the retained data.
 - `CACHE-025`: A provider refresh affects only that provider; an all-provider
   refresh preserves sibling results independently.
+- `CACHE-026` (added 2026-10-31): When Claude answers 429 with
+  `Retry-After` (delay seconds or an HTTP date), the row written for that
+  collection stays fresh until that instant, capped at one hour past the
+  collection. `cache use` serves it instead of calling the endpoint again: the
+  retained `stale` reading when last good data exists, otherwise the
+  `rate_limited` row. A 429 without `Retry-After` follows `CACHE-006` and is
+  re-collected on the next poll. `cache bypass` still collects. The hold lives
+  in the cache row's `expiresAt`; status JSON does not change.
 
 ## Notifications
 
