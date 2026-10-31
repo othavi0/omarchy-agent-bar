@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [11.0.3] - 2026-10-31
+
+### Changed
+
+- fix(claude): saturate a huge Retry-After delay
+- docs(spec): record the Ultra and quiet notices plan
+- feat(claude): honor Retry-After on 429
+- feat(notify): alert once per level per window
+- feat(popup): remove the pace projection line
+- feat: label the session window 5-hour
+- test(claude): cover accounts without a 5h window
+- feat(claude): show Max and Ultra plan names
+
 ## [11.0.2] - 2026-10-22
 
 ### Changed
