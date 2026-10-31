@@ -82,6 +82,14 @@ function claudeReady(sessionUsed, sessionResetIn) {
   ], { plan: { id: "max", label: "Max" }, resets: [claudeReset(true)] })
 }
 
+// Live shape since 2026-10-30: verified Ultra accounts have no 5-hour window.
+function claudeUltraNoSession() {
+  return provider("claude", "Claude", "ready", [
+    win("weekly", "Weekly (7d)", 29, 10080, 8480),
+    win("weekly-model:fable", "Fable", 0, 10080, 8480)
+  ], { plan: { id: "default_claude_max_20x", label: "Ultra" } })
+}
+
 function codexReady() {
   return provider("codex", "Codex", "ready", [
     win("session", "Session (5h)", 2, 300, 250),

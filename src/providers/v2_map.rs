@@ -1063,6 +1063,30 @@ mod tests {
     }
 
     #[test]
+    fn claude_ultra_without_five_hour_window_keeps_weekly_and_fable_only() {
+        let body = include_bytes!("../../tests/fixtures/providers/claude/usage-ultra-no-5h.json");
+        let result = claude_from_usage_json(body, datetime!(2026-10-31 22:40:00 UTC), None, true);
+        let ProviderResult::Ready { windows, .. } = &result else {
+            panic!("expected ready, got {result:?}");
+        };
+        let ids: Vec<&str> = windows.iter().map(|w| w.id()).collect();
+        let labels: Vec<&str> = windows.iter().map(|w| w.label()).collect();
+        assert_eq!(labels, ["Weekly (7d)", "Fable"], "{windows:?}");
+        assert!(!ids.contains(&"session"), "no 5-hour window: {ids:?}");
+        assert_eq!(windows[0].used_percent(), 29.0);
+
+        let rendered = format!("{result:?}").to_lowercase();
+        for money in [
+            "dollar", "amount", "balance", "currency", "credit", "247.97",
+        ] {
+            assert!(
+                !rendered.contains(money),
+                "money leaked ({money}): {rendered}"
+            );
+        }
+    }
+
+    #[test]
     fn claude_cedar_ember_grant_becomes_a_claimable_reset() {
         let body =
             include_bytes!("../../tests/fixtures/providers/claude/usage-with-cedar-ember.json");

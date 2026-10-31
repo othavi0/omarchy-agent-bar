@@ -132,6 +132,26 @@ TestCase {
     verify(texts.length > 0, "the real popup renders the session window label")
   }
 
+  function test_claude_without_session_window_renders() {
+    failOnWarning(/TypeError|ReferenceError|Unable to assign|Cannot read|undefined|NaN/)
+    var env = F.normal()
+    env.providers[0] = F.claudeUltraNoSession()
+    compare(Core.chipPercentText(env.providers[0], "used"), "29%")
+    openRealPopup(env, "used", "claude")
+    var head = headOf("claude")
+    verify(head.visible)
+    var detail = detailOf("claude")
+    var labels = byName(detail, "windowLabel").map(function (l) { return String(l.text) })
+    verify(labels.indexOf("Fable") >= 0, "Fable window renders: " + labels)
+    verify(byName(detail, "windowMeter").length > 0, "detail keeps its meters")
+    var row = rowById("claude")
+    var sessionTexts = ViewHarness.findAll(row, function (item) {
+      return item.textFormat !== undefined && visibleIn(item, row)
+          && /5h|5-hour/.test(String(item.text))
+    })
+    compare(sessionTexts.length, 0, "no 5-hour copy for a provider without that window")
+  }
+
   function test_real_popup_grabs_to_an_image() {
     var p = openRealPopup()
     wait(50)
