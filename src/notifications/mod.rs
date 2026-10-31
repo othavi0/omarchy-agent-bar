@@ -508,7 +508,7 @@ mod tests {
             provider_id: ProviderId::Claude,
             provider_name: "Claude".into(),
             window_id: "session".into(),
-            window_label: "Session (5h)".into(),
+            window_label: "5-hour".into(),
             used_percent: 91.4,
             remaining_percent: 8.6,
             metric: DisplayMetric::Remaining,
@@ -520,7 +520,7 @@ mod tests {
         assert_eq!(spec.program, PathBuf::from("notify-send"));
         assert_eq!(spec.args[0], "--app-name=Agent Bar");
         assert_eq!(spec.args[1], "--urgency=normal");
-        assert_eq!(spec.args[2], "Claude Session (5h) is running low");
+        assert_eq!(spec.args[2], "Claude 5-hour is running low");
         assert_eq!(spec.args[3], "9% left. Resets in 3h 1m.");
     }
 
@@ -530,7 +530,7 @@ mod tests {
             provider_id: ProviderId::Claude,
             provider_name: "Claude".into(),
             window_id: "session".into(),
-            window_label: "Session (5h)".into(),
+            window_label: "5-hour".into(),
             used_percent: 96.0,
             remaining_percent: 4.0,
             metric: DisplayMetric::Remaining,
@@ -540,7 +540,7 @@ mod tests {
         };
         let spec = NotifySendDispatcher::<ScriptedNotify>::build_spec(&pending);
         assert_eq!(spec.args[1], "--urgency=critical");
-        assert_eq!(spec.args[2], "Claude Session (5h) is almost out");
+        assert_eq!(spec.args[2], "Claude 5-hour is almost out");
         assert_eq!(spec.args[3], "4% left.");
 
         pending.metric = DisplayMetric::Used;
@@ -821,7 +821,7 @@ mod tests {
             provider_id: ProviderId::Claude,
             provider_name: "Claude".into(),
             window_id: "session".into(),
-            window_label: "Session (5h)".into(),
+            window_label: "5-hour".into(),
             used_percent: 96.0,
             remaining_percent: 4.0,
             metric: DisplayMetric::Remaining,

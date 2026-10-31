@@ -46,7 +46,7 @@ and `docs/specs/v10/amendments/2026-10-21-remove-overview-headline-design.md`.
 ```text
 +--------------------------------------------------+
 | [C] Claude      [========|==  ]   76%            |
-|     Max         Session (5h) · resets in 1h 32m  |
+|     Max         5-hour · resets in 1h 32m        |
 |     Open row detail: pace line, other windows,   |
 |     reset facts, Updated <age> [Use reset] [R]   |
 +--------------------------------------------------+

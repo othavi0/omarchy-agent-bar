@@ -120,7 +120,7 @@ Representative response:
       "windows": [
         {
           "id": "session",
-          "label": "Session (5h)",
+          "label": "5-hour",
           "usedPercent": 42.0,
           "remainingPercent": 58.0,
           "resetsAt": "2026-07-26T22:00:00Z",

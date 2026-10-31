@@ -76,7 +76,7 @@ function claudeReset(claimable) {
 
 function claudeReady(sessionUsed, sessionResetIn) {
   return provider("claude", "Claude", "ready", [
-    win("session", "Session (5h)", sessionUsed, 300, sessionResetIn),
+    win("session", "5-hour", sessionUsed, 300, sessionResetIn),
     win("weekly", "Weekly (7d)", 37, 10080, 4080),
     win("weekly-model:fable", "Fable", 45, 10080, 4080)
   ], { plan: { id: "max", label: "Max" }, resets: [claudeReset(true)] })
@@ -92,7 +92,7 @@ function claudeUltraNoSession() {
 
 function codexReady() {
   return provider("codex", "Codex", "ready", [
-    win("session", "Session (5h)", 2, 300, 250),
+    win("session", "5-hour", 2, 300, 250),
     win("weekly", "Weekly (7d)", 18, 10080, 7320)
   ], { plan: { id: "plus", label: "Plus" } })
 }
@@ -122,7 +122,7 @@ function critical() {
 
 function stale() {
   var codex = provider("codex", "Codex", "stale", [
-    win("session", "Session (5h)", 96, 300, 250),
+    win("session", "5-hour", 96, 300, 250),
     win("weekly", "Weekly (7d)", 18, 10080, 7320)
   ], { lastSuccessAt: at(-14) })
   return envelope([claudeReady(76, 92), codex, grokReady(), antigravityReady()])
@@ -157,7 +157,7 @@ function nopct() {
 
 function early() {
   return envelope([
-    provider("claude", "Claude", "ready", [win("session", "Session (5h)", 10, 300, 290)]),
+    provider("claude", "Claude", "ready", [win("session", "5-hour", 10, 300, 290)]),
     codexReady()
   ])
 }
@@ -165,7 +165,7 @@ function early() {
 function full() {
   return envelope([
     provider("claude", "Claude", "ready", [
-      win("session", "Session (5h)", 100, 300, 60),
+      win("session", "5-hour", 100, 300, 60),
       win("weekly", "Weekly (7d)", 37, 10080, 4080)
     ]),
     codexReady()

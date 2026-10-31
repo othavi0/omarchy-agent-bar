@@ -11,7 +11,7 @@ use crate::support::redact::strip_ansi_and_controls;
 
 use super::catalog::{ANTIGRAVITY, CLAUDE, CODEX, GROK};
 
-const LABEL_SESSION: &str = "Session (5h)";
+const LABEL_SESSION: &str = "5-hour";
 const LABEL_WEEKLY: &str = "Weekly (7d)";
 
 // Antigravity meters two model families on separate quotas, so each window
@@ -1229,7 +1229,7 @@ mod tests {
         match result {
             ProviderResult::Ready { windows, .. } => {
                 assert_eq!(windows.len(), 1);
-                assert_eq!(windows[0].label(), "Session (5h)");
+                assert_eq!(windows[0].label(), "5-hour");
                 assert!(
                     windows[0].resets_at().is_some(),
                     "epoch resets_at was dropped"
@@ -1383,7 +1383,7 @@ mod tests {
             ProviderResult::Ready { windows, .. } => {
                 assert_eq!(windows.len(), 2);
                 assert_eq!(windows[0].id(), "session");
-                assert_eq!(windows[0].label(), "Session (5h)");
+                assert_eq!(windows[0].label(), "5-hour");
                 assert!((windows[0].used_percent() - 30.0).abs() < 0.01);
                 assert_eq!(windows[1].id(), "weekly");
                 assert_eq!(windows[1].label(), "Weekly (7d)");

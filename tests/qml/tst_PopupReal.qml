@@ -127,7 +127,7 @@ TestCase {
     compare(p.selectedId, "claude")
     verify(p.width > 0 && p.height > 0, "the panel stub sizes the popup from its content")
     var texts = ViewHarness.findAll(p, function (item) {
-      return item.textFormat !== undefined && String(item.text).indexOf("Session (5h)") >= 0
+      return item.textFormat !== undefined && String(item.text).indexOf("5-hour") >= 0
     })
     verify(texts.length > 0, "the real popup renders the session window label")
   }
@@ -261,10 +261,10 @@ TestCase {
     openRealPopup()
     tryVerify(function () { return focusNames().length > 0 }, 1000)
     compare(JSON.stringify(focusNames()), JSON.stringify([
-      "Claude, 76% used, Session (5h) · resets in 1h 32m",
+      "Claude, 76% used, 5-hour · resets in 1h 32m",
       "Use reset",
       "Refresh",
-      "Codex, 2% used, Session (5h) · resets in 4h 10m",
+      "Codex, 2% used, 5-hour · resets in 4h 10m",
       "Grok, 30% used, Monthly · resets in 13d 21h",
       "Antigravity, 0% used, Gemini · 5h",
       "Settings"
@@ -274,8 +274,8 @@ TestCase {
     settle()
     tryVerify(function () { return focusNames().length === 5 }, 1000,
               "a collapsed row contributes its head only: " + JSON.stringify(focusNames()))
-    compare(focusNames()[0], "Claude, 76% used, Session (5h) · resets in 1h 32m")
-    compare(focusNames()[1], "Codex, 2% used, Session (5h) · resets in 4h 10m")
+    compare(focusNames()[0], "Claude, 76% used, 5-hour · resets in 1h 32m")
+    compare(focusNames()[1], "Codex, 2% used, 5-hour · resets in 4h 10m")
   }
 
   function test_focus_skips_a_disabled_use_reset() {
@@ -556,7 +556,7 @@ TestCase {
     var texts = ViewHarness.findAll(popup, function (item) {
       return item.textFormat !== undefined && visibleIn(item, popup) && String(item.text).length > 0
     }).map(function (t) { return String(t.text) })
-    verify(texts.indexOf("Session (5h) · resets in 38m") >= 0,
+    verify(texts.indexOf("5-hour · resets in 38m") >= 0,
            "the fullest row reads its own reset: " + texts)
     var tight = ViewHarness.findAll(popup, function (item) {
       return /tightest/i.test(String(item.text === undefined ? "" : item.text))
@@ -834,9 +834,9 @@ TestCase {
 
   function test_collapsed_row_shows_a_critical_side_window() {
     openRealPopup(F.envelope([
-      F.provider("claude", "Claude", "ready", [F.win("session", "Session (5h)", 98, 300, 30)]),
+      F.provider("claude", "Claude", "ready", [F.win("session", "5-hour", 98, 300, 30)]),
       F.provider("codex", "Codex", "ready", [
-        F.win("session", "Session (5h)", 10, 300, 200),
+        F.win("session", "5-hour", 10, 300, 200),
         F.win("weekly", "Weekly (7d)", 97, 10080, 600)
       ])
     ]))
