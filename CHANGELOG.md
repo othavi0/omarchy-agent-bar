@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [11.0.5] - 2026-10-31
+
+### Changed
+
+- fix(chip): tie resets within the same minute
+
 ## [11.0.4] - 2026-10-31
 
 ### Changed
