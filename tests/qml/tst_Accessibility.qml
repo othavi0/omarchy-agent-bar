@@ -42,7 +42,6 @@ TestCase {
       "components/RestartBanner.qml",
       "components/OverviewList.qml",
       "components/ProviderRow.qml",
-      "components/RowDetail.qml",
       "components/UsageMeter.qml",
       "components/ProviderIcon.qml",
       "components/PopupFooter.qml",
@@ -78,9 +77,9 @@ TestCase {
     var src = read("components/ProviderRow.qml")
     verify(src.indexOf("Accessible.name: root.row ? root.row.accessibleName") >= 0)
     verify(src.indexOf("Accessible.role: Accessible.Button") >= 0)
-    verify(src.indexOf("Accessible.expandable: !!(root.row && root.row.openable)") >= 0)
-    verify(src.indexOf("Accessible.expanded: !!(root.row && root.row.open)") >= 0)
-    verify(src.indexOf("Accessible.description: root.row ? root.row.tickDescription") >= 0)
+    verify(src.indexOf("Accessible.description: root.detail") >= 0)
+    verify(src.indexOf("Accessible.expandable") < 0, "a group never folds, so it is not expandable")
+    verify(src.indexOf("Accessible.name: text") >= 0, "every action button speaks its label")
     src = read("components/PopupFooter.qml")
     verify(src.indexOf('Accessible.name: "Settings"') >= 0)
     src = read("components/StateMessage.qml")
@@ -99,8 +98,6 @@ TestCase {
   }
 
   function test_glyphs_and_text_labels() {
-    var detail = read("components/RowDetail.qml")
-    verify(detail.indexOf("iconText: Tokens.GLYPH_REFRESH") >= 0)
     var popupFooter = read("components/PopupFooter.qml")
     verify(popupFooter.indexOf("iconText: Tokens.GLYPH_SETTINGS") >= 0)
     verify(popupFooter.indexOf('text: "Settings"') >= 0)

@@ -87,11 +87,8 @@ function visibleProviders(snapshot, settings) {
 }
 
 function chipPercentText(provider, metric, nowMs) {
-  var lines = windowDisplayLines(provider, metric, nowMs)
-  var lead = electLeadIndex(lines)
-  if (lead < 0)
-    return "\u2014"
-  return lines[lead].percentText
+  var lead = windowLayout(provider, metric, nowMs).lead
+  return lead ? lead.percentText : "\u2014"
 }
 
 var ERROR_STATES = {
@@ -451,13 +448,6 @@ function resetClockText(iso, localeTimeFormat) {
   return "(" + Qt.formatTime(new Date(ms), fmt) + ")"
 }
 
-function resetPhrase(countdown) {
-  var c = String(countdown || "")
-  if (!c.length)
-    return ""
-  return c === "now" ? "resets" : "resets in"
-}
-
 function formatAgoText(iso, nowMs) {
   var ms = parseIsoMs(iso)
   if (!isFinite(ms))
@@ -472,15 +462,6 @@ function formatAgoText(iso, nowMs) {
   if (hours < 24)
     return hours + "h ago"
   return Math.floor(hours / 24) + "d ago"
-}
-
-// The JSON contract allows a positive integer or null; anything else reads
-// as "no known length", so the tick never guesses a duration.
-function windowMinutesOf(w) {
-  if (!w || typeof w.windowMinutes !== "number" || !isFinite(w.windowMinutes))
-    return null
-  var n = Math.round(w.windowMinutes)
-  return n >= 1 ? n : null
 }
 
 function windowDisplayLines(provider, metric, nowMs) {
@@ -511,9 +492,7 @@ function windowDisplayLines(provider, metric, nowMs) {
       remainingPercent: isFinite(remaining) ? remaining : null,
       severity: severityLevel(used),
       resetsAt: w.resetsAt ? String(w.resetsAt) : null,
-      resetCountdown: countdown,
-      resetPhrase: resetPhrase(countdown),
-      windowMinutes: windowMinutesOf(w)
+      resetCountdown: countdown
     })
   }
   return lines
@@ -774,10 +753,11 @@ function unitWord(metric) {
 
 var DAY_MS = 86400000
 
-function overviewResetCellText(line, nowMs, timeFormat) {
+// The countdown, plus the local clock when the reset lands within a day.
+function windowResetText(line, nowMs, timeFormat) {
   if (!line.resetCountdown.length)
     return ""
-  var text = line.resetPhrase + " " + line.resetCountdown
+  var text = line.resetCountdown
   var diff = parseIsoMs(line.resetsAt) - nowMs
   if (diff > 0 && diff < DAY_MS) {
     var clock = resetClockText(line.resetsAt, timeFormat)
@@ -787,30 +767,22 @@ function overviewResetCellText(line, nowMs, timeFormat) {
   return text
 }
 
-function overviewWindow(line, provider, metric, nowMs, timeFormat) {
-  var resetMs = parseIsoMs(line.resetsAt)
-  var elapsed = null
-  if (line.windowMinutes !== null && isFinite(resetMs))
-    elapsed = Math.max(0, Math.min(1, 1 - (resetMs - nowMs) / (line.windowMinutes * 60000)))
-  var tick = -1
-  if (String(provider.state || "") === "ready" && elapsed !== null
-      && elapsed >= Tokens.TICK_MIN_ELAPSED)
-    tick = Math.round((metric === "used" ? elapsed : 1 - elapsed) * 100)
-  line.critical = line.severity === "critical"
-  line.elapsed = elapsed
-  line.tickPercent = tick
-  line.resetCellText = overviewResetCellText(line, nowMs, timeFormat)
-  return line
-}
+var SEVERITY_WORDS = { "critical": "critical", "warning": "low" }
 
-function statusGlyph(state) {
-  switch (String(state || "")) {
-  case "cli_missing": return Tokens.GLYPH_PLUG
-  case "unauthenticated": return Tokens.GLYPH_USER
-  case "rate_limited": return Tokens.GLYPH_CLOCK
-  case "network_error": return Tokens.GLYPH_WIFI_OFF
-  case "provider_error": return Tokens.GLYPH_ALERT
-  default: return ""
+function overviewWindow(line, metric, nowMs, timeFormat) {
+  var spoken = [line.label, line.percentText + " " + unitWord(metric)]
+  if (SEVERITY_WORDS[line.severity])
+    spoken.push(SEVERITY_WORDS[line.severity])
+  if (line.resetCountdown.length)
+    spoken.push(line.resetCountdown === "now" ? "resets now" : "resets in " + line.resetCountdown)
+  return {
+    id: line.id,
+    label: line.label,
+    percent: line.percent,
+    percentText: line.percentText,
+    critical: line.severity === "critical",
+    resetText: windowResetText(line, nowMs, timeFormat),
+    accessibleName: spoken.join(", ")
   }
 }
 
@@ -823,125 +795,134 @@ function overviewRowKind(provider) {
   return "status"
 }
 
-function overviewResetLines(provider, dateFormat, timeFormat) {
-  var raw = resetsOf(provider)
-  var rows = resetRows(provider, dateFormat, timeFormat)
+// Every action a provider offers, in one list: the left column draws it in
+// order and Enter fires the first one. Only kinds the service dispatches
+// appear here; a spent or busy reset stays listed but disabled.
+function actionsFor(provider, ui) {
+  var opts = ui || {}
   var out = []
-  for (var i = 0; i < rows.length; i++) {
-    var hasTotal = raw[i].total !== null && raw[i].total !== undefined
-    var facts = [
-      resetCountAccessible(raw[i].available, raw[i].total) + (hasTotal ? " available" : ""),
-      rows[i].clearsText.length ? "clears " + rows[i].clearsText : "",
-      rows[i].dateText
-    ]
+  var state = stateActions(provider)
+  for (var i = 0; i < state.length; i++) {
     out.push({
-      label: rows[i].label,
-      facts: facts.filter(function (fact) { return fact.length > 0 })
+      id: state[i].kind,
+      kind: state[i].kind,
+      label: state[i].label,
+      target: state[i].target,
+      enabled: true
     })
   }
+  var summary = resetsSummary(provider)
+  if (summary.visible) {
+    out.push({
+      id: "use_reset",
+      kind: "use_reset",
+      label: opts.resetBusy ? "Using reset…" : "Use reset",
+      target: summary.claimableId,
+      enabled: summary.claimableId !== null && !opts.resetBusy
+    })
+  }
+  for (var p = 0; p < out.length; p++)
+    out[p].primary = p === 0
   return out
+}
+
+function primaryAction(actions) {
+  if (!actions || !actions.length || !actions[0].enabled)
+    return null
+  return actions[0]
+}
+
+function resetNotes(provider, dateFormat, timeFormat) {
+  var summary = resetsSummary(provider)
+  if (!summary.visible)
+    return []
+  var n = summary.availableTotal
+  var notes = [n + (n === 1 ? " reset left" : " resets left")]
+  var rows = resetRows(provider, dateFormat, timeFormat)
+  if (rows.length && rows[0].dateText.length)
+    notes.push(rows[0].dateText)
+  return notes
+}
+
+// The short lines under the provider name: the state, a stale reading's age,
+// the resets left, and the outcome of the last reset attempt.
+function groupNotes(provider, kind, nowMs, ui) {
+  var notes = []
+  var state = String(provider.state || "")
+  if (kind === "loading")
+    notes.push("Loading")
+  var word = settingsProviderStatus(provider)
+  if (word.length)
+    notes.push(word)
+  var ago = state === "stale" ? formatAgoText(provider.lastSuccessAt, nowMs) : ""
+  if (ago.length)
+    notes.push("Updated " + ago)
+  notes = notes.concat(resetNotes(provider, ui.dateFormat, ui.timeFormat))
+  var resetUi = ui.resetUi
+  if (resetUi && String(resetUi.providerId || "") === String(provider.id || "")) {
+    var outcome = resetOutcomeText(resetUi.outcome, ui.timeFormat)
+    if (outcome.length)
+      notes.push(outcome)
+  }
+  return notes
 }
 
 function overviewRow(provider, metric, nowMs, ui) {
   var id = String(provider.id || "")
   var state = String(provider.state || "")
   var name = plainText(provider.name || providerDisplayName(id))
+  var plan = plainText(planBadge(provider))
   var kind = overviewRowKind(provider)
-  var timeFormat = ui.timeFormat
-  var layout = windowLayout(provider, metric, nowMs)
-  for (var i = 0; i < layout.lines.length; i++)
-    overviewWindow(layout.lines[i], provider, metric, nowMs, timeFormat)
-  var primary = layout.lead
-  var reading = kind === "reading"
-
-  var ago = formatAgoText(provider.lastSuccessAt, nowMs)
-  var updatedText = ago.length ? "Updated " + ago : ""
-
-  var subText = ""
-  if (reading) {
-    subText = primary.label
-    if (state === "stale") {
-      if (updatedText.length)
-        subText += " · " + updatedText
-    } else if (primary.resetCountdown.length) {
-      subText += " · " + primary.resetPhrase + " " + primary.resetCountdown
-    }
+  var windows = []
+  if (kind === "reading") {
+    var lines = windowDisplayLines(provider, metric, nowMs)
+    for (var i = 0; i < lines.length; i++)
+      windows.push(overviewWindow(lines[i], metric, nowMs, ui.timeFormat))
   }
-
-  var actions = stateActions(provider)
-  var action = null
-  var refreshLabel = "Refresh"
-  for (var a = 0; a < actions.length; a++) {
-    if (actions[a].kind === "retry")
-      refreshLabel = actions[a].label
-    else if (action === null)
-      action = actions[a]
-  }
-
-  var severity = reading ? providerSeverity(provider) : ""
-  var severityWord = severity === "critical" ? "critical" : (severity === "warning" ? "low" : "")
-  var valueText = reading ? primary.percentText
-      : (kind === "loading" ? chipNumeralText(provider, metric, nowMs) : "—")
-  var unitText = reading ? unitWord(metric) : ""
-  var statusWord = settingsProviderStatus(provider)
-
-  var accessibleName
-  if (reading) {
-    accessibleName = name + ", " + valueText + " " + unitText
-    if (severityWord.length)
-      accessibleName += ", " + severityWord
-    accessibleName += ", " + subText
-  } else if (kind === "loading") {
-    accessibleName = name + ", loading"
-  } else {
-    accessibleName = statusWord.length ? name + ", " + statusWord : name
-  }
-
-  var summary = resetsSummary(provider)
-  var resetUi = ui.resetUi
+  var notes = groupNotes(provider, kind, nowMs, ui)
+  var detail = kind === "status" ? stateBody(provider) : ""
+  var spoken = [name]
+  if (plan.length)
+    spoken.push(plan)
+  spoken = spoken.concat(notes)
+  for (var w = 0; w < windows.length; w++)
+    spoken.push(windows[w].accessibleName)
   return {
     id: id,
     name: name,
+    plan: plan,
     kind: kind,
     state: state,
-    plan: plainText(planBadge(provider)),
-    openable: kind !== "loading",
     selected: false,
-    open: false,
     dimIcon: kind === "status" && !!ERROR_STATES[state],
-    primary: primary,
-    windows: layout.rest,
-    valueText: valueText,
-    unitText: unitText,
-    critical: reading && primary.critical,
-    alert: severityWord === "critical",
-    severityWord: severityWord,
-    subText: subText,
-    statusWord: statusWord,
-    statusGlyph: statusGlyph(state),
-    statusBody: stateBody(provider),
-    action: action,
-    refreshLabel: refreshLabel,
-    updatedText: state === "stale" ? "" : updatedText,
-    tickDescription: primary && primary.tickPercent >= 0
-        ? Math.round(primary.elapsed * 100) + "% of the window has passed."
-        : "",
-    resets: overviewResetLines(provider, ui.dateFormat, timeFormat),
-    useReset: {
-      visible: summary.visible,
-      enabled: summary.claimableId !== null && !ui.resetBusy,
-      resetId: summary.claimableId,
-      text: ui.resetBusy ? "Using reset…" : "Use reset"
-    },
-    outcomeText: resetUi && String(resetUi.providerId || "") === id
-        ? resetOutcomeText(resetUi.outcome, timeFormat)
-        : "",
-    refreshing: !!ui.refreshing,
-    accessibleName: accessibleName
+    windows: windows,
+    notes: notes,
+    detail: detail,
+    actions: actionsFor(provider, ui),
+    accessibleName: spoken.join(", ")
   }
 }
 
-// selection = { id, collapsed } from the service popup owner.
+// The footer's single "Updated" line names the oldest live reading, so it
+// never claims fresher data than the popup shows. A stale provider carries
+// its own age in its notes.
+function footerUpdatedText(providers, nowMs, refreshing) {
+  if (refreshing)
+    return "Refreshing…"
+  var oldest = NaN
+  for (var i = 0; i < providers.length; i++) {
+    if (String(providers[i].state || "") !== "ready")
+      continue
+    var ms = parseIsoMs(providers[i].lastSuccessAt)
+    if (isFinite(ms) && (!isFinite(oldest) || ms < oldest))
+      oldest = ms
+  }
+  if (!isFinite(oldest))
+    return ""
+  return "Updated " + formatAgoText(new Date(oldest).toISOString(), nowMs)
+}
+
+// selection = { id } from the service popup owner.
 // ui = { refreshing, resetUi, resetBusy, dateFormat, timeFormat }.
 function overviewModel(snapshot, settings, nowMs, selection, ui) {
   var metric = displayMetric(settings)
@@ -957,21 +938,14 @@ function overviewModel(snapshot, settings, nowMs, selection, ui) {
     if (rows[s].id === want)
       selectedId = want
   }
-  var collapsed = !!(selection && selection.collapsed)
-  var openId = ""
-  for (var r = 0; r < rows.length; r++) {
+  for (var r = 0; r < rows.length; r++)
     rows[r].selected = rows[r].id === selectedId
-    if (rows[r].selected && rows[r].openable && !collapsed)
-      openId = rows[r].id
-  }
-  for (var o = 0; o < rows.length; o++)
-    rows[o].open = rows[o].id === openId
 
   return {
     metric: metric,
-    unitText: unitWord(metric),
+    unitText: "% " + unitWord(metric),
     rows: rows,
     selectedId: selectedId,
-    openId: openId
+    updatedText: footerUpdatedText(providers, nowMs, !!opts.refreshing)
   }
 }

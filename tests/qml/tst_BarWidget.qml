@@ -582,7 +582,6 @@ TestCase {
       "components/ProviderChip.qml",
       "components/OverviewList.qml",
       "components/ProviderRow.qml",
-      "components/RowDetail.qml",
       "components/UsageMeter.qml",
       "components/ProviderIcon.qml",
       "components/PopupFooter.qml",

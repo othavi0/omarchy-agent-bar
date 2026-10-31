@@ -48,8 +48,11 @@ Each `BarWidget.qml` exists per monitor and owns:
   ownership);
 - rendering derived from the shared service.
 
-The consolidated popup shows an overview: one accordion row per shown
-provider with its primary meter and a pace tick, and a footer that opens Settings. The card fits its content,
+The consolidated popup shows an overview: one group per shown provider,
+with its name, notes, and actions in a fixed left column and every window
+as a bar on the right, and a footer with Settings, one `Updated` line, and
+the unit. `CoreView.actionsFor` is the one list of a group's actions; the
+buttons and Enter both read it. The card fits its content,
 and only the rows (or the Settings body) scroll, and only on overflow.
 Widgets do not own polling, provider state, settings persistence, or cache.
 

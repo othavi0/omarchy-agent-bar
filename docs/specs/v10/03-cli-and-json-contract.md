@@ -188,10 +188,12 @@ provider_error
   when the provider defines none. The key is always present. Codex reads
   `windowDurationMins`; Claude reports 300 for the session and 10080 for
   weekly windows; Antigravity reports 300 for `-5h` and 10080 for
-  `-weekly`; Grok reports 10080 only for an explicit weekly period. QML
-  reads it only for the pace tick and never derives a
+  `-weekly`; Grok reports 10080 only for an explicit weekly period. Since
+  the pace tick left the popup (2026-10-31), QML does not read it; it
+  stays in the status and cache contract, and no consumer derives a
   duration from `id` or `label`. See
-  `docs/specs/v10/amendments/2026-10-21-popup-overview-redesign-design.md`.
+  `docs/specs/v10/amendments/2026-10-21-popup-overview-redesign-design.md`
+  and `docs/specs/v10/amendments/2026-10-31-popup-grid-layout-design.md`.
 - `JSON-021`: `lastSuccessAt` records the data generation, not the current
   display time.
 - `JSON-022`: A provider error does not invalidate successful siblings.

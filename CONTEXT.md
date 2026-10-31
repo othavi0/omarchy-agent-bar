@@ -13,15 +13,17 @@ The single logical Agent Bar popup. It opens on one monitor and shows either
 the overview or Settings.
 
 **Overview**
-The popup view that lists every shown provider as a row. It starts with the
-rows; each row describes only its own provider.
+The popup view that lists every shown provider as a group. It starts with
+the groups; each group describes only its own provider.
 
-**Provider row**
-One provider in the overview. Its head shows the icon, name, plan, primary
-meter, and value, and toggles the row open; one row is open at a time.
+**Provider group**
+One provider in the overview, on its own slab. A fixed left column holds the
+icon, name, plan, notes, and actions; the right column stacks every
+percentage window as a label line over a bar. Nothing folds.
 
-**Row detail**
-The open row's other percentage windows, resets, and actions.
+**Group actions**
+The one model list of a group's actions (`actionsFor`). The first entry is
+the tonal primary that Enter runs; the rest are text buttons.
 
 **Settings**
 The popup view that edits the canonical Agent Bar settings draft.

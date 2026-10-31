@@ -73,8 +73,8 @@ TestCase {
     c.popups.border = p.popups.border
   }
 
-  // Each name maps to the popup state the 07 inventory names. Error rows sit
-  // open on the provider in that state.
+  // Each name maps to the popup state the 07 inventory names. The provider in
+  // that state is the selected group.
   function scene(name) {
     var base = name.replace(/\.png$/, "")
     var mode = base.endsWith("-light") ? "light" : (base.endsWith("-white") ? "white" : "dark")
@@ -215,12 +215,12 @@ TestCase {
     stage(scene(data.name))
     tryVerify(function () {
       var o = popup.overview
-      if (popup.view !== "usage" || !o || !o.openId)
+      if (popup.view !== "usage" || !o)
         return true
       return ViewHarness.findAll(popup, function (item) {
-        return item.objectName === "drawerWell" && item.visible
-      }).length > 0
-    }, 3000, "the open row's drawer is laid out before " + data.name + " is grabbed")
+        return item.objectName === "providerRow" && item.row
+      }).length === o.rows.length
+    }, 3000, "every provider group is laid out before " + data.name + " is grabbed")
     waitForRendering(popup)
     capture(data.name)
   }

@@ -311,7 +311,6 @@ The table is product data, not an example:
 │   ├── UsageMeter.qml
 │   ├── OverviewList.qml
 │   ├── ProviderRow.qml
-│   ├── RowDetail.qml
 │   ├── PopupFooter.qml
 │   ├── SettingsHeader.qml
 │   ├── StateMessage.qml
