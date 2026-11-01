@@ -12,7 +12,7 @@ use crate::support::redact::strip_ansi_and_controls;
 use super::catalog::{ANTIGRAVITY, CLAUDE, CODEX, GROK};
 
 const LABEL_SESSION: &str = "5-hour";
-const LABEL_WEEKLY: &str = "Weekly (7d)";
+const LABEL_WEEKLY: &str = "Weekly";
 
 // Antigravity meters two model families on separate quotas, so each window
 // names its family.
@@ -61,7 +61,7 @@ struct GrokPeriodRaw {
     period_type: Option<String>,
 }
 
-/// USAGE_PERIOD_TYPE_WEEKLY → ("weekly", "Weekly (7d)"); other known-shaped
+/// USAGE_PERIOD_TYPE_WEEKLY → ("weekly", "Weekly"); other known-shaped
 /// values strip the prefix (lowercase id, title-case label); absent/foreign
 /// values keep the historical weekly identity.
 fn grok_window_identity(period_type: Option<&str>) -> (String, String) {
@@ -394,7 +394,7 @@ fn sanitize_bucket_id(raw: &str) -> String {
 fn codex_extra_bucket_label(sanitized: &str, window_minutes: Option<i64>) -> String {
     let name = format_plan_label(sanitized);
     match window_minutes {
-        Some(10080) => format!("{name} (7d)"),
+        Some(10080) => name,
         Some(mins) => format!("{name} ({})", duration_label(mins)),
         None => name,
     }
@@ -1071,7 +1071,7 @@ mod tests {
         };
         let ids: Vec<&str> = windows.iter().map(|w| w.id()).collect();
         let labels: Vec<&str> = windows.iter().map(|w| w.label()).collect();
-        assert_eq!(labels, ["Weekly (7d)", "Fable"], "{windows:?}");
+        assert_eq!(labels, ["Weekly", "Fable"], "{windows:?}");
         assert!(!ids.contains(&"session"), "no 5-hour window: {ids:?}");
         assert_eq!(windows[0].used_percent(), 29.0);
 
@@ -1334,7 +1334,7 @@ mod tests {
             ProviderResult::Ready { windows, plan, .. } => {
                 assert_eq!(windows.len(), 1);
                 assert_eq!(windows[0].id(), "weekly");
-                assert_eq!(windows[0].label(), "Weekly (7d)");
+                assert_eq!(windows[0].label(), "Weekly");
                 assert!((windows[0].used_percent() - 1.0).abs() < 0.01);
                 assert!(plan.is_some());
             }
@@ -1386,7 +1386,7 @@ mod tests {
                 assert_eq!(windows[0].label(), "5-hour");
                 assert!((windows[0].used_percent() - 30.0).abs() < 0.01);
                 assert_eq!(windows[1].id(), "weekly");
-                assert_eq!(windows[1].label(), "Weekly (7d)");
+                assert_eq!(windows[1].label(), "Weekly");
                 assert!((windows[1].used_percent() - 40.0).abs() < 0.01);
             }
             other => panic!("expected ready, got {other:?}"),
@@ -1415,7 +1415,7 @@ mod tests {
             } => {
                 let ids: Vec<&str> = windows.iter().map(|w| w.id()).collect();
                 assert_eq!(ids, vec!["weekly", "codex:premium", "workspace-limit"]);
-                assert_eq!(windows[1].label(), "Premium (7d)");
+                assert_eq!(windows[1].label(), "Premium");
                 assert_eq!(windows[2].label(), "Workspace limit");
                 assert!((windows[2].remaining_percent() - 40.0).abs() < 0.01);
                 assert_eq!(resets.len(), 1);
@@ -1480,7 +1480,7 @@ mod tests {
             ProviderResult::Ready { windows, plan, .. } => {
                 assert_eq!(windows.len(), 1);
                 assert_eq!(windows[0].id(), "weekly");
-                assert_eq!(windows[0].label(), "Weekly (7d)");
+                assert_eq!(windows[0].label(), "Weekly");
                 assert!((windows[0].used_percent() - 33.0).abs() < 0.01);
                 assert!((windows[0].remaining_percent() - 67.0).abs() < 0.01);
                 assert!(windows[0].resets_at().is_some());
@@ -1544,7 +1544,7 @@ mod tests {
         match result {
             ProviderResult::Ready { windows, .. } => {
                 assert_eq!(windows[0].id(), "weekly");
-                assert_eq!(windows[0].label(), "Weekly (7d)");
+                assert_eq!(windows[0].label(), "Weekly");
             }
             other => panic!("expected ready, got {other:?}"),
         }
@@ -1587,7 +1587,7 @@ mod tests {
             ProviderResult::Ready { windows, .. } => {
                 assert_eq!(windows.len(), 1, "got {windows:?}");
                 assert_eq!(windows[0].id(), "weekly");
-                assert_eq!(windows[0].label(), "Weekly (7d)");
+                assert_eq!(windows[0].label(), "Weekly");
                 assert!((windows[0].used_percent() - 7.0).abs() < 0.01);
                 assert!((windows[0].remaining_percent() - 93.0).abs() < 0.01);
                 assert_eq!(

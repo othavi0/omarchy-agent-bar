@@ -27,7 +27,7 @@
         },
         {
           "id": "weekly",
-          "label": "Weekly (7d)",
+          "label": "Weekly",
           "usedPercent": 25.5,
           "remainingPercent": 74.5,
           "resetsAt": "2026-08-01T00:00:00Z",

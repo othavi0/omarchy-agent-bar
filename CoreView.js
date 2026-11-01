@@ -590,7 +590,7 @@ function resetsOf(provider) {
   return out
 }
 
-// "Weekly (7d)" -> "weekly", "5-hour" -> "5-hour"; falls back to a humanized window id when the
+// "Premium (5h)" -> "premium", "5-hour" -> "5-hour"; falls back to a humanized window id when the
 // provider carries no matching window (e.g. a stale clears list).
 function clearWord(provider, windowId) {
   if (provider && Kernel.isArrayLike(provider.windows)) {

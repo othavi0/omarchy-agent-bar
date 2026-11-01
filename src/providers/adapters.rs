@@ -1747,7 +1747,7 @@ mod tests {
             ProviderResult::Ready { windows, .. } => {
                 assert_eq!(windows.len(), 1);
                 assert_eq!(windows[0].id(), "weekly");
-                assert_eq!(windows[0].label(), "Weekly (7d)");
+                assert_eq!(windows[0].label(), "Weekly");
                 assert!(windows.iter().all(|w| w.id() != "context"));
             }
             other => panic!("{other:?}"),

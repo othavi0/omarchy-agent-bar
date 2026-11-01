@@ -95,7 +95,7 @@ TestCase {
     var env = withProviders([
       F.provider("claude", "Claude", "ready", [
         F.win("session", "5-hour", 10, 300, 200),
-        F.win("weekly", "Weekly (7d)", 20, 10080, 92)
+        F.win("weekly", "Weekly", 20, 10080, 92)
       ])
     ])
     var weekly = windowOf(rowOf(model(env, "used"), "claude"), "weekly")
@@ -114,17 +114,17 @@ TestCase {
     compare(claude.accessibleName, "Claude, Max, 1 reset left, until "
             + Qt.formatDate(new Date(Date.parse(F.at(2 * 1440))), "MM/dd/yyyy")
             + ", 5-hour, 96% used, critical, resets in 38m"
-            + ", Weekly (7d), 37% used, resets in 2d 20h"
+            + ", Weekly, 37% used, resets in 2d 20h"
             + ", Fable, 45% used, resets in 2d 20h")
     compare(rowOf(model(F.normal(), "remaining"), "codex").accessibleName,
-            "Codex, Plus, 5-hour, 98% left, resets in 4h 10m, Weekly (7d), 82% left, resets in 5d 2h")
+            "Codex, Plus, 5-hour, 98% left, resets in 4h 10m, Weekly, 82% left, resets in 5d 2h")
   }
 
   function test_critical_marks_the_window_not_the_group() {
     var env = withProviders([
       F.provider("codex", "Codex", "ready", [
         F.win("session", "5-hour", 10, 300, 200),
-        F.win("weekly", "Weekly (7d)", 97, 10080, 600),
+        F.win("weekly", "Weekly", 97, 10080, 600),
         F.win("monthly", "Monthly", 91, null, 9000)
       ])
     ])

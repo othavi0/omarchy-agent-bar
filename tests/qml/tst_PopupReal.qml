@@ -181,7 +181,7 @@ TestCase {
     openRealPopup(env, "used", "claude")
     var row = rowById("claude")
     var labels = byName(row, "windowLabel").map(function (l) { return String(l.text) })
-    compare(labels, ["Weekly (7d)", "Fable"])
+    compare(labels, ["Weekly", "Fable"])
     compare(shown(row, "windowMeter").length, 2)
     var sessionTexts = ViewHarness.findAll(row, function (item) {
       return item.textFormat !== undefined && visibleIn(item, row)
@@ -624,7 +624,7 @@ TestCase {
       F.provider("claude", "Claude", "ready", [F.win("session", "5-hour", 20, 300, 30)]),
       F.provider("codex", "Codex", "ready", [
         F.win("session", "5-hour", 10, 300, 200),
-        F.win("weekly", "Weekly (7d)", 97, 10080, 600)
+        F.win("weekly", "Weekly", 97, 10080, 600)
       ])
     ]))
     var meters = byName(rowById("codex"), "windowMeter")
