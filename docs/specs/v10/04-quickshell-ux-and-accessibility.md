@@ -38,33 +38,41 @@ verified Quattro-native glyphs or explicit English text labels.
 
 ## Popup layout
 
-Amended 2026-10-21 and 2026-10-31: the rail and the single-provider pane
-are replaced by one group per enabled provider, and a footer. Every group
-shows every window; nothing folds. The popup starts directly with the
-groups; there is no headline band. See
+Amended 2026-10-21, 2026-10-31, and 2026-11-01: the rail and the
+single-provider pane are replaced by one group per enabled provider, and a
+footer. Every group shows every window; nothing folds. The popup starts
+directly with the groups; there is no headline band. See
+`docs/specs/v10/amendments/2026-11-01-popup-compact-cleanup-design.md`,
 `docs/specs/v10/amendments/2026-10-31-popup-grid-layout-design.md`,
 `docs/specs/v10/amendments/2026-10-21-popup-overview-redesign-design.md`,
 and `docs/specs/v10/amendments/2026-10-21-remove-overview-headline-design.md`.
 
 ```text
-+--------------------------------------------------+
-| [C] Claude     5-hour               1h 32m (14:09)|
-| Max            [==============      ]        76% |
-| 1 reset left   Weekly (7d)                 2d 20h|
-| [Use reset]    [=======             ]        37% |
-+==================================================+
-| [O] Codex      5-hour               4h 10m (16:47)|
-| Plus           [=                   ]         2% |
-+==================================================+
-| [S] Settings   Updated 1m ago · % used · [↑↓] [r] |
-+--------------------------------------------------+
++--------------------------------------------------------+
+| [C] Claude Max   1 reset left · until 11/6 [Use reset] |
+| 5-hour       [==============    ]  76%  1h 32m (14:09) |
+| Weekly       [=======           ]  37%          2d 20h |
++========================================================+
+| [O] Codex Plus                                         |
+| 5-hour       [=                 ]   2%  4h 10m (16:47) |
++========================================================+
+| Updated 1m ago · % used     [R] Refresh  [S] Settings  |
++--------------------------------------------------------+
 ```
 
-`C` and `O` represent provider icons. `S` represents the native settings
-glyph; these letters are not literal UI. `=====` rows are the band of
-popup floor between groups.
+`C` and `O` represent provider icons. `R` and `S` represent the native
+refresh and settings glyphs; these letters are not literal UI. `=====`
+rows are the band of popup floor between groups.
 
-- `UX-087` to `UX-089` and `A11Y-027` (added 2026-10-31): the provider
+- `UX-090` and `UX-091` (added 2026-11-01): the provider group is a header
+  line (icon, name, plan, note, actions) over one line per window, whose
+  label, bar, percentage, and reset columns are shared by every group. They
+  supersede the side column of `UX-087` and amend `UX-083`, `UX-088`,
+  `UX-089`, and `UX-020B`. See
+  `docs/specs/v10/amendments/2026-11-01-popup-compact-cleanup-design.md`.
+
+- `UX-087` to `UX-089` and `A11Y-027` (added 2026-10-31; `UX-087`
+  superseded and the rest amended 2026-11-01 by `UX-090`): the provider
   group with a fixed left column and stacked windows, its notes, and its
   actions from one model list. They supersede the accordion (`UX-078`),
   the row anatomy and drawer (`UX-077`, `UX-079`), the pace tick
@@ -156,15 +164,15 @@ popup floor between groups.
   hours. A critical non-lead window still drives severity (`UX-020C`); it
   never takes the number. See
   `docs/specs/v10/amendments/2026-09-04-session-window-leads-design.md`.
-- `UX-020B` (amended 2026-09-10, 2026-10-21, 2026-10-31): The selected
-  group's slab takes a 6 % accent tint. The focused group draws the accent
-  focus ring inset by `Style.space(4)`. No frame lines surround the
-  selection. Settings has no idle selected-looking border. See
-  `docs/specs/v10/amendments/2026-10-31-popup-grid-layout-design.md`.
+- `UX-020B` (amended 2026-09-10, 2026-10-21, 2026-10-31, 2026-11-01): The
+  popup keeps no selected group. Every group rests on the same slab, a
+  click on a group changes nothing, and no group draws a focus ring.
+  Settings has no idle selected-looking border. See
+  `docs/specs/v10/amendments/2026-11-01-popup-compact-cleanup-design.md`.
 - `UX-021`: The popup opens on the monitor that received the interaction.
 - `UX-022`: Only one agent-bar popup is visible across all monitors.
-- `UX-023`: Moving the popup to another monitor preserves selected provider
-  and service state.
+- `UX-023` (amended 2026-11-01): Moving the popup to another monitor
+  preserves the service state.
 - `UX-024` (superseded 2026-10-21 by `UX-078`): Selection, the collapsed
   flag, and scroll position persist while the popup remains open.
 - `UX-025` (superseded 2026-10-21 by `UX-078`): A new open scrolls the rows
@@ -301,17 +309,18 @@ Requirements:
 ## Keyboard and focus
 
 - `A11Y-001`: Use `KeyboardPanel` as the popup keyboard surface.
-- `A11Y-002` (amended 2026-10-21, 2026-10-31): Up/Down and `j`/`k` move the
-  group selection and the focus with it. They do nothing in Settings.
+- `A11Y-002` (superseded 2026-11-01): Up/Down and `j`/`k` do nothing in
+  the popup; there is no group selection.
 - `A11Y-003`: Tab and Shift+Tab traverse visible actions in visual order.
-- `A11Y-004` (amended 2026-10-31): Enter and Space activate the focused
-  control. On a provider group they run its primary action (`UX-089`) when
-  one is enabled.
-- `A11Y-005`: `r` refreshes the selected provider.
-- `A11Y-006` (amended 2026-10-21): `s` opens Settings from the usage view
-  and returns to the usage view from Settings.
+- `A11Y-004` (amended 2026-10-31, 2026-11-01): Enter and Space activate the
+  focused button. The usage view opens with no control focused; Settings
+  opens with focus on Back.
+- `A11Y-005` and `A11Y-006` (superseded 2026-11-01): `r` and `s` do
+  nothing. The footer `Refresh` and `Settings` buttons (`UX-083`) and the
+  chip's middle and right clicks remain.
 - `A11Y-007`: Escape closes the popup.
-- `A11Y-008`: Panel shortcuts are suspended while a field editor owns input.
+- `A11Y-008` (amended 2026-11-01): No letter shortcut remains. While a field
+  editor owns input, Tab, Shift+Tab, and Escape still leave it.
 - `A11Y-009`: Every interactive control has native visible focus,
   `Accessible.name`, role, and action.
 - `A11Y-010`: Focus order excludes hidden and disabled controls.
@@ -321,9 +330,11 @@ Requirements:
   of its own. Internal motion of imported Quattro controls is host-owned and is
   not represented as a plugin-controlled reduced-motion setting.
 - `A11Y-024` to `A11Y-026` (added 2026-10-21; `A11Y-024` and `A11Y-025`
-  superseded 2026-10-31 by `A11Y-027`): the expandable row head, the
-  usage and Settings focus order, and severity cues that are never colour
-  only. See
+  superseded 2026-10-31 by `A11Y-027`, which 2026-11-01 amends so a group
+  is a grouping read by assistive tech and only its buttons take focus):
+  the expandable row head, the usage and Settings focus order, and
+  severity cues that are never colour only. See
+  `docs/specs/v10/amendments/2026-11-01-popup-compact-cleanup-design.md`,
   `docs/specs/v10/amendments/2026-10-21-popup-overview-redesign-design.md`
   and `docs/specs/v10/amendments/2026-10-31-popup-grid-layout-design.md`.
 

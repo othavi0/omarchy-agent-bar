@@ -901,7 +901,7 @@ mod tests {
             "Grok",
             DataSource::Live,
             None,
-            vec![UsageWindow::try_new("weekly", "Weekly (7d)", 11.0, 89.0, None).unwrap()],
+            vec![UsageWindow::try_new("weekly", "Weekly", 11.0, 89.0, None).unwrap()],
             earlier,
         )
         .unwrap();
@@ -932,7 +932,7 @@ mod tests {
             "Grok",
             DataSource::Live,
             None,
-            vec![UsageWindow::try_new("weekly", "Weekly (7d)", 11.0, 89.0, None).unwrap()],
+            vec![UsageWindow::try_new("weekly", "Weekly", 11.0, 89.0, None).unwrap()],
             earlier,
         )
         .unwrap();
@@ -941,7 +941,7 @@ mod tests {
             "Grok",
             DataSource::Live,
             None,
-            vec![UsageWindow::try_new("weekly", "Weekly (7d)", 7.0, 93.0, None).unwrap()],
+            vec![UsageWindow::try_new("weekly", "Weekly", 7.0, 93.0, None).unwrap()],
             now,
         )
         .unwrap();
@@ -1011,7 +1011,7 @@ mod tests {
             "Grok",
             DataSource::Live,
             None,
-            vec![UsageWindow::try_new("weekly", "Weekly (7d)", 11.0, 89.0, None).unwrap()],
+            vec![UsageWindow::try_new("weekly", "Weekly", 11.0, 89.0, None).unwrap()],
             earlier,
         )
         .unwrap();

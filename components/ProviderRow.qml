@@ -2,59 +2,54 @@ import QtQuick
 import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
-import "../CoreView.js" as Core
 import "Tokens.js" as Tokens
 
-// One provider group, drawn as a slab in two columns. The left column has a
-// fixed width: icon and name, plan, short notes, then the actions stacked.
-// The right column stacks every window: a label line with the reset on the
-// right, then a full-width bar with the percentage in a fixed column, so
-// every bar in the popup shares one width. A band of popup floor ends every
-// group but the last. Every field comes from the row model.
+// One provider group, drawn as a slab. A header line carries the icon, the
+// name and the plan, with the short state note and the action buttons on its
+// right. Under it each window takes one line: label, bar, percentage and
+// reset, in the columns OverviewList shares with every group. A provider
+// without a reading shows its state copy in place of the windows. A band of
+// popup floor ends every group but the last. Every field comes from the row
+// model; only the action buttons take focus.
 Item {
   id: root
   objectName: "providerRow"
 
   property var row: null
+  property var columns: ({ label: 0, percent: 0, reset: 0 })
   property bool last: false
   property int topRadius: 0
   property color foreground: Commons.Color.foreground
   property string fontFamily: Style.font.family
 
-  signal selectRequested(string id)
   signal actionRequested(string id, var action)
 
-  readonly property Item headItem: headHit
   readonly property string rowId: root.row ? root.row.id : ""
-  readonly property bool selected: !!(root.row && root.row.selected)
   readonly property var windows: root.row && root.row.windows ? root.row.windows : []
-  readonly property var notes: root.row && root.row.notes ? root.row.notes : []
   readonly property var actions: root.row && root.row.actions ? root.row.actions : []
+  readonly property string note: root.row && root.row.note ? root.row.note : ""
   readonly property string detail: root.row ? root.row.detail : ""
   readonly property var tones: Tokens.surfaces(Commons.Color.popups.background, root.foreground)
-  readonly property color plateColor: root.selected
-      ? Tokens.mix(root.tones.slab, Commons.Color.accent, Tokens.GROUP_SELECTED)
-      : root.tones.slab
   readonly property color secondary: Util.alpha(root.foreground, Tokens.TEXT_SECONDARY)
   readonly property color tertiary: Util.alpha(root.foreground, Tokens.TEXT_TERTIARY)
-  readonly property color accentText: Tokens.readableAccent(
-      Commons.Color.accent,
-      Tokens.mix(root.plateColor, Commons.Color.accent, Tokens.PRIMARY_PRESS),
-      root.foreground)
-  readonly property int sideWidth: Style.space(Tokens.SIDE_COLUMN_PX)
   readonly property int inset: Style.spacing.popupPadding
-  readonly property int gutter: Style.space(12)
-  readonly property int percentWidth: Math.ceil(percentMetrics.advanceWidth("100%"))
+  readonly property int gap: Style.space(8)
+  readonly property int contentWidth: Math.max(0, root.width - root.inset * 2)
+  readonly property int barX: root.columns.label + root.gap
+  readonly property int resetRoom: root.columns.reset > 0 ? root.columns.reset + root.gap : 0
+  readonly property int barWidth: Math.max(0, root.contentWidth - root.barX
+      - root.gap - root.columns.percent - root.resetRoom)
 
   width: parent ? parent.width : implicitWidth
   implicitHeight: body.implicitHeight
   height: implicitHeight
 
+  Accessible.role: Accessible.Grouping
+  Accessible.name: root.row ? root.row.accessibleName : ""
+  Accessible.description: root.detail
+
   function collectFocusTargets() {
     var out = []
-    if (!root.row)
-      return out
-    out.push(headHit)
     for (var i = 0; i < actionRepeater.count; i++) {
       var button = actionRepeater.itemAt(i)
       if (button && button.visible && button.enabled)
@@ -63,19 +58,12 @@ Item {
     return out
   }
 
-  FontMetrics {
-    id: percentMetrics
-    font.family: root.fontFamily
-    font.pixelSize: Style.font.body
-    font.weight: Font.Medium
-  }
-
   Rectangle {
     objectName: "rowPlate"
     anchors.fill: parent
     topLeftRadius: root.topRadius
     topRightRadius: root.topRadius
-    color: root.plateColor
+    color: root.tones.slab
   }
 
   Column {
@@ -83,74 +71,25 @@ Item {
     width: parent.width
 
     Item {
-      id: group
       width: parent.width
-      height: Math.max(side.implicitHeight, main.implicitHeight) + Style.space(12) * 2
-
-      Rectangle {
-        objectName: "rowHover"
-        anchors.fill: parent
-        topLeftRadius: root.topRadius
-        topRightRadius: root.topRadius
-        visible: headMouse.containsMouse && !root.selected
-        color: Style.hoverFill
-      }
-
-      // The group is one focus stop. Enter runs its primary action; a click
-      // selects it.
-      Item {
-        id: headHit
-        objectName: "rowHead"
-        anchors.fill: parent
-
-        function focusActivate() {
-          var action = Core.primaryAction(root.actions)
-          if (action)
-            root.actionRequested(root.rowId, action)
-        }
-
-        Keys.onReturnPressed: headHit.focusActivate()
-        Keys.onEnterPressed: headHit.focusActivate()
-        Keys.onSpacePressed: headHit.focusActivate()
-
-        Accessible.role: Accessible.Button
-        Accessible.name: root.row ? root.row.accessibleName : ""
-        Accessible.description: root.detail
-        Accessible.onPressAction: headHit.focusActivate()
-
-        MouseArea {
-          id: headMouse
-          anchors.fill: parent
-          hoverEnabled: true
-          onClicked: root.selectRequested(root.rowId)
-        }
-
-        Rectangle {
-          objectName: "rowFocusRing"
-          anchors.fill: parent
-          anchors.margins: Style.space(4)
-          radius: Style.cornerRadius
-          color: "transparent"
-          border.color: Commons.Color.accent
-          border.width: Style.spacing.hairline
-          visible: headHit.activeFocus
-        }
-      }
+      height: content.implicitHeight + Style.space(12) * 2
 
       Column {
-        id: side
-        objectName: "sideColumn"
+        id: content
         x: root.inset
         y: Style.space(12)
-        width: root.sideWidth
-        spacing: Style.space(4)
+        width: root.contentWidth
+        spacing: Style.space(8)
 
-        Row {
+        Item {
+          id: header
           width: parent.width
-          spacing: Style.space(8)
+          height: Math.max(icon.height, name.implicitHeight, noteText.implicitHeight,
+                           actionRow.visible ? actionRow.implicitHeight : 0)
 
           ProviderIcon {
             id: icon
+            objectName: "providerIcon"
             anchors.verticalCenter: parent.verticalCenter
             providerId: root.rowId
             size: Style.font.iconLarge
@@ -159,40 +98,54 @@ Item {
           }
 
           Text {
+            id: name
             objectName: "rowName"
+            anchors.left: icon.right
+            anchors.leftMargin: root.gap
             anchors.verticalCenter: parent.verticalCenter
-            width: parent.width - icon.width - parent.spacing
             text: root.row ? root.row.name : ""
             color: root.foreground
             font.family: root.fontFamily
             font.pixelSize: Style.font.subtitle
             font.weight: Font.DemiBold
+            textFormat: Text.PlainText
+            Accessible.ignored: true
+          }
+
+          // The plan yields first: it elides before the note or an action
+          // gives up room.
+          Text {
+            id: plan
+            objectName: "rowPlan"
+            readonly property int room: header.width - (name.x + name.width + root.gap)
+                - (noteText.text.length ? noteText.width + root.gap : 0)
+                - (actionRow.visible ? actionRow.width + root.gap : 0)
+            visible: text.length > 0 && room >= Style.space(24)
+            anchors.left: name.right
+            anchors.leftMargin: root.gap
+            anchors.baseline: name.baseline
+            width: Math.min(implicitWidth, Math.max(0, room))
+            text: root.row ? root.row.plan : ""
+            color: root.tertiary
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
             elide: Text.ElideRight
             textFormat: Text.PlainText
             Accessible.ignored: true
           }
-        }
 
-        Text {
-          objectName: "rowPlan"
-          visible: text.length > 0
-          width: parent.width
-          text: root.row ? root.row.plan : ""
-          color: root.tertiary
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.bodySmall
-          wrapMode: Text.Wrap
-          textFormat: Text.PlainText
-          Accessible.ignored: true
-        }
-
-        Repeater {
-          model: root.notes.length
           Text {
-            required property int index
+            id: noteText
             objectName: "groupNote"
-            width: side.width
-            text: root.notes[index] || ""
+            readonly property int room: header.width - (name.x + name.width + root.gap)
+                - (actionRow.visible ? actionRow.width + root.gap : 0)
+            visible: text.length > 0
+            anchors.right: actionRow.visible ? actionRow.left : parent.right
+            anchors.rightMargin: actionRow.visible ? root.gap : 0
+            anchors.verticalCenter: parent.verticalCenter
+            width: Math.min(implicitWidth, Math.max(0, room))
+            horizontalAlignment: Text.AlignRight
+            text: root.note
             color: root.secondary
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
@@ -200,154 +153,100 @@ Item {
             textFormat: Text.PlainText
             Accessible.ignored: true
           }
-        }
 
-        Item {
-          visible: root.actions.length > 0
-          width: parent.width
-          height: Style.space(4)
-        }
+          Row {
+            id: actionRow
+            visible: root.actions.length > 0
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: Style.space(4)
 
-        Repeater {
-          id: actionRepeater
-          model: root.actions.length
+            Repeater {
+              id: actionRepeater
+              model: root.actions.length
 
-          // Tonal primary: the accent at a low share over the slab, its label
-          // the accent pulled to readable contrast. A secondary action is
-          // text alone. Both paint their own hover, focus and press tones.
-          Button {
-            id: actionButton
-            required property int index
-            readonly property var action: root.actions[index] || null
-            readonly property bool primary: !!(action && action.primary)
-            readonly property color fillTo: primary ? Commons.Color.accent : root.foreground
-            objectName: primary ? "primaryAction" : "secondaryAction"
-            visible: !!action
-            enabled: !!(action && action.enabled)
-            width: Math.min(actionButton.implicitWidth, root.sideWidth)
-            height: Style.spacing.controlHeight
-            text: action ? action.label : ""
-            bordered: false
-            focusable: true
-            horizontalPadding: Style.space(8)
-            fontSize: Style.font.bodySmall
-            fontFamily: root.fontFamily
-            foreground: !actionButton.enabled ? root.tertiary
-                : (actionButton.primary ? root.accentText : root.secondary)
-            background: !actionButton.primary ? "transparent"
-                : (actionButton.enabled
-                    ? Tokens.mix(root.plateColor, Commons.Color.accent, Tokens.PRIMARY_REST)
-                    : Tokens.mix(root.plateColor, root.foreground, Tokens.BUTTON_OFF))
-            color: !actionButton.enabled ? actionButton.background
-                : actionPress.active
-                    ? Tokens.mix(root.plateColor, actionButton.fillTo,
-                                 actionButton.primary ? Tokens.PRIMARY_PRESS : Tokens.BUTTON_PRESS)
-                : actionButton.hot || actionButton.activeFocus
-                    ? Tokens.mix(root.plateColor, actionButton.fillTo,
-                                 actionButton.primary ? Tokens.PRIMARY_HOT : Tokens.BUTTON_HOT)
-                    : actionButton.background
-            Accessible.name: text
-            function focusActivate() {
-              if (actionButton.action && actionButton.action.enabled)
-                root.actionRequested(root.rowId, actionButton.action)
-            }
-            Accessible.onPressAction: focusActivate()
-            onClicked: focusActivate()
-
-            // Setting `color` replaces the host fill rule, press included, and
-            // the host MouseArea is private. A passive handler above it sees
-            // the press without taking the click.
-            Item {
-              anchors.fill: parent
-              PointHandler { id: actionPress; acceptedButtons: Qt.LeftButton }
+              ActionButton {
+                required property int index
+                readonly property var action: root.actions[index] || null
+                objectName: "groupAction"
+                visible: !!action
+                enabled: !!(action && action.enabled)
+                surface: root.tones.slab
+                text: action ? action.label : ""
+                fontFamily: root.fontFamily
+                onActivated: root.actionRequested(root.rowId, action)
+              }
             }
           }
         }
-      }
-
-      Column {
-        id: main
-        objectName: "windowColumn"
-        x: root.inset + root.sideWidth + root.gutter
-        y: Style.space(12)
-        width: Math.max(0, root.width - x - root.inset)
-        spacing: Style.space(8)
 
         Repeater {
           model: root.windows.length
 
-          Column {
+          Item {
             id: windowLine
             required property int index
             readonly property var line: root.windows[index] || null
             objectName: "windowLine"
-            width: main.width
-            spacing: Style.space(4)
+            width: content.width
+            height: Math.max(windowLabel.implicitHeight, windowPercent.implicitHeight, meter.implicitHeight)
 
-            Item {
-              width: parent.width
-              height: Math.max(windowLabel.implicitHeight, windowReset.implicitHeight)
-
-              Text {
-                id: windowLabel
-                objectName: "windowLabel"
-                width: parent.width - windowReset.implicitWidth
-                    - (windowReset.text.length ? Style.space(8) : 0)
-                text: windowLine.line ? windowLine.line.label : ""
-                color: root.secondary
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.body
-                elide: Text.ElideRight
-                textFormat: Text.PlainText
-                Accessible.ignored: true
-              }
-
-              Text {
-                id: windowReset
-                objectName: "windowReset"
-                anchors.right: parent.right
-                anchors.baseline: windowLabel.baseline
-                text: windowLine.line ? windowLine.line.resetText : ""
-                color: root.tertiary
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.bodySmall
-                font.features: ({ "tnum": 1 })
-                textFormat: Text.PlainText
-                Accessible.ignored: true
-              }
+            Text {
+              id: windowLabel
+              objectName: "windowLabel"
+              anchors.verticalCenter: parent.verticalCenter
+              width: root.columns.label
+              text: windowLine.line ? windowLine.line.label : ""
+              color: root.secondary
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.body
+              elide: Text.ElideRight
+              textFormat: Text.PlainText
+              Accessible.ignored: true
             }
 
-            Item {
-              width: parent.width
-              height: Math.max(meter.implicitHeight, windowPercent.implicitHeight)
+            UsageMeter {
+              id: meter
+              objectName: "windowMeter"
+              x: root.barX
+              anchors.verticalCenter: parent.verticalCenter
+              width: root.barWidth
+              percent: windowLine.line ? windowLine.line.percent : -1
+              critical: !!(windowLine.line && windowLine.line.critical)
+              foreground: root.foreground
+            }
 
-              UsageMeter {
-                id: meter
-                objectName: "windowMeter"
-                anchors.left: parent.left
-                anchors.verticalCenter: parent.verticalCenter
-                width: parent.width - root.percentWidth - Style.space(8)
-                percent: windowLine.line ? windowLine.line.percent : -1
-                critical: !!(windowLine.line && windowLine.line.critical)
-                foreground: root.foreground
-              }
+            Text {
+              id: windowPercent
+              objectName: "windowPercent"
+              x: root.barX + root.barWidth + root.gap
+              anchors.verticalCenter: parent.verticalCenter
+              width: root.columns.percent
+              horizontalAlignment: Text.AlignRight
+              text: windowLine.line ? windowLine.line.percentText : ""
+              color: windowLine.line && windowLine.line.critical ? Commons.Color.urgent : root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.body
+              font.weight: Font.Medium
+              font.features: ({ "tnum": 1 })
+              textFormat: Text.PlainText
+              Accessible.ignored: true
+            }
 
-              Text {
-                id: windowPercent
-                objectName: "windowPercent"
-                anchors.right: parent.right
-                anchors.verticalCenter: parent.verticalCenter
-                width: root.percentWidth
-                horizontalAlignment: Text.AlignRight
-                text: windowLine.line ? windowLine.line.percentText : ""
-                color: windowLine.line && windowLine.line.critical ? Commons.Color.urgent : root.foreground
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.body
-                font.weight: Font.Medium
-                font.features: ({ "tnum": 1 })
-                textFormat: Text.PlainText
-                Accessible.ignored: true
-              }
+            Text {
+              objectName: "windowReset"
+              visible: root.columns.reset > 0
+              anchors.right: parent.right
+              anchors.verticalCenter: parent.verticalCenter
+              width: root.columns.reset
+              horizontalAlignment: Text.AlignRight
+              text: windowLine.line ? windowLine.line.resetText : ""
+              color: root.tertiary
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+              font.features: ({ "tnum": 1 })
+              textFormat: Text.PlainText
+              Accessible.ignored: true
             }
           }
         }

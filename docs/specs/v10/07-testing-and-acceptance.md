@@ -61,8 +61,9 @@ Mandatory known-defect regressions:
   generation and immutable payload.
 - `TEST-025`: Mouse wheel, touchpad-equivalent input, keyboard scroll, bounds,
   content clamping, PageUp/PageDown/Home/End, and scrollbar visibility pass.
-- `TEST-026`: Tab order, Shift+Tab, Enter, Space, Escape, `j`/`k`, arrows, `r`,
-  `s`, editor shortcut suppression, and visible focus pass.
+- `TEST-026` (amended 2026-11-01): Tab order, Shift+Tab, Enter, Space,
+  Escape, inert arrows, `j`/`k`, `r`, and `s`, Escape from a field editor,
+  and visible focus pass.
 - `TEST-027`: Every interactive control exposes an accessible name, role, and
   action.
 - `TEST-028`: Untrusted strings render as plain text.

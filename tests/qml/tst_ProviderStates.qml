@@ -131,7 +131,6 @@ TestCase {
   function test_overview_row_name_and_plan() {
     var env = { providers: [firstProvider("ready.json")] }
     var row = Core.overviewModel(env, null, Date.parse("2026-07-28T15:00:00Z"),
-                                 { id: "" },
                                  { refreshing: true, resetUi: null, resetBusy: false,
                                    dateFormat: "", timeFormat: "" }).rows[0]
     verify(row.name.length > 0)
@@ -152,15 +151,6 @@ TestCase {
     verify(Core.containsMoneyCopy("BRL 10"))
     verify(Core.containsMoneyCopy("remaining credits"))
     verify(!Core.containsMoneyCopy("Claude remaining 58%"))
-  }
-
-  function test_overview_selection_falls_back_to_the_first_row() {
-    var env = loadFixture("valid-multi-provider.json")
-    var ui = { refreshing: false, resetUi: null, resetBusy: false, dateFormat: "", timeFormat: "" }
-    var picked = Core.overviewModel(env, null, Date.now(), { id: "codex" }, ui)
-    compare(picked.selectedId, "codex")
-    var first = Core.overviewModel(env, null, Date.now(), { id: "" }, ui)
-    compare(first.selectedId, "claude")
   }
 
   function test_dispatch_action_kind_mapping() {
@@ -206,9 +196,9 @@ TestCase {
 
   function test_lead_election_critical_beats_nearest_reset() {
     var layout = layoutOf([
-      { id: "daily", label: "Daily (1d)", usedPercent: 10, remainingPercent: 90,
+      { id: "daily", label: "Daily", usedPercent: 10, remainingPercent: 90,
         resetsAt: "2026-07-28T15:30:00Z" },
-      { id: "weekly", label: "Weekly (7d)", usedPercent: 96, remainingPercent: 4,
+      { id: "weekly", label: "Weekly", usedPercent: 96, remainingPercent: 4,
         resetsAt: "2026-07-31T11:59:59Z" }
     ], "2026-07-28T15:00:00Z")
     compare(layout.lead.id, "weekly")
@@ -229,7 +219,7 @@ TestCase {
 
   function test_lead_election_plan_beats_nearest_reset() {
     var layout = layoutOf([
-      { id: "daily", label: "Daily (1d)", usedPercent: 31, remainingPercent: 69,
+      { id: "daily", label: "Daily", usedPercent: 31, remainingPercent: 69,
         resetsAt: "2026-08-08T00:00:00Z" },
       { id: "plan-other", label: "Plan · agent", usedPercent: 8, remainingPercent: 92,
         resetsAt: null },
@@ -264,7 +254,7 @@ TestCase {
 
   function test_lead_election_critical_plan_leads_by_severity() {
     var layout = layoutOf([
-      { id: "daily", label: "Daily (1d)", usedPercent: 31, remainingPercent: 69,
+      { id: "daily", label: "Daily", usedPercent: 31, remainingPercent: 69,
         resetsAt: "2026-08-08T00:00:00Z" },
       { id: "plan-other", label: "Plan · agent", usedPercent: 97, remainingPercent: 3,
         resetsAt: null },
@@ -277,7 +267,7 @@ TestCase {
 
   function test_lead_election_critical_free_beats_healthy_plan() {
     var layout = layoutOf([
-      { id: "daily", label: "Daily (1d)", usedPercent: 96, remainingPercent: 4,
+      { id: "daily", label: "Daily", usedPercent: 96, remainingPercent: 4,
         resetsAt: "2026-08-08T00:00:00Z" },
       { id: "plan-other", label: "Plan · agent", usedPercent: 8, remainingPercent: 92,
         resetsAt: null }
@@ -288,9 +278,9 @@ TestCase {
 
   function test_lead_election_nearest_future_reset_when_healthy() {
     var layout = layoutOf([
-      { id: "weekly", label: "Weekly (7d)", usedPercent: 40, remainingPercent: 60,
+      { id: "weekly", label: "Weekly", usedPercent: 40, remainingPercent: 60,
         resetsAt: "2026-07-31T11:59:59Z" },
-      { id: "daily", label: "Daily (1d)", usedPercent: 4, remainingPercent: 96,
+      { id: "daily", label: "Daily", usedPercent: 4, remainingPercent: 96,
         resetsAt: "2026-07-28T18:00:00Z" }
     ], "2026-07-28T15:00:00Z")
     compare(layout.lead.id, "daily")
@@ -365,7 +355,7 @@ TestCase {
     var layout = layoutOf([
       { id: "weekly-model:opus", label: "Opus", usedPercent: 97, remainingPercent: 3,
         resetsAt: "2026-07-31T11:59:59Z" },
-      { id: "weekly", label: "Weekly (7d)", usedPercent: 10, remainingPercent: 90,
+      { id: "weekly", label: "Weekly", usedPercent: 10, remainingPercent: 90,
         resetsAt: "2026-07-28T15:30:00Z" }
     ], "2026-07-28T15:00:00Z")
     compare(layout.lead.id, "weekly-model:opus")
@@ -375,7 +365,7 @@ TestCase {
     var windows = [
       { id: "session", label: "5-hour", usedPercent: 21, remainingPercent: 79,
         resetsAt: "2026-09-04T03:10:00Z" },
-      { id: "weekly", label: "Weekly (7d)", usedPercent: 64, remainingPercent: 36,
+      { id: "weekly", label: "Weekly", usedPercent: 64, remainingPercent: 36,
         resetsAt: "2026-09-04T12:00:00Z" },
       { id: "weekly-model:fable", label: "Fable", usedPercent: 79, remainingPercent: 21,
         resetsAt: "2026-09-04T12:00:00Z" }
@@ -387,7 +377,7 @@ TestCase {
     var active = layoutOf([
       { id: "session", label: "5-hour", usedPercent: 3, remainingPercent: 97,
         resetsAt: "2026-09-04T16:00:00Z" },
-      { id: "weekly", label: "Weekly (7d)", usedPercent: 64, remainingPercent: 36,
+      { id: "weekly", label: "Weekly", usedPercent: 64, remainingPercent: 36,
         resetsAt: "2026-09-04T12:00:00Z" }
     ], "2026-09-04T11:00:00Z")
     compare(active.lead.id, "session")
@@ -567,7 +557,7 @@ TestCase {
       id: "claude", name: "Claude", state: "ready",
       windows: [
         { id: "session", label: "5-hour", usedPercent: 10, remainingPercent: 90 },
-        { id: "weekly", label: "Weekly (7d)", usedPercent: 20, remainingPercent: 80 }
+        { id: "weekly", label: "Weekly", usedPercent: 20, remainingPercent: 80 }
       ].concat(extraWindows || []),
       resets: [
         { id: "cedar-ember:opus55-launch-promax-20260921",

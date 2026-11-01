@@ -45,6 +45,7 @@ TestCase {
       "components/UsageMeter.qml",
       "components/ProviderIcon.qml",
       "components/PopupFooter.qml",
+      "components/ActionButton.qml",
       "components/SettingsHeader.qml"
     ]
   }
@@ -76,12 +77,14 @@ TestCase {
   function test_interactive_controls_have_accessible_names() {
     var src = read("components/ProviderRow.qml")
     verify(src.indexOf("Accessible.name: root.row ? root.row.accessibleName") >= 0)
-    verify(src.indexOf("Accessible.role: Accessible.Button") >= 0)
+    verify(src.indexOf("Accessible.role: Accessible.Grouping") >= 0, "a group is read, not pressed")
     verify(src.indexOf("Accessible.description: root.detail") >= 0)
     verify(src.indexOf("Accessible.expandable") < 0, "a group never folds, so it is not expandable")
-    verify(src.indexOf("Accessible.name: text") >= 0, "every action button speaks its label")
+    verify(read("components/ActionButton.qml").indexOf("Accessible.name: text") >= 0,
+           "every popup button speaks its label")
     src = read("components/PopupFooter.qml")
-    verify(src.indexOf('Accessible.name: "Settings"') >= 0)
+    verify(src.indexOf('text: "Refresh"') >= 0)
+    verify(src.indexOf('text: "Settings"') >= 0)
     src = read("components/StateMessage.qml")
     verify(src.indexOf("Accessible.name") >= 0)
     src = read("SettingsView.qml")

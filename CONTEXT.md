@@ -17,13 +17,14 @@ The popup view that lists every shown provider as a group. It starts with
 the groups; each group describes only its own provider.
 
 **Provider group**
-One provider in the overview, on its own slab. A fixed left column holds the
-icon, name, plan, notes, and actions; the right column stacks every
-percentage window as a label line over a bar. Nothing folds.
+One provider in the overview, on its own slab. A header line holds the
+icon, name, plan, note, and action buttons; under it every percentage
+window takes one line (label, bar, percentage, reset) in columns shared by
+every group. Nothing folds, and a group is never selected.
 
 **Group actions**
-The one model list of a group's actions (`actionsFor`). The first entry is
-the tonal primary that Enter runs; the rest are text buttons.
+The one model list of a group's actions (`actionsFor`), drawn as tonal
+buttons on the group header. No key fires them.
 
 **Settings**
 The popup view that edits the canonical Agent Bar settings draft.

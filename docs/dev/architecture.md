@@ -32,7 +32,7 @@ The manifest declares `service` and `bar-widget`.
 - automatic polling;
 - status/config/maintenance child-process scheduling;
 - immutable provider snapshots;
-- selected provider and logical popup owner;
+- the provider whose chip opened the popup, and the logical popup owner;
 - settings load/save generations;
 - forced-refresh coalescing;
 - notification-evaluation requests.
@@ -49,10 +49,10 @@ Each `BarWidget.qml` exists per monitor and owns:
 - rendering derived from the shared service.
 
 The consolidated popup shows an overview: one group per shown provider,
-with its name, notes, and actions in a fixed left column and every window
-as a bar on the right, and a footer with Settings, one `Updated` line, and
-the unit. `CoreView.actionsFor` is the one list of a group's actions; the
-buttons and Enter both read it. The card fits its content,
+with a header line (name, plan, note, actions) over one line per window,
+and a footer with the `Updated` status, the unit, and the `Refresh` and
+`Settings` buttons. `CoreView.actionsFor` is the one list of a group's
+actions, drawn as buttons. Only buttons take focus. The card fits its content,
 and only the rows (or the Settings body) scroll, and only on overflow.
 Widgets do not own polling, provider state, settings persistence, or cache.
 

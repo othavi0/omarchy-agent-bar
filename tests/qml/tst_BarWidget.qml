@@ -230,7 +230,7 @@ TestCase {
       name: "Grok",
       state: "ready",
       windows: [
-        { id: "daily", label: "Daily (1d)", usedPercent: 31, remainingPercent: 69,
+        { id: "daily", label: "Daily", usedPercent: 31, remainingPercent: 69,
           resetsAt: "2099-01-01T00:00:00Z" },
         { id: "plan-other", label: "Plan · agent", usedPercent: 8, remainingPercent: 92 },
         { id: "plan-orb", label: "Plan · orbs", usedPercent: 0, remainingPercent: 100 }
@@ -248,7 +248,7 @@ TestCase {
       name: "Claude",
       state: "ready",
       windows: [
-        { id: "weekly", label: "Weekly (7d)", usedPercent: 33, remainingPercent: 67,
+        { id: "weekly", label: "Weekly", usedPercent: 33, remainingPercent: 67,
           resetsAt: "2099-11-06T12:00:00.096704Z" },
         { id: "weekly-model:fable", label: "Fable", usedPercent: 0, remainingPercent: 100,
           resetsAt: "2099-11-06T12:00:00Z" }

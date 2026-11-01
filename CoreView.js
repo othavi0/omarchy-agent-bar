@@ -590,7 +590,7 @@ function resetsOf(provider) {
   return out
 }
 
-// "Weekly (7d)" -> "weekly", "5-hour" -> "5-hour"; falls back to a humanized window id when the
+// "Premium (5h)" -> "premium", "5-hour" -> "5-hour"; falls back to a humanized window id when the
 // provider carries no matching window (e.g. a stale clears list).
 function clearWord(provider, windowId) {
   if (provider && Kernel.isArrayLike(provider.windows)) {
@@ -799,9 +799,9 @@ function overviewRowKind(provider) {
   return "status"
 }
 
-// Every action a provider offers, in one list: the left column draws it in
-// order and Enter fires the first one. Only kinds the service dispatches
-// appear here; a spent or busy reset stays listed but disabled.
+// Every action a provider offers, in one list the group header draws in
+// order. Only kinds the service dispatches appear here; a spent or busy reset
+// stays listed but disabled.
 function actionsFor(provider, ui) {
   var opts = ui || {}
   var out = []
@@ -825,15 +825,7 @@ function actionsFor(provider, ui) {
       enabled: summary.claimableId !== null && !opts.resetBusy
     })
   }
-  for (var p = 0; p < out.length; p++)
-    out[p].primary = p === 0
   return out
-}
-
-function primaryAction(actions) {
-  if (!actions || !actions.length || !actions[0].enabled)
-    return null
-  return actions[0]
 }
 
 function resetNotes(provider, dateFormat, timeFormat) {
@@ -848,8 +840,8 @@ function resetNotes(provider, dateFormat, timeFormat) {
   return notes
 }
 
-// The short lines under the provider name: the state, a stale reading's age,
-// the resets left, and the outcome of the last reset attempt.
+// The short notes on the group header: the state, a stale reading's age, the
+// resets left, and the outcome of the last reset attempt.
 function groupNotes(provider, kind, nowMs, ui) {
   var notes = []
   var state = String(provider.state || "")
@@ -897,10 +889,9 @@ function overviewRow(provider, metric, nowMs, ui) {
     plan: plan,
     kind: kind,
     state: state,
-    selected: false,
     dimIcon: kind === "status" && !!ERROR_STATES[state],
     windows: windows,
-    notes: notes,
+    note: notes.join(" · "),
     detail: detail,
     actions: actionsFor(provider, ui),
     accessibleName: spoken.join(", ")
@@ -926,30 +917,21 @@ function footerUpdatedText(providers, nowMs, refreshing) {
   return "Updated " + formatAgoText(new Date(oldest).toISOString(), nowMs)
 }
 
-// selection = { id } from the service popup owner.
 // ui = { refreshing, resetUi, resetBusy, dateFormat, timeFormat }.
-function overviewModel(snapshot, settings, nowMs, selection, ui) {
+// The footer status names the refresh state and the unit every percentage
+// shares: "Updated 2m ago · % used".
+function overviewModel(snapshot, settings, nowMs, ui) {
   var metric = displayMetric(settings)
   var opts = ui || {}
   var providers = visibleProviders(snapshot, settings)
   var rows = []
   for (var i = 0; i < providers.length; i++)
     rows.push(overviewRow(providers[i], metric, nowMs, opts))
-
-  var want = selection && selection.id ? String(selection.id) : ""
-  var selectedId = rows.length ? rows[0].id : ""
-  for (var s = 0; s < rows.length; s++) {
-    if (rows[s].id === want)
-      selectedId = want
-  }
-  for (var r = 0; r < rows.length; r++)
-    rows[r].selected = rows[r].id === selectedId
-
+  var updated = footerUpdatedText(providers, nowMs, !!opts.refreshing)
+  var unit = "% " + unitWord(metric)
   return {
     metric: metric,
-    unitText: "% " + unitWord(metric),
     rows: rows,
-    selectedId: selectedId,
-    updatedText: footerUpdatedText(providers, nowMs, !!opts.refreshing)
+    statusText: updated.length ? updated + " · " + unit : unit
   }
 }

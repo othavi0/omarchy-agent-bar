@@ -7,11 +7,9 @@ var DIMMED = 0.45
 var LOCKED = 0.55
 var URGENT_RULE = 0.55
 
-// A provider group's left column, before the spacing scale.
-var SIDE_COLUMN_PX = 118
-
 var GLYPH_ALERT = "\u{F0026}"
 var GLYPH_SETTINGS = "\u{F0493}"
+var GLYPH_REFRESH = "\u{F0450}"
 var GLYPH_BACK = "\u{F0141}"
 var GLYPH_UP = "\u{F0143}"
 var GLYPH_DOWN = "\u{F0140}"
@@ -23,7 +21,6 @@ var GLYPH_DOWN = "\u{F0140}"
 var SLAB_LIFT = 0.06
 var FLOOR_SINK = 0.2
 var RIM = 0.1
-var GROUP_SELECTED = 0.06
 var BUTTON_HOT = 0.16
 var BUTTON_PRESS = 0.24
 var BUTTON_OFF = 0.04

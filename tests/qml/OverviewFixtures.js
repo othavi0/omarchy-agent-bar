@@ -77,7 +77,7 @@ function claudeReset(claimable) {
 function claudeReady(sessionUsed, sessionResetIn) {
   return provider("claude", "Claude", "ready", [
     win("session", "5-hour", sessionUsed, 300, sessionResetIn),
-    win("weekly", "Weekly (7d)", 37, 10080, 4080),
+    win("weekly", "Weekly", 37, 10080, 4080),
     win("weekly-model:fable", "Fable", 45, 10080, 4080)
   ], { plan: { id: "max", label: "Max" }, resets: [claudeReset(true)] })
 }
@@ -85,7 +85,7 @@ function claudeReady(sessionUsed, sessionResetIn) {
 // Live shape since 2026-10-30: verified Ultra accounts have no 5-hour window.
 function claudeUltraNoSession() {
   return provider("claude", "Claude", "ready", [
-    win("weekly", "Weekly (7d)", 29, 10080, 8480),
+    win("weekly", "Weekly", 29, 10080, 8480),
     win("weekly-model:fable", "Fable", 0, 10080, 8480)
   ], { plan: { id: "default_claude_max_20x", label: "Ultra" } })
 }
@@ -93,7 +93,7 @@ function claudeUltraNoSession() {
 function codexReady() {
   return provider("codex", "Codex", "ready", [
     win("session", "5-hour", 2, 300, 250),
-    win("weekly", "Weekly (7d)", 18, 10080, 7320)
+    win("weekly", "Weekly", 18, 10080, 7320)
   ], { plan: { id: "plus", label: "Plus" } })
 }
 
@@ -106,9 +106,9 @@ function grokReady() {
 function antigravityReady() {
   return provider("antigravity", "Antigravity", "ready", [
     win("gemini-5h", "Gemini · 5h", 0, 300, null),
-    win("gemini-weekly", "Gemini · weekly", 0, 10080, null),
-    win("3p-5h", "Claude and GPT · 5h", 0, 300, null),
-    win("3p-weekly", "Claude and GPT · weekly", 0, 10080, null)
+    win("gemini-weekly", "Gemini · 7d", 0, 10080, null),
+    win("3p-5h", "Claude/GPT · 5h", 0, 300, null),
+    win("3p-weekly", "Claude/GPT · 7d", 0, 10080, null)
   ])
 }
 
@@ -123,7 +123,7 @@ function critical() {
 function stale() {
   var codex = provider("codex", "Codex", "stale", [
     win("session", "5-hour", 96, 300, 250),
-    win("weekly", "Weekly (7d)", 18, 10080, 7320)
+    win("weekly", "Weekly", 18, 10080, 7320)
   ], { lastSuccessAt: at(-14) })
   return envelope([claudeReady(76, 92), codex, grokReady(), antigravityReady()])
 }
@@ -166,7 +166,7 @@ function full() {
   return envelope([
     provider("claude", "Claude", "ready", [
       win("session", "5-hour", 100, 300, 60),
-      win("weekly", "Weekly (7d)", 37, 10080, 4080)
+      win("weekly", "Weekly", 37, 10080, 4080)
     ]),
     codexReady()
   ])

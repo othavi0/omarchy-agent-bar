@@ -30,8 +30,9 @@ omarchy bar move othavi0.agent-bar --section center
 ![Agent Bar chips and popup](docs/images/bar-popup.png)
 
 Each chip shows used or remaining percentage, whichever you pick in
-Settings. The popup shows the plan tag (`ULTRA`, for example), the lead
-window with its countdown and reset time, and one row per other window.
+Settings. The popup lists each provider with its plan (`Ultra`, for
+example) and one line per window: its bar, percentage, and reset
+countdown. The footer has `Refresh` and `Settings` buttons.
 
 ![Claude popup with session, weekly, and model windows](docs/images/popup-claude.png)
 ![Antigravity popup with Gemini and Claude/GPT windows](docs/images/popup-antigravity.png)

@@ -107,10 +107,6 @@ TestCase {
     return null
   }
 
-  function headOf(id, p) {
-    return one(rowById(id, p), "rowHead")
-  }
-
   function focusNames() {
     var fc = one(popup, "focusController")
     return fc.liveTargets().map(function (t) { return String(t.Accessible.name) })
@@ -165,7 +161,6 @@ TestCase {
     var p = openRealPopup()
     compare(p.isOpen, true)
     compare(p.view, "usage")
-    compare(p.selectedId, "claude")
     verify(p.width > 0 && p.height > 0, "the panel stub sizes the popup from its content")
     var texts = ViewHarness.findAll(p, function (item) {
       return item.textFormat !== undefined && String(item.text).indexOf("5-hour") >= 0
@@ -181,7 +176,7 @@ TestCase {
     openRealPopup(env, "used", "claude")
     var row = rowById("claude")
     var labels = byName(row, "windowLabel").map(function (l) { return String(l.text) })
-    compare(labels, ["Weekly (7d)", "Fable"])
+    compare(labels, ["Weekly", "Fable"])
     compare(shown(row, "windowMeter").length, 2)
     var sessionTexts = ViewHarness.findAll(row, function (item) {
       return item.textFormat !== undefined && visibleIn(item, row)
@@ -213,8 +208,7 @@ TestCase {
     compare(rows().map(function (r) { return r.row.id }).join(","), "claude,codex,antigravity")
   }
 
-  // Nothing folds: with Claude selected, every group already shows every
-  // window, and activating or selecting a group hides none of them.
+  // Nothing folds: every group shows every window.
   function test_every_window_shows_without_an_accordion() {
     openRealPopup()
     compare(byName(popup, "rowChevron").length, 0, "no chevron")
@@ -225,13 +219,6 @@ TestCase {
       compare(shown(rowById(id), "windowMeter").length, expected[id], id + " shows every window")
       compare(shown(rowById(id), "windowPercent").length, expected[id])
     }
-    headOf("codex").focusActivate()
-    popup.selectProvider("grok")
-    settle()
-    compare(popup.selectedId, "grok")
-    for (var again in expected)
-      compare(shown(rowById(again), "windowMeter").length, expected[again],
-              again + " still shows every window after the selection moved")
   }
 
   function test_monitor_move_keeps_every_window() {
@@ -241,118 +228,14 @@ TestCase {
     settle()
     compare(popup.isOpen, false)
     compare(other.isOpen, true)
-    compare(rowById("codex", other).row.selected, true)
     compare(shown(rowById("claude", other), "windowMeter").length, 3)
-  }
-
-  function test_keyboard_moves_the_selection() {
-    openRealPopup()
-    var keys = one(popup, "keyCatcher")
-    keys.moveRequested(0, 1)
-    settle()
-    compare(popup.selectedId, "codex")
-    compare(rowById("codex").row.selected, true)
-    compare(rowById("claude").row.selected, false)
-    tryVerify(function () { return headOf("codex").activeFocus }, 1000,
-              "focus follows the selection to the new head")
-
-    popup.handleTextKey("s")
-    settle()
-    compare(popup.view, "settings")
-    keys.moveRequested(0, 1)
-    settle()
-    compare(popup.selectedId, "codex", "arrows do not switch providers in Settings")
-    popup.handleTextKey("s")
-    settle()
-    compare(popup.view, "usage")
-    compare(popup.selectedId, "codex")
-
-    popup.handleTextKey("r")
-    var command = service.lanes.status.process.command
-    var argv = command ? Array.prototype.slice.call(command) : []
-    verify(service.pendingForcedTargets.ids["codex"] === true
-           || argv.join(" ").indexOf("provider codex") >= 0,
-           "r forces a refresh of the selected provider: " + JSON.stringify(argv))
-  }
-
-  // Enter on the selected group runs the first action in its model list.
-  function test_enter_runs_the_selected_groups_primary_action() {
-    openRealPopup()
-    tryVerify(function () { return headOf("claude").activeFocus }, 1000)
-    verify(!service.resetUi || !service.resetUi.confirmOpen, "no reset prompt before Enter")
-    keyClick(Qt.Key_Return)
-    settle()
-    verify(service.resetUi && service.resetUi.confirmOpen, "Enter on Claude asks to use its reset")
-    compare(service.resetUi.providerId, "claude")
-    compare(service.resetUi.resetId, "spring")
-    service.closeResetConfirm()
-    settle()
-
-    keyClick(Qt.Key_Down)
-    settle()
-    tryVerify(function () { return headOf("codex").activeFocus }, 1000)
-    keyClick(Qt.Key_Return)
-    settle()
-    verify(!service.resetUi || !service.resetUi.confirmOpen, "Codex has no action, so Enter does nothing")
-    cleanup()
-
-    openRealPopup(F.problems(), "used", "grok")
-    tryVerify(function () { return headOf("grok").activeFocus }, 1000)
-    keyClick(Qt.Key_Return)
-    settle()
-    var command = service.lanes.status.process.command
-    var argv = command ? Array.prototype.slice.call(command) : []
-    verify(service.pendingForcedTargets.ids["grok"] === true
-           || argv.join(" ").indexOf("provider grok") >= 0,
-           "Enter on a rate-limited group retries it: " + JSON.stringify(argv))
-  }
-
-  function test_enter_skips_a_disabled_primary() {
-    var env = F.normal()
-    env.providers[0].resets = [F.claudeReset(false)]
-    openRealPopup(env)
-    tryVerify(function () { return headOf("claude").activeFocus }, 1000)
-    keyClick(Qt.Key_Return)
-    settle()
-    verify(!service.resetUi || !service.resetUi.confirmOpen, "a spent reset stays unclaimed")
-  }
-
-  function test_click_selects_a_group_without_running_its_action() {
-    openRealPopup(F.problems(), "used", "claude")
-    mouseClick(headOf("grok"), 4, 4)
-    settle()
-    compare(popup.selectedId, "grok")
-    compare(service.pendingForcedTargets.ids["grok"] === true, false, "a click only selects")
-  }
-
-  function test_open_focuses_the_selected_row() {
-    openRealPopup(F.normal(), "used", "codex")
-    tryVerify(function () { return headOf("codex").activeFocus }, 1000,
-              "the popup opens with focus on the selected row, not the first one")
-    compare(headOf("claude").activeFocus, false)
-  }
-
-  function test_keys_suspended_while_editor_owns_input() {
-    openRealPopup()
-    var keys = one(popup, "keyCatcher")
-    keys.blocked = true
-    popup.handleTextKey("s")
-    settle()
-    compare(popup.view, "usage")
   }
 
   function test_focus_order() {
     openRealPopup()
     tryVerify(function () { return focusNames().length > 0 }, 1000)
-    compare(JSON.stringify(focusNames()), JSON.stringify([
-      rowById("claude").row.accessibleName,
-      "Use reset",
-      rowById("codex").row.accessibleName,
-      rowById("grok").row.accessibleName,
-      rowById("antigravity").row.accessibleName,
-      "Settings"
-    ]))
-    verify(focusNames()[0].indexOf("Claude, Max") === 0, focusNames()[0])
+    compare(JSON.stringify(focusNames()), JSON.stringify(["Use reset", "Refresh", "Settings"]),
+            "only buttons take focus")
   }
 
   function test_focus_skips_a_disabled_use_reset() {
@@ -370,13 +253,11 @@ TestCase {
     openRealPopup(F.problems(), "used", "codex")
     var codex = rowById("codex")
     compare(codex.row.kind, "status")
-    compare(buttonIn("codex", "Install guide").objectName, "primaryAction")
-    compare(buttonIn("codex", "Check again").objectName, "secondaryAction")
+    compare(buttonIn("codex", "Install guide").objectName, "groupAction")
+    compare(buttonIn("codex", "Check again").objectName, "groupAction")
     tryVerify(function () { return focusNames().indexOf("Install guide") >= 0 }, 1000)
-    var head = focusNames().indexOf(codex.row.accessibleName)
-    compare(focusNames().indexOf("Install guide"), head + 1)
-    compare(focusNames().indexOf("Check again"), head + 2)
-    compare(byName(popup, "refreshButton").length, 0, "no per-provider Refresh")
+    compare(focusNames().indexOf("Check again"), focusNames().indexOf("Install guide") + 1)
+    compare(ViewHarness.buttonsWithText(codex, ["Refresh"]).length, 0, "no per-provider Refresh")
     verify(visibleTexts(codex).indexOf("Codex CLI was not found.") >= 0, visibleTexts(codex))
   }
 
@@ -466,13 +347,13 @@ TestCase {
 
   function test_tick_keeps_row_delegates() {
     openRealPopup()
-    var head = headOf("claude")
-    head.forceActiveFocus()
-    verify(head.activeFocus)
+    var use = buttonIn("claude", "Use reset")
+    use.forceActiveFocus()
+    verify(use.activeFocus)
     popup.nowMs = popup.nowMs + 30000
     settle()
-    compare(headOf("claude"), head, "the clock tick re-binds text without new delegates")
-    verify(head.activeFocus, "focus survives the tick")
+    compare(buttonIn("claude", "Use reset"), use, "the clock tick re-binds text without new delegates")
+    verify(use.activeFocus, "focus survives the tick")
   }
 
   function test_no_close_control() {
@@ -569,26 +450,25 @@ TestCase {
   // One "Updated" line in the footer; a refresh in flight replaces it.
   function test_footer_shows_one_updated_line() {
     openRealPopup()
-    var updated = one(popup, "footerUpdated")
-    compare(updated.text, "Updated 1m ago ·")
+    var status = one(popup, "footerStatus")
+    compare(status.text, "Updated 1m ago · % used")
     var all = visibleTexts(popup).filter(function (t) { return t.indexOf("Updated") >= 0 })
     compare(all.length, 1, "only the footer says Updated: " + all)
-    popup.onRefresh("claude")
+    popup.refreshAll()
     tryCompare(service, "refreshing", true, 1000)
-    compare(updated.text, "Refreshing… ·")
+    compare(status.text, "Refreshing… · % used")
   }
 
   // The unit prints once, in the footer, for every percentage above it.
   function test_unit_prints_once() {
     openRealPopup()
-    var texts = visibleTexts(popup)
-    compare(texts.filter(function (t) { return /\bused\b/.test(t) }), ["% used ·"])
-    compare(one(popup, "footerUnit").text, "% used ·")
+    compare(visibleTexts(popup).filter(function (t) { return /\bused\b/.test(t) }),
+            ["Updated 1m ago · % used"])
     cleanup()
     openRealPopup(F.normal(), "remaining")
-    texts = visibleTexts(popup)
-    compare(texts.filter(function (t) { return /\b(used|left)\b/.test(t) && t.indexOf("reset") < 0 }),
-            ["% left ·"])
+    compare(visibleTexts(popup).filter(function (t) {
+      return /\b(used|left)\b/.test(t) && t.indexOf("reset") < 0
+    }), ["Updated 1m ago · % left"])
   }
 
   function test_popup_starts_with_the_rows() {
@@ -614,7 +494,7 @@ TestCase {
     for (var i = 0; i < texts.length; i++)
       verify(!/At this pace|Too early to project|time passed|of the window has passed/.test(texts[i]),
              "no pace copy: " + texts[i])
-    compare(String(headOf("claude").Accessible.description), "")
+    compare(String(rowById("claude").Accessible.description), "")
   }
 
   // A critical window turns its own bar and number urgent; no alert glyph
@@ -624,7 +504,7 @@ TestCase {
       F.provider("claude", "Claude", "ready", [F.win("session", "5-hour", 20, 300, 30)]),
       F.provider("codex", "Codex", "ready", [
         F.win("session", "5-hour", 10, 300, 200),
-        F.win("weekly", "Weekly (7d)", 97, 10080, 600)
+        F.win("weekly", "Weekly", 97, 10080, 600)
       ])
     ]))
     var meters = byName(rowById("codex"), "windowMeter")
@@ -650,7 +530,6 @@ TestCase {
       var plate = one(rows()[0], "rowPlate")
       compare(plate.topLeftRadius, popup.innerRadius, "the first group's fill stays inside the rounded border")
       compare(plate.topRightRadius, popup.innerRadius)
-      compare(one(rows()[0], "rowHover").topLeftRadius, popup.innerRadius)
       compare(one(rows()[1], "rowPlate").topLeftRadius, 0, "only the first group meets the border")
 
       service.restartPendingVersion = "10.7.0"
@@ -660,17 +539,6 @@ TestCase {
     } finally {
       Style.cornerRadius = saved
     }
-  }
-
-  // The focus ring sits inside the group, off the popup border.
-  function test_focus_ring_stays_off_the_border() {
-    openRealPopup()
-    tryVerify(function () { return headOf("claude").activeFocus }, 1000)
-    var ring = one(rowById("claude"), "rowFocusRing")
-    verify(visibleIn(ring, popup), "the focused group shows its ring")
-    compare(leftOf(ring), Style.space(4))
-    compare(rightOf(ring), one(popup, "popupBody").width - Style.space(4))
-    compare(visibleIn(one(rowById("codex"), "rowFocusRing"), popup), false)
   }
 
   // Gaveta: groups are slabs split by a band thicker than any hairline.
@@ -691,43 +559,6 @@ TestCase {
             "no frame lines around the selected group")
   }
 
-  // Two columns: a fixed side column for every group, then windows whose
-  // bars share one left edge, one width and one percentage column.
-  function test_columns_align_across_groups() {
-    openRealPopup()
-    var sides = shown(popup, "sideColumn")
-    compare(sides.length, 4)
-    for (var s = 0; s < sides.length; s++) {
-      compare(sides[s].width, Style.space(Tokens.SIDE_COLUMN_PX), "the side column is fixed")
-      compare(leftOf(sides[s]), Style.spacing.popupPadding)
-    }
-    var meters = shown(popup, "windowMeter")
-    var numbers = shown(popup, "windowPercent")
-    var resets = shown(popup, "windowReset")
-    var labels = shown(popup, "windowLabel")
-    compare(meters.length, 10)
-    for (var i = 0; i < meters.length; i++) {
-      compare(leftOf(meters[i]), leftOf(meters[0]), "bar " + i + " starts with the others")
-      compare(meters[i].width, meters[0].width, "bar " + i + " keeps the shared width")
-      compare(rightOf(numbers[i]), rightOf(numbers[0]), "percentage " + i + " ends on the edge")
-      compare(numbers[i].width, numbers[0].width, "percentage " + i + " sits in a fixed column")
-      compare(leftOf(labels[i]), leftOf(meters[0]), "label " + i + " starts over its bar")
-    }
-    for (var r = 0; r < resets.length; r++)
-      compare(rightOf(resets[r]), rightOf(numbers[0]), "reset " + r + " ends on the percentage edge")
-    verify(leftOf(meters[0]) >= rightOf(sides[0]) + Style.space(12), "the gutter separates the columns")
-    compare(rightOf(numbers[0]), one(popup, "popupBody").width - Style.spacing.popupPadding)
-  }
-
-  function test_selected_group_carries_a_light_accent() {
-    openRealPopup()
-    var slab = Tokens.surfaces(Commons.Color.popups.background, Commons.Color.foreground).slab
-    verify(Qt.colorEqual(one(rowById("claude"), "rowPlate").color,
-                         Tokens.mix(slab, Commons.Color.accent, Tokens.GROUP_SELECTED)),
-           "the selected group carries the accent tint")
-    verify(Qt.colorEqual(one(rowById("codex"), "rowPlate").color, slab), "other groups rest on the slab")
-  }
-
   function test_band_is_the_floor_in_every_theme_data() {
     return [{ tag: "dark", mode: "dark" }, { tag: "light", mode: "light" }, { tag: "white", mode: "white" }]
   }
@@ -745,37 +576,40 @@ TestCase {
     return 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b
   }
 
-  // Tonal primary: accent fill over the slab, accent label at 4.5:1. The
-  // secondary action is text alone.
-  function test_primary_is_tonal_and_secondary_is_text_data() {
+  // Group actions and Settings are tonal: accent fill over the slab, accent
+  // label at 4.5:1. Refresh is text alone.
+  function test_group_actions_are_tonal_data() {
     return [{ tag: "dark", mode: "dark" }, { tag: "light", mode: "light" }, { tag: "white", mode: "white" }]
   }
 
-  function test_primary_is_tonal_and_secondary_is_text(data) {
+  function test_group_actions_are_tonal(data) {
     withPalette(data.mode, function () {
       openRealPopup(F.problems(), "used", "claude")
       var plate = one(rowById("codex"), "rowPlate").color
-      var primary = buttonIn("codex", "Install guide")
-      var secondary = buttonIn("codex", "Check again")
-      compare(primary.bordered, false)
-      compare(secondary.bordered, false)
-      compare(primary.height, Style.spacing.controlHeight)
-      compare(secondary.height, primary.height, "both actions share one height")
-      compare(leftOf(primary), leftOf(secondary), "the actions stack on one edge")
-      verify(Qt.colorEqual(primary.color, Tokens.mix(plate, Commons.Color.accent, Tokens.PRIMARY_REST)),
-             data.tag + ": the primary rests on the accent at 16%")
-      compare(secondary.color.a, 0, data.tag + ": the secondary has no fill")
-      var ratio = contrast(primary.foreground, primary.color)
-      verify(ratio >= 4.5, data.tag + ": the primary label reads at " + ratio.toFixed(2))
-      var hotRatio = contrast(primary.foreground, Tokens.mix(plate, Commons.Color.accent, Tokens.PRIMARY_PRESS))
-      verify(hotRatio >= 4.5, data.tag + ": and on its press fill at " + hotRatio.toFixed(2))
-      var textRatio = contrast(over(secondary.foreground, plate), plate)
-      verify(textRatio >= 4.5, data.tag + ": the secondary label reads at " + textRatio.toFixed(2))
+      var actions = [buttonIn("codex", "Install guide"), buttonIn("codex", "Check again")]
+      for (var i = 0; i < actions.length; i++) {
+        var b = actions[i]
+        compare(b.bordered, false)
+        compare(b.height, Style.spacing.controlHeight)
+        verify(Math.abs(centerY(b) - centerY(actions[0])) <= 1, "the actions share one line")
+        verify(Qt.colorEqual(b.color, Tokens.mix(plate, Commons.Color.accent, Tokens.PRIMARY_REST)),
+               data.tag + ": " + b.text + " rests on the accent at 16%")
+        var ratio = contrast(b.foreground, b.color)
+        verify(ratio >= 4.5, data.tag + ": " + b.text + " reads at " + ratio.toFixed(2))
+        var hotRatio = contrast(b.foreground, Tokens.mix(plate, Commons.Color.accent, Tokens.PRIMARY_PRESS))
+        verify(hotRatio >= 4.5, data.tag + ": and on its press fill at " + hotRatio.toFixed(2))
+      }
+      verify(leftOf(actions[1]) > rightOf(actions[0]), "the actions sit side by side")
+      var refresh = ViewHarness.buttonsWithText(one(popup, "popupFooter"), ["Refresh"])[0]
+      compare(refresh.color.a, 0, data.tag + ": Refresh has no fill")
+      var textRatio = contrast(over(refresh.foreground, plate), plate)
+      verify(textRatio >= 4.5, data.tag + ": the Refresh label reads at " + textRatio.toFixed(2))
     })
   }
 
   function test_action_buttons_show_hover_and_press_data() {
-    return [{ tag: "useReset" }, { tag: "primary" }, { tag: "secondary" }]
+    return [{ tag: "useReset" }, { tag: "installGuide" }, { tag: "checkAgain" },
+            { tag: "refresh" }, { tag: "settings" }]
   }
 
   // The tonal fills replace the host fill rule, so each button paints its
@@ -786,9 +620,13 @@ TestCase {
     if (data.tag === "useReset") {
       openRealPopup()
       button = buttonIn("claude", "Use reset")
+    } else if (data.tag === "refresh" || data.tag === "settings") {
+      openRealPopup()
+      button = ViewHarness.buttonsWithText(one(popup, "popupFooter"),
+                                           [data.tag === "refresh" ? "Refresh" : "Settings"])[0]
     } else {
       openRealPopup(F.problems(), "used", "codex")
-      button = buttonIn("codex", data.tag === "primary" ? "Install guide" : "Check again")
+      button = buttonIn("codex", data.tag === "installGuide" ? "Install guide" : "Check again")
     }
     verify(button.enabled, data.tag + " is enabled")
     button.clicked.connect(function () { clicks.count++ })
@@ -826,27 +664,6 @@ TestCase {
       var ratio = contrast(label, use.color)
       verify(ratio >= 3, data.tag + ": the disabled label keeps 3:1 contrast (" + ratio.toFixed(2) + ")")
     })
-  }
-
-  function test_hidden_selection_moves_to_the_shown_row() {
-    openRealPopup(F.normal(), "used", "grok")
-    var settings = F.settings("used")
-    for (var i = 0; i < settings.providers.length; i++) {
-      if (settings.providers[i].id === "grok")
-        settings.providers[i].enabled = false
-    }
-    service.appliedSettings = settings
-    settle()
-    compare(popup.overview.selectedId, "claude")
-    compare(popup.selectedId, popup.overview.selectedId,
-            "the popup and the overview agree on the selected row")
-    tryVerify(function () { return headOf("claude").activeFocus }, 1000,
-              "focus follows the selection to the shown row")
-
-    keyClick(Qt.Key_Down)
-    settle()
-    compare(popup.selectedId, "codex", "Down steps from the shown row")
-    compare(rowById("codex").row.selected, true)
   }
 
   function overflowingTexts(root) {
@@ -1051,13 +868,10 @@ TestCase {
     settingsRowFor("grok").enableToggled()
     settle()
     var draft = JSON.stringify(service.settingsDraft)
-    var selected = popup.selectedId
     one(popup, "settingsHeader").backRequested()
     settle()
     compare(popup.view, "usage")
-    compare(popup.selectedId, selected)
     compare(JSON.stringify(service.settingsDraft), draft, "Back keeps the unsaved draft")
-    compare(rowById(selected).row.selected, true, "Back keeps the selected group")
   }
 
   // Real key presses reach the catcher only when the focused control leaves
@@ -1081,11 +895,13 @@ TestCase {
 
   function test_tab_keys_walk_the_usage_order() {
     openRealPopup()
-    tryVerify(function () { return headOf("claude").activeFocus }, 1000)
-    var count = focusNames().length
-    compare(count, 6)
-    pressAndExpectTabWalk(count + 1, Qt.Key_Tab)
-    pressAndExpectTabWalk(count + 1, Qt.Key_Backtab)
+    var fc = one(popup, "focusController")
+    tryVerify(function () { return focusNames().length === 3 }, 1000)
+    keyClick(Qt.Key_Tab)
+    settle()
+    compare(currentName(), "Use reset")
+    pressAndExpectTabWalk(4, Qt.Key_Tab)
+    pressAndExpectTabWalk(4, Qt.Key_Backtab)
   }
 
   function test_tab_keys_walk_the_general_tab() {
@@ -1117,30 +933,167 @@ TestCase {
     return fc.current && fc.current.activeFocus ? String(fc.current.Accessible.name) : "none"
   }
 
-  function test_view_switch_focuses_back_and_the_selected_row() {
+  function test_view_switch_focuses_back() {
     openRealPopup(F.normal(), "used", "grok")
-    tryVerify(function () { return headOf("grok").activeFocus }, 1000)
-    keyClick(Qt.Key_S)
+    keyClick(Qt.Key_Backtab)
+    settle()
+    compare(currentName(), "Settings", "Backtab from the open popup reaches the last button")
+    keyClick(Qt.Key_Return)
     ServiceHarness.finishLane(service, "settingsRead", 0, JSON.stringify(F.settings("used")))
     settle()
     compare(popup.view, "settings")
     tryVerify(function () { return currentName() === "Back to usage" }, 1000,
-              "s opens Settings on Back, not on " + currentName())
-
-    keyClick(Qt.Key_S)
-    settle()
-    compare(popup.view, "usage")
-    tryVerify(function () { return headOf("grok").activeFocus }, 1000,
-              "Back lands on the selected row, not on " + currentName())
-
-    var fc = one(popup, "focusController")
-    var live = fc.liveTargets()
-    verify(fc.focusItem(live[live.length - 1]))
-    compare(currentName(), "Settings")
+              "the footer opens Settings on Back, not on " + currentName())
     keyClick(Qt.Key_Return)
     settle()
+    compare(popup.view, "usage")
+    compare(one(popup, "focusController").current, null, "Back focuses no control")
+    keyClick(Qt.Key_Escape)
+    settle()
+    compare(popup.isOpen, false, "Esc still reaches the popup after Back")
+  }
+
+  function centerY(item) {
+    return item.mapToItem(one(popup, "popupBody"), 0, item.height / 2).y
+  }
+
+  // Compact layout: icon, name and plan read on one header line, with the
+  // short state note and the actions on the right of that same line.
+  function test_header_puts_name_and_plan_on_one_line() {
+    openRealPopup()
+    var list = rows()
+    var withPlan = 0
+    for (var r = 0; r < list.length; r++) {
+      var name = one(list[r], "rowName")
+      var plan = one(list[r], "rowPlan")
+      if (!visibleIn(plan, popup))
+        continue
+      withPlan++
+      verify(Math.abs(centerY(plan) - centerY(name)) <= 2,
+             list[r].row.id + ": the plan sits on the name's line, not under it")
+      verify(leftOf(plan) > rightOf(name), list[r].row.id + ": the plan follows the name")
+    }
+    verify(withPlan > 0, "the fixture shows at least one plan")
+    cleanup()
+    openRealPopup(F.problems(), "used", "claude")
+    var codex = rowById("codex")
+    var install = buttonIn("codex", "Install guide")
+    verify(Math.abs(centerY(install) - centerY(one(codex, "rowName"))) <= 2,
+           "the actions share the header line")
+    compare(rightOf(buttonIn("codex", "Check again")),
+            one(popup, "popupBody").width - Style.spacing.popupPadding,
+            "the last action ends on the content edge")
+    var note = one(codex, "groupNote")
+    verify(visibleIn(note, popup))
+    verify(Math.abs(centerY(note) - centerY(one(codex, "rowName"))) <= 2, "the note shares the header line")
+    verify(rightOf(note) <= leftOf(install), "the note sits left of the actions")
+    compare(shown(popup, "sideColumn").length, 0, "no side column")
+  }
+
+  // Each window is one line: label, bar, percentage and reset, in columns
+  // shared by every group so the bars line up across the popup.
+  function test_each_window_is_one_line_with_shared_columns() {
+    openRealPopup()
+    var lines = shown(popup, "windowLine")
+    compare(lines.length, 10)
+    var meters = shown(popup, "windowMeter")
+    var numbers = shown(popup, "windowPercent")
+    var labels = shown(popup, "windowLabel")
+    var resets = shown(popup, "windowReset")
+    compare(meters.length, 10)
+    var edge = one(popup, "popupBody").width - Style.spacing.popupPadding
+    for (var i = 0; i < meters.length; i++) {
+      var mid = centerY(meters[i])
+      verify(Math.abs(centerY(labels[i]) - mid) <= 2, "label " + i + " shares its bar's line")
+      verify(Math.abs(centerY(numbers[i]) - mid) <= 2, "percentage " + i + " shares its bar's line")
+      verify(Math.abs(centerY(resets[i]) - mid) <= 2, "reset " + i + " shares its bar's line")
+      compare(leftOf(labels[i]), Style.spacing.popupPadding, "label " + i + " starts on the inset")
+      compare(labels[i].width, labels[0].width, "label " + i + " sits in the shared column")
+      compare(leftOf(meters[i]), leftOf(meters[0]), "bar " + i + " starts with the others")
+      compare(meters[i].width, meters[0].width, "bar " + i + " keeps the shared width")
+      verify(leftOf(meters[i]) >= rightOf(labels[i]), "bar " + i + " starts after its label")
+      compare(rightOf(numbers[i]), rightOf(numbers[0]), "percentage " + i + " ends with the others")
+      verify(leftOf(numbers[i]) >= rightOf(meters[i]), "percentage " + i + " follows its bar")
+      compare(rightOf(resets[i]), edge, "reset " + i + " ends on the content edge")
+      verify(leftOf(resets[i]) >= rightOf(numbers[i]), "reset " + i + " follows its percentage")
+      verify(!labels[i].truncated, labels[i].text + " is not cut")
+    }
+  }
+
+  function test_footer_has_buttons_not_keycaps() {
+    openRealPopup()
+    var footer = one(popup, "popupFooter")
+    var texts = visibleTexts(footer)
+    compare(texts.filter(function (t) { return t === "↑↓" || t === "r" || t === "s" }).length, 0,
+            "no keycap: " + JSON.stringify(texts))
+    compare(texts.filter(function (t) { return /provider|refresh ·|settings$/.test(t) }).length, 0,
+            "no key hint label: " + JSON.stringify(texts))
+    compare(one(footer, "footerStatus").text, "Updated 1m ago · % used")
+    var refresh = ViewHarness.buttonsWithText(footer, ["Refresh"])
+    var settings = ViewHarness.buttonsWithText(footer, ["Settings"])
+    compare(refresh.length, 1, "one Refresh button")
+    compare(settings.length, 1, "one Settings button")
+    verify(leftOf(refresh[0]) < leftOf(settings[0]), "Refresh comes before Settings")
+    verify(leftOf(refresh[0]) > rightOf(one(footer, "footerStatus")), "the buttons sit right of the status")
+    compare(refresh[0].iconText, Tokens.GLYPH_REFRESH)
+    compare(settings[0].iconText, Tokens.GLYPH_SETTINGS)
+    compare(refresh[0].color.a, 0, "Refresh is text alone")
+    verify(settings[0].color.a > 0, "Settings is tonal")
+    mouseClick(refresh[0])
+    tryCompare(service, "refreshing", true, 1000)
+    compare(one(footer, "footerStatus").text, "Refreshing… · % used")
+    compare(service.pendingForcedTargets.all === true
+            || String(service.lanes.status.process.command).indexOf("provider") < 0, true,
+            "Refresh forces every provider")
+    mouseClick(settings[0])
+    settle()
     compare(popup.view, "settings")
-    tryVerify(function () { return currentName() === "Back to usage" }, 1000,
-              "the footer opens Settings on Back, not on " + currentName())
+  }
+
+  // What a group draws: every shown item, its fill and its outline.
+  function drawn(root) {
+    return ViewHarness.findAll(root, function (item) { return visibleIn(item, popup) })
+        .map(function (item) {
+          return item.objectName + "|" + (item.color === undefined ? "" : String(item.color))
+              + "|" + (item.border === undefined ? "" : String(item.border.color) + "/" + item.border.width)
+        })
+  }
+
+  function test_clicking_a_group_neither_selects_nor_outlines_it() {
+    openRealPopup(F.problems(), "used", "claude")
+    var grok = rowById("grok")
+    var before = drawn(grok)
+    mouseClick(one(grok, "rowName"))
+    settle()
+    compare(JSON.stringify(drawn(grok)), JSON.stringify(before), "a click changes nothing in the group")
+    compare(String(one(rowById("claude"), "rowPlate").color), String(one(grok, "rowPlate").color),
+            "every group rests on one slab")
+    compare(byName(popup, "rowFocusRing").length + byName(popup, "rowHead").length, 0,
+            "a group is no focus stop")
+    compare(service.pendingForcedTargets.ids["grok"] === true, false, "a click runs no action")
+    compare(popup.selectedId, undefined, "the popup keeps no selection")
+  }
+
+  function test_arrows_enter_and_letters_do_nothing_and_escape_closes() {
+    openRealPopup()
+    var fc = one(popup, "focusController")
+    settle()
+    compare(fc.current, null, "opening focuses no control")
+    var keys = [Qt.Key_Down, Qt.Key_Up, Qt.Key_J, Qt.Key_K, Qt.Key_Return, Qt.Key_Enter,
+                Qt.Key_Space, Qt.Key_R, Qt.Key_S]
+    for (var k = 0; k < keys.length; k++) {
+      keyClick(keys[k])
+      settle()
+      compare(popup.view, "usage", "key " + keys[k] + " keeps the usage view")
+      verify(!service.resetUi || !service.resetUi.confirmOpen, "key " + keys[k] + " asks no reset")
+      compare(service.refreshing, false, "key " + keys[k] + " starts no refresh")
+      compare(fc.current, null, "key " + keys[k] + " moves no focus")
+    }
+    keyClick(Qt.Key_Tab)
+    settle()
+    compare(currentName(), "Use reset", "Tab reaches the first button")
+    keyClick(Qt.Key_Escape)
+    settle()
+    compare(popup.isOpen, false, "Esc closes the popup")
   }
 }
