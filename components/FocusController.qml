@@ -9,6 +9,8 @@ Item {
   property var flickable: null
   property int lineHeight: 18
   property bool focusBlocked: false
+  // Off, a fresh target list focuses nothing until the first Tab.
+  property bool autoFocusFirst: true
 
   readonly property int count: targets && targets.length ? targets.length : 0
   readonly property var current: {
@@ -75,7 +77,7 @@ Item {
     if (preservedIndex >= 0)
       index = preservedIndex
     else if (index < 0 || index >= count)
-      index = 0
+      index = autoFocusFirst ? 0 : -1
     if (!focusBlocked)
       focusCurrent()
   }

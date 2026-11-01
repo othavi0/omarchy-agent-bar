@@ -207,7 +207,7 @@ TestCase {
       verify(src.indexOf("errorMessage") < 0, files[i])
       verify(src.indexOf('+ " ago"') < 0, files[i])
     }
-    verify(read("components/ProviderRow.qml").indexOf("root.row.notes") >= 0)
+    verify(read("components/ProviderRow.qml").indexOf("root.row.note") >= 0)
   }
 
   function test_stale_windows_are_not_dimmed() {
@@ -229,6 +229,7 @@ TestCase {
       "components/UsageMeter.qml",
       "components/ProviderIcon.qml",
       "components/PopupFooter.qml",
+      "components/ActionButton.qml",
       "components/SettingsHeader.qml",
       "components/StateMessage.qml",
       "components/RestartBanner.qml"
@@ -326,6 +327,7 @@ TestCase {
       "components/UsageMeter.qml",
       "components/ProviderIcon.qml",
       "components/PopupFooter.qml",
+      "components/ActionButton.qml",
       "components/SettingsHeader.qml",
       "components/SettingsProviderRow.qml",
       "components/SettingsFooter.qml",
@@ -471,12 +473,11 @@ TestCase {
     verify(Service.validateProvider(withMalformed) !== null)
   }
 
-  // Every group action comes from one model list: the left column draws it
-  // and Enter fires its first entry. No per-provider Refresh survives.
+  // Every group action comes from one model list the header draws as
+  // buttons. No per-provider Refresh survives.
   function test_group_actions_come_from_one_model() {
     var row = read("components/ProviderRow.qml")
     verify(row.indexOf("root.row.actions") >= 0)
-    verify(row.indexOf("Core.primaryAction(root.actions)") >= 0)
     verify(row.indexOf("refreshButton") < 0)
     verify(row.indexOf("useResetButton") < 0)
     var popup = read("Popup.qml")
@@ -513,7 +514,22 @@ TestCase {
              "unguarded rebuildFocusTargets() at offset " + m.index)
     }
     verify(src.indexOf("function scheduleFocusRebuild()") >= 0)
-    compare(src.split("Qt.callLater(").length - 1, 2,
-            "only scheduleFocusRebuild and onSelectedIdChanged defer")
+    compare(src.split("Qt.callLater(").length - 1, 1, "only scheduleFocusRebuild defers")
+  }
+
+  // The popup keeps no selected group and no letter or arrow shortcuts: a
+  // group is no focus stop, only its buttons are.
+  function test_selection_and_shortcuts_are_gone() {
+    var files = popupSourceFiles().concat(["CoreView.js", "CoreScroll.js", "components/Tokens.js"])
+    var dead = ["primaryAction", "selectedId", "selectRequested", "stepProvider", "handleTextKey",
+                "routePanelTextKey", "routeProviderDelta", "panelShortcutsBlocked", "rowHead",
+                "rowFocusRing", "rowHover", "sideColumn", "GROUP_SELECTED", "SIDE_COLUMN_PX",
+                "pendingRowFocus", "hints"]
+    for (var i = 0; i < files.length; i++) {
+      var source = read(files[i])
+      verify(source.length > 0, files[i] + " exists")
+      for (var d = 0; d < dead.length; d++)
+        verify(source.indexOf(dead[d]) < 0, files[i] + " still references " + dead[d])
+    }
   }
 }

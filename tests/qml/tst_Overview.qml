@@ -18,10 +18,8 @@ TestCase {
     return out
   }
 
-  function model(env, metric, selection, uiExtra) {
-    return Core.overviewModel(env, F.settings(metric), F.FIXED_NOW,
-                              selection || { id: "claude" },
-                              ui(uiExtra))
+  function model(env, metric, uiExtra) {
+    return Core.overviewModel(env, F.settings(metric), F.FIXED_NOW, ui(uiExtra))
   }
 
   function rowOf(m, id) {
@@ -47,7 +45,7 @@ TestCase {
   }
 
   function actionIds(row) {
-    return row.actions.map(function (a) { return a.id + (a.primary ? "*" : "") + (a.enabled ? "" : "-") })
+    return row.actions.map(function (a) { return a.id + (a.enabled ? "" : "-") })
   }
 
   function test_overview_shape_has_no_headline() {
@@ -58,7 +56,7 @@ TestCase {
       for (var m = 0; m < metrics.length; m++) {
         var om = model(fixtures[f], metrics[m])
         compare(JSON.stringify(Object.keys(om).sort()),
-                JSON.stringify(["metric", "rows", "selectedId", "unitText", "updatedText"]),
+                JSON.stringify(["metric", "rows", "statusText"]),
                 "fixture " + f + " " + metrics[m] + " carries no headline")
         compare(/tightest/i.test(JSON.stringify(om)), false,
                 "fixture " + f + " " + metrics[m] + " names no tightest window")
@@ -77,7 +75,8 @@ TestCase {
     compare(rowOf(m, "antigravity").windows.length, 4)
     var fixtures = [F.normal(), F.critical(), F.stale(), F.early(), F.full()]
     var dead = ["open", "openable", "primary", "valueText", "unitText", "subText", "tickDescription",
-                "refreshLabel", "useReset", "resets", "alert", "statusGlyph", "updatedText"]
+                "refreshLabel", "useReset", "resets", "alert", "statusGlyph", "updatedText",
+                "selected", "notes"]
     for (var f = 0; f < fixtures.length; f++) {
       var rows = model(fixtures[f], "used").rows
       for (var r = 0; r < rows.length; r++) {
@@ -139,7 +138,7 @@ TestCase {
     compare(codex.state, "stale")
     compare(codex.windows.length, 2)
     compare(codex.windows[0].critical, true)
-    compare(codex.notes, ["Updated 14m ago"])
+    compare(codex.note, "Updated 14m ago")
     compare(codex.detail, "")
     compare(codex.dimIcon, false)
     compare(JSON.stringify(codex).indexOf("Offline"), -1)
@@ -150,29 +149,29 @@ TestCase {
     var codex = rowOf(m, "codex")
     compare(codex.kind, "status")
     compare(codex.windows, [])
-    compare(codex.notes, ["Not installed"])
+    compare(codex.note, "Not installed")
     compare(codex.detail, "Codex CLI was not found.")
-    compare(actionIds(codex), ["view_installation*", "retry"])
+    compare(actionIds(codex), ["view_installation", "retry"])
     compare(codex.actions[0].label, "Install guide")
     compare(codex.actions[1].label, "Check again")
     compare(codex.dimIcon, true)
     compare(codex.accessibleName, "Codex, Not installed")
 
     var claude = rowOf(m, "claude")
-    compare(claude.notes, ["Signed out"])
+    compare(claude.note, "Signed out")
     compare(claude.detail, "Signing in opens the official Claude CLI.")
-    compare(actionIds(claude), ["login*"])
+    compare(actionIds(claude), ["login"])
     compare(claude.actions[0].label, "Sign in")
 
     var grok = rowOf(m, "grok")
-    compare(grok.notes, ["Rate limited"])
-    compare(actionIds(grok), ["retry*"])
-    compare(rowOf(m, "antigravity").notes, ["Offline"])
-    compare(rowOf(model(F.providerError(), "used"), "claude").notes, ["Failed"])
+    compare(grok.note, "Rate limited")
+    compare(actionIds(grok), ["retry"])
+    compare(rowOf(m, "antigravity").note, "Offline")
+    compare(rowOf(model(F.providerError(), "used"), "claude").note, "Failed")
 
     var none = rowOf(model(F.nopct(), "used"), "claude")
     compare(none.kind, "status")
-    compare(none.notes, ["No percentage"])
+    compare(none.note, "No percentage")
     compare(none.detail, Core.emptyWindowsMessage())
     compare(none.windows, [])
     compare(none.actions, [])
@@ -180,47 +179,32 @@ TestCase {
   }
 
   function test_loading_group() {
-    var m = model(null, "used", { id: "claude" })
+    var m = model(null, "used")
     compare(m.rows.length, 4)
     var claude = rowOf(m, "claude")
     compare(claude.kind, "loading")
-    compare(claude.notes, ["Loading"])
+    compare(claude.note, "Loading")
     compare(claude.windows, [])
     compare(claude.actions, [])
-    compare(claude.selected, true)
     compare(claude.accessibleName, "Claude, Loading")
-    compare(m.selectedId, "claude")
-    compare(m.updatedText, "")
+    compare(m.statusText, "% used", "no reading, no Updated line")
   }
 
-  function test_selection_marks_one_group() {
-    var m = model(F.normal(), "used", { id: "codex" })
-    compare(m.selectedId, "codex")
-    compare(m.rows.map(function (r) { return r.selected }), [false, true, false, false])
-    compare(model(F.normal(), "used", { id: "zzz" }).selectedId, "claude")
-    var nothing = Core.overviewModel(F.normal(), { providers: [] }, F.FIXED_NOW, { id: "claude" }, ui())
-    compare(nothing.rows.length, 0)
-    compare(nothing.selectedId, "")
-  }
-
-  // One list per provider feeds both the left column and Enter.
-  function test_actions_for_lists_real_actions_with_one_primary() {
+  // One list per provider feeds the group header's buttons.
+  function test_actions_for_lists_real_actions() {
     var claude = rowOf(model(F.normal(), "used"), "claude")
-    compare(actionIds(claude), ["use_reset*"])
+    compare(actionIds(claude), ["use_reset"])
     compare(claude.actions[0].label, "Use reset")
     compare(claude.actions[0].target, "spring")
-    compare(Core.primaryAction(claude.actions).kind, "use_reset")
     compare(rowOf(model(F.normal(), "used"), "codex").actions, [])
-    compare(Core.primaryAction([]), null)
 
     var spent = F.normal()
     spent.providers[0].resets[0].claimable = false
     var locked = rowOf(model(spent, "used"), "claude")
-    compare(actionIds(locked), ["use_reset*-"])
-    compare(Core.primaryAction(locked.actions), null, "Enter does nothing on a disabled primary")
+    compare(actionIds(locked), ["use_reset-"])
 
-    var busy = rowOf(model(F.normal(), "used", null, { resetBusy: true }), "claude")
-    compare(actionIds(busy), ["use_reset*-"])
+    var busy = rowOf(model(F.normal(), "used", { resetBusy: true }), "claude")
+    compare(actionIds(busy), ["use_reset-"])
     compare(busy.actions[0].label, "Using reset…")
 
     var gone = F.normal()
@@ -232,8 +216,7 @@ TestCase {
     for (var f = 0; f < fixtures.length; f++) {
       var rows = model(fixtures[f], "used").rows
       for (var r = 0; r < rows.length; r++) {
-        var primaries = rows[r].actions.filter(function (a) { return a.primary })
-        compare(primaries.length, rows[r].actions.length ? 1 : 0, rows[r].id + " has one primary")
+        verify(!("primary" in (rows[r].actions[0] || {})), rows[r].id + " ranks no action first")
         for (var a = 0; a < rows[r].actions.length; a++)
           kinds[rows[r].actions[a].kind] = true
       }
@@ -244,24 +227,24 @@ TestCase {
 
   function test_reset_notes_and_outcome() {
     var dateText = "until " + Qt.formatDate(new Date(Date.parse(F.at(2 * 1440))), "MM/dd/yyyy")
-    compare(rowOf(model(F.normal(), "used"), "claude").notes, ["1 reset left", dateText])
-    var settled = model(F.normal(), "used", null,
+    compare(rowOf(model(F.normal(), "used"), "claude").note, "1 reset left · " + dateText)
+    var settled = model(F.normal(), "used",
                         { resetUi: { providerId: "claude", outcome: { result: "reset" } } })
-    compare(rowOf(settled, "claude").notes, ["1 reset left", dateText, "Reset applied."])
-    compare(rowOf(settled, "codex").notes, [])
+    compare(rowOf(settled, "claude").note, "1 reset left · " + dateText + " · Reset applied.")
+    compare(rowOf(settled, "codex").note, "")
   }
 
-  // The footer shows the unit once and one "Updated" line: the oldest live
-  // reading, or the refresh in flight.
-  function test_footer_unit_and_updated_line() {
-    compare(model(F.normal(), "used").unitText, "% used")
-    compare(model(F.normal(), "remaining").unitText, "% left")
-    compare(model(F.normal(), "used").updatedText, "Updated 1m ago")
+  // The footer status: one "Updated" phrase for the oldest live reading, or
+  // the refresh in flight, then the unit every percentage shares.
+  function test_footer_status_text() {
+    compare(model(F.normal(), "used").statusText, "Updated 1m ago · % used")
+    compare(model(F.normal(), "remaining").statusText, "Updated 1m ago · % left")
     var mixed = F.normal()
     mixed.providers[1].lastSuccessAt = F.at(-42)
-    compare(model(mixed, "used").updatedText, "Updated 42m ago", "the oldest ready reading wins")
-    compare(model(F.stale(), "used").updatedText, "Updated 1m ago", "a stale group keeps its own age")
-    compare(model(F.problems(), "used").updatedText, "")
-    compare(model(F.normal(), "used", null, { refreshing: true }).updatedText, "Refreshing…")
+    compare(model(mixed, "used").statusText, "Updated 42m ago · % used", "the oldest ready reading wins")
+    compare(model(F.stale(), "used").statusText, "Updated 1m ago · % used", "a stale group keeps its own age")
+    compare(model(F.problems(), "used").statusText, "% used")
+    compare(model(F.normal(), "used", { refreshing: true }).statusText, "Refreshing… · % used")
   }
+
 }

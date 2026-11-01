@@ -63,45 +63,6 @@ function scrollEndY(contentHeight, viewportHeight) {
   return maxContentY(contentHeight, viewportHeight)
 }
 
-function panelShortcutsBlocked(editorActive) {
-  return !!editorActive
-}
-
-function routePanelTextKey(key, editorActive, view) {
-  if (panelShortcutsBlocked(editorActive))
-    return { action: "noop" }
-  var k = String(key || "")
-  if (k === "s" || k === "S")
-    return { action: view === "settings" ? "backToUsage" : "openSettings" }
-  if (k === "r" || k === "R")
-    return { action: "refresh" }
-  if (k === "j" || k === "J")
-    return { action: "providerDelta", delta: 1 }
-  if (k === "k" || k === "K")
-    return { action: "providerDelta", delta: -1 }
-  return { action: "noop" }
-}
-
-function routeProviderDelta(providerIds, selectedId, delta) {
-  if (!Array.isArray(providerIds) || providerIds.length === 0)
-    return null
-  var ids = []
-  for (var i = 0; i < providerIds.length; i++)
-    ids.push(String(providerIds[i]))
-  var cur = -1
-  var want = String(selectedId || "")
-  for (var j = 0; j < ids.length; j++) {
-    if (ids[j] === want) {
-      cur = j
-      break
-    }
-  }
-  var next = focusNextIndex(cur, delta, ids.length)
-  if (next < 0)
-    return null
-  return ids[next]
-}
-
 function contentYForItem(contentY, viewportHeight, contentHeight, itemY, itemHeight) {
   var y = Number(itemY)
   var h = Math.max(0, Number(itemHeight))

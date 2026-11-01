@@ -38,37 +38,6 @@ TestCase {
     }
   }
 
-  function test_provider_jk_and_arrows_delta() {
-    var ids = ["claude", "codex", "grok", "antigravity"]
-    compare(Core.routeProviderDelta(ids, "claude", 1), "codex")
-    compare(Core.routeProviderDelta(ids, "antigravity", 1), "claude")
-    compare(Core.routeProviderDelta(ids, "claude", -1), "antigravity")
-    compare(Core.routeProviderDelta(ids, "codex", -1), "claude")
-  }
-
-  function test_text_keys_s_r_jk() {
-    compare(Core.routePanelTextKey("s", false).action, "openSettings")
-    compare(Core.routePanelTextKey("r", false).action, "refresh")
-    compare(Core.routePanelTextKey("j", false).delta, 1)
-    compare(Core.routePanelTextKey("k", false).delta, -1)
-  }
-
-  function test_route_s_in_settings() {
-    compare(Core.routePanelTextKey("s", false, "settings").action, "backToUsage")
-    compare(Core.routePanelTextKey("S", false, "settings").action, "backToUsage")
-    compare(Core.routePanelTextKey("s", false, "usage").action, "openSettings")
-    compare(Core.routePanelTextKey("s", false).action, "openSettings")
-    compare(Core.routePanelTextKey("s", true, "settings").action, "noop")
-    compare(Core.routePanelTextKey("r", false, "settings").action, "refresh")
-  }
-
-  function test_editor_suppresses_shortcuts() {
-    compare(Core.panelShortcutsBlocked(true), true)
-    compare(Core.routePanelTextKey("s", true).action, "noop")
-    compare(Core.routePanelTextKey("r", true).action, "noop")
-    compare(Core.routePanelTextKey("j", true).action, "noop")
-  }
-
   function test_focus_cycles() {
     compare(Core.focusNextIndex(0, 1, 4), 1)
     compare(Core.focusNextIndex(3, 1, 4), 0)
@@ -85,14 +54,11 @@ TestCase {
     verify(src.indexOf("onTabRequested") >= 0)
     verify(src.indexOf("onActivateRequested") >= 0)
     verify(src.indexOf("onCloseRequested") >= 0)
-    verify(src.indexOf("onMoveRequested") >= 0)
-    verify(src.indexOf("onTextKey") >= 0)
+    compare(src.indexOf("onMoveRequested"), -1, "arrows move nothing")
+    compare(src.indexOf("onTextKey"), -1, "letters are no shortcuts")
     verify(src.indexOf("editorActive") >= 0 || src.indexOf("blocked:") >= 0)
     verify(src.indexOf("PgDown") >= 0 || src.indexOf("Page Down") >= 0)
     verify(src.indexOf("scrollHome") >= 0 || src.indexOf("Home") >= 0)
-    verify(src.indexOf("Scroll.routePanelTextKey(text, keyCatcher.blocked, root.view)") >= 0,
-           "the popup routes keys with its view so s returns from Settings")
-    verify(src.indexOf('route.action === "backToUsage"') >= 0)
     verify(src.indexOf("function backToUsage()") >= 0)
   }
 
@@ -134,6 +100,19 @@ TestCase {
 
     compare(controller.index, 2)
     compare(controller.current, current)
+  }
+
+  function test_focus_controller_waits_for_tab_without_auto_focus() {
+    var controller = createTemporaryObject(focusControllerComponent, testCase)
+    var first = createTemporaryObject(focusTargetComponent, testCase)
+    var second = createTemporaryObject(focusTargetComponent, testCase)
+    verify(controller && first && second)
+
+    controller.autoFocusFirst = false
+    controller.setTargets([first, second])
+    compare(controller.index, -1)
+    compare(controller.current, null)
+    verify(!first.activeFocus, "no target takes focus before the first Tab")
   }
 
   function test_focus_controller_does_not_refocus_while_editor_active() {

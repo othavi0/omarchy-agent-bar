@@ -41,6 +41,7 @@ TestCase {
       "components/UsageMeter.qml",
       "components/ProviderIcon.qml",
       "components/PopupFooter.qml",
+      "components/ActionButton.qml",
       "components/SettingsHeader.qml"
     ]
   }
@@ -54,18 +55,19 @@ TestCase {
   function test_tokens_values() {
     var alphas = {
       TEXT_SECONDARY: 0.72, TEXT_TERTIARY: 0.55, TRACK: 0.12, DIMMED: 0.45,
-      LOCKED: 0.55, URGENT_RULE: 0.55, SIDE_COLUMN_PX: 118,
+      LOCKED: 0.55, URGENT_RULE: 0.55,
       PRIMARY_REST: 0.16, MIN_TEXT_CONTRAST: 4.5
     }
     for (var k in alphas)
       compare(Tokens[k], alphas[k], k)
     var gone = ["THIN_FILL", "TICK_MIN_ELAPSED", "ROW_ICON_SCALE", "NAME_COLUMN_EMS",
                 "VALUE_COLUMN_EMS", "LABEL_COLUMN_MAX_SHARE", "CHEVRON_OPEN_DEGREES",
-                "GLYPH_CHEVRON", "WELL_LIFT", "WELL_SINK", "DRAWER_RULE", "HEAD_OPEN"]
+                "GLYPH_CHEVRON", "WELL_LIFT", "WELL_SINK", "DRAWER_RULE", "HEAD_OPEN",
+                "SIDE_COLUMN_PX", "GROUP_SELECTED"]
     for (var d = 0; d < gone.length; d++)
       compare(Tokens[gone[d]], undefined, gone[d] + " left with the accordion and the tick")
     var glyphs = {
-      GLYPH_ALERT: 0xF0026, GLYPH_SETTINGS: 0xF0493, GLYPH_BACK: 0xF0141,
+      GLYPH_ALERT: 0xF0026, GLYPH_SETTINGS: 0xF0493, GLYPH_REFRESH: 0xF0450, GLYPH_BACK: 0xF0141,
       GLYPH_UP: 0xF0143, GLYPH_DOWN: 0xF0140
     }
     for (var g in glyphs)

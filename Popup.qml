@@ -31,28 +31,7 @@ KeyboardPanel {
       ? agentService.resolvedSettings
       : Service.defaultSettings()
 
-  readonly property var visibleProviders: agentService
-      ? agentService.visibleProviders
-      : Core.visibleProviders(null, resolvedSettings)
-
   property string settingsTab: "providers"
-
-  // The service's pick, which may name a provider Settings has since hidden.
-  // The overview falls back to a shown row, and selectedId follows it.
-  readonly property string requestedId: {
-    if (!agentService)
-      return ""
-    if (agentService.popupOwner && agentService.popupOwner.providerId
-        && String(agentService.popupOwner.providerId).length)
-      return String(agentService.popupOwner.providerId)
-    if (agentService.selectedProviderId && String(agentService.selectedProviderId).length)
-      return String(agentService.selectedProviderId)
-    if (visibleProviders.length)
-      return String(visibleProviders[0].id)
-    return ""
-  }
-
-  readonly property string selectedId: overview.selectedId
 
   readonly property string view: Service.popupView(agentService ? agentService.popupOwner : null)
 
@@ -72,7 +51,6 @@ KeyboardPanel {
     agentService ? agentService.snapshot : null,
     resolvedSettings,
     nowMs,
-    { id: requestedId },
     {
       refreshing: agentService ? !!agentService.refreshing : false,
       resetUi: resetUi,
@@ -103,8 +81,6 @@ KeyboardPanel {
       + contentFlick.contentHeight
       + footerArea.implicitHeight
 
-  property bool pendingRowFocus: false
-
   open: isOpen
   padding: 0
   contentWidth: maxContentWidth
@@ -124,12 +100,6 @@ KeyboardPanel {
       root.open = false
   }
 
-  function selectProvider(providerId) {
-    if (!agentService)
-      return
-    agentService.requestPopup(owner, providerId, "usage")
-  }
-
   function openSettings() {
     if (!agentService)
       return
@@ -140,18 +110,16 @@ KeyboardPanel {
   function backToUsage() {
     if (!agentService)
       return
-    root.pendingRowFocus = true
-    agentService.requestPopup(owner, root.selectedId, "usage")
+    agentService.requestPopup(owner, agentService.selectedProviderId || null, "usage")
     contentFlick.contentY = 0
   }
 
-  function onRefresh(providerId) {
-    if (!agentService)
-      return
-    agentService.refreshProvider(providerId, true)
+  function refreshAll() {
+    if (agentService)
+      agentService.refreshAll(true)
   }
 
-  // One entry point for every group action, from a button or from Enter.
+  // One entry point for every group action button.
   function runAction(providerId, action) {
     if (!agentService || !action || !action.enabled)
       return
@@ -187,48 +155,13 @@ KeyboardPanel {
     return Core.resetConfirmModel(provider, resetConfirmRow)
   }
 
-  function providerIds() {
-    var ids = []
-    for (var i = 0; i < overview.rows.length; i++)
-      ids.push(overview.rows[i].id)
-    return ids
-  }
-
-  // Up/Down select the next group (A11Y-002, UX-078); the deferred rebuild
-  // in onSelectedIdChanged then moves focus to its head.
-  function stepProvider(delta) {
-    var next = Scroll.routeProviderDelta(providerIds(), root.selectedId, delta)
-    if (!next)
-      return
-    root.pendingRowFocus = true
-    root.selectProvider(next)
-  }
-
-  function handleTextKey(text) {
-    var route = Scroll.routePanelTextKey(text, keyCatcher.blocked, root.view)
-    if (route.action === "openSettings") {
-      root.openSettings()
-      return
-    }
-    if (route.action === "backToUsage") {
-      root.backToUsage()
-      return
-    }
-    if (route.action === "refresh") {
-      if (root.selectedId.length)
-        root.onRefresh(root.selectedId)
-      return
-    }
-    if (route.action === "providerDelta" && root.view !== "settings")
-      root.stepProvider(route.delta)
-  }
-
   FocusController {
     id: focusController
     objectName: "focusController"
     flickable: contentFlick
     lineHeight: root.contentLineHeight
     focusBlocked: root.editorActive
+    autoFocusFirst: root.view === "settings"
   }
 
   function rebuildFocusTargets() {
@@ -247,7 +180,8 @@ KeyboardPanel {
     if (settingsFooter.shown)
       list = list.concat(settingsFooter.collectFocusTargets())
     focusController.setTargets(list)
-    focusPendingRow()
+    if (focusController.index < 0 && !root.editorActive)
+      keyCatcher.forceActiveFocus()
     if (root.view === "settings" && contentLoader.item
         && typeof contentLoader.item.anchoredFocusTarget === "function") {
       var anchored = contentLoader.item.anchoredFocusTarget()
@@ -267,8 +201,7 @@ KeyboardPanel {
   }
 
   // The old view's targets are gone, so its index means nothing here: the
-  // rebuild starts on the first target (Back in Settings) unless a row
-  // focus is pending.
+  // rebuild starts on Back in Settings and on no control in the usage view.
   onViewChanged: {
     if (contentFlick)
       contentFlick.contentY = 0
@@ -276,38 +209,13 @@ KeyboardPanel {
     scheduleFocusRebuild()
   }
   onFocusShapeChanged: scheduleFocusRebuild()
-  // A new selection, a step or a fallback from a hidden provider alike,
-  // takes focus to its head.
-  onSelectedIdChanged: {
-    root.pendingRowFocus = true
-    Qt.callLater(function () {
-      if (focusController && typeof focusController.clampScroll === "function")
-        focusController.clampScroll()
-      if (typeof root.rebuildFocusTargets === "function")
-        root.rebuildFocusTargets()
-    })
-  }
-
-  // After a keyboard step or an open, focus lands on the selected row's head
-  // rather than on the first target.
-  function focusPendingRow() {
-    if (!pendingRowFocus || view === "settings" || !contentLoader.item
-        || typeof contentLoader.item.rowHead !== "function")
-      return
-    if (!contentLoader.item.builtCount)
-      return
-    pendingRowFocus = false
-    var head = contentLoader.item.rowHead(selectedId)
-    if (head)
-      focusController.focusItem(head)
-  }
   onAgentServiceChanged: scheduleFocusRebuild()
   onIsOpenChanged: {
     if (!isOpen)
       return
     root.nowMs = Date.now()
     contentFlick.contentY = 0
-    root.pendingRowFocus = true
+    focusController.index = -1
     scheduleFocusRebuild()
     settingsTab = agentService && (agentService.updateRunning || agentService.restartPending)
         ? "about" : "providers"
@@ -320,17 +228,10 @@ KeyboardPanel {
     blocked: root.editorActive
 
     onCloseRequested: root.close()
-    onMoveRequested: function (dx, dy) {
-      if (dy !== 0 && root.view !== "settings")
-        root.stepProvider(dy)
-    }
     onTabRequested: function (direction) {
       focusController.move(direction)
     }
     onActivateRequested: focusController.activate()
-    onTextKey: function (text) {
-      root.handleTextKey(text)
-    }
 
     // A11Y-023: page/home/end. Nested under an Item (not KeyboardPanel default
     // contentItem) because Shortcut is not a QQuickItem and live Quattro rejects
@@ -521,10 +422,10 @@ KeyboardPanel {
           width: parent.width
           visible: root.view !== "settings"
           innerRadius: root.innerRadius
-          updatedText: root.overview.updatedText
-          unitText: root.overview.unitText
+          statusText: root.overview.statusText
           foreground: Commons.Color.foreground
           fontFamily: Style.font.family
+          onRefreshRequested: root.refreshAll()
           onSettingsRequested: root.openSettings()
         }
 
@@ -564,7 +465,6 @@ KeyboardPanel {
       topRadius: stalledMessage.visible || restartBanner.visible ? 0 : root.innerRadius
       foreground: Commons.Color.foreground
       fontFamily: Style.font.family
-      onSelectRequested: function (id) { root.selectProvider(id) }
       onActionRequested: function (id, action) { root.runAction(id, action) }
     }
   }

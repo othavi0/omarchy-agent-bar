@@ -131,7 +131,6 @@ TestCase {
   function test_overview_row_name_and_plan() {
     var env = { providers: [firstProvider("ready.json")] }
     var row = Core.overviewModel(env, null, Date.parse("2026-07-28T15:00:00Z"),
-                                 { id: "" },
                                  { refreshing: true, resetUi: null, resetBusy: false,
                                    dateFormat: "", timeFormat: "" }).rows[0]
     verify(row.name.length > 0)
@@ -152,15 +151,6 @@ TestCase {
     verify(Core.containsMoneyCopy("BRL 10"))
     verify(Core.containsMoneyCopy("remaining credits"))
     verify(!Core.containsMoneyCopy("Claude remaining 58%"))
-  }
-
-  function test_overview_selection_falls_back_to_the_first_row() {
-    var env = loadFixture("valid-multi-provider.json")
-    var ui = { refreshing: false, resetUi: null, resetBusy: false, dateFormat: "", timeFormat: "" }
-    var picked = Core.overviewModel(env, null, Date.now(), { id: "codex" }, ui)
-    compare(picked.selectedId, "codex")
-    var first = Core.overviewModel(env, null, Date.now(), { id: "" }, ui)
-    compare(first.selectedId, "claude")
   }
 
   function test_dispatch_action_kind_mapping() {

@@ -106,9 +106,9 @@ function grokReady() {
 function antigravityReady() {
   return provider("antigravity", "Antigravity", "ready", [
     win("gemini-5h", "Gemini · 5h", 0, 300, null),
-    win("gemini-weekly", "Gemini · weekly", 0, 10080, null),
-    win("3p-5h", "Claude and GPT · 5h", 0, 300, null),
-    win("3p-weekly", "Claude and GPT · weekly", 0, 10080, null)
+    win("gemini-weekly", "Gemini · 7d", 0, 10080, null),
+    win("3p-5h", "Claude/GPT · 5h", 0, 300, null),
+    win("3p-weekly", "Claude/GPT · 7d", 0, 10080, null)
   ])
 }
 
