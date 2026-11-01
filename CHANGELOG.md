@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [11.0.6] - 2026-11-01
+
+### Changed
+
+- docs: record the popup compact cleanup
+- feat(popup): compact groups and footer buttons
+- fix(providers): drop the (7d) suffix from labels
+
 ## [11.0.5] - 2026-10-31
 
 ### Changed

@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
   "pluginId": "othavi0.agent-bar",
-  "version": "11.0.5",
+  "version": "11.0.6",
   "target": "x86_64-unknown-linux-gnu",
   "omarchyContract": 1,
   "minimumQuickshellVersion": "0.3.0",
-  "sourceCommit": "4438a5f3ef5520cfc8c8fc7d59c375c12543e7e1",
-  "buildRun": "https://github.com/othavi0/omarchy-agent-bar/actions/runs/41254042031",
+  "sourceCommit": "c63bf385896bfc7a31579bd147b537e5f9132ba9",
+  "buildRun": "https://github.com/othavi0/omarchy-agent-bar/actions/runs/41258928710",
   "files": [
     {
       "path": "BarWidget.qml",
@@ -22,8 +22,8 @@
     },
     {
       "path": "CoreScroll.js",
-      "sha256": "901381a7f6787d7af04dff970136d08c1e17db01b4f695d72cdca705d4199505",
-      "size": 3409,
+      "sha256": "651cdde0b6d9f5430ba19a1b0f909e426db156cf48aba0bf358e571b40bc8b50",
+      "size": 2318,
       "mode": "0644"
     },
     {
@@ -40,8 +40,8 @@
     },
     {
       "path": "CoreView.js",
-      "sha256": "ac712f776cd7f7e555499f3b972a2bbfd03e4e42f5ddced6a8d944df4db4d657",
-      "size": 27125,
+      "sha256": "8043ed5dbd39af173c8d6e50aef952aeff0bab8547e6b74f59cb8e65ac5a90ea",
+      "size": 26660,
       "mode": "0644"
     },
     {
@@ -58,14 +58,14 @@
     },
     {
       "path": "Popup.qml",
-      "sha256": "48ab70e8e8ac0570232e621d0e3c061c472c705dca00b5dd82520701fe855f89",
-      "size": 19836,
+      "sha256": "f73bcb4cfe5aed0db0cd4b72f934935d6769120f6f25f0449de7f847cbca58b3",
+      "size": 16617,
       "mode": "0644"
     },
     {
       "path": "README.md",
-      "sha256": "57c891e80a3f345629e4867a60786bc33241283c9127876b395e6a6baf676ed6",
-      "size": 3896,
+      "sha256": "748877c1f3edd7f10c591dec10fdd8d64dc6be1ef11655e492f8b03427427740",
+      "size": 3945,
       "mode": "0644"
     },
     {
@@ -82,9 +82,15 @@
     },
     {
       "path": "bin/agent-bar",
-      "sha256": "417fcf5dc8abadfa0b486fe4381890ba7354acb99d9e604032f56d0de891eff7",
-      "size": 3035616,
+      "sha256": "042e895430c243c29b020373c9c6e90e711615988529ed2e45422ab7eabea2e3",
+      "size": 3035488,
       "mode": "0755"
+    },
+    {
+      "path": "components/ActionButton.qml",
+      "sha256": "61126f743918dc0e663e6371f93ead2b934c898a39d31f1ca1c767c279ab9767",
+      "size": 2166,
+      "mode": "0644"
     },
     {
       "path": "components/ConfirmDialog.qml",
@@ -94,8 +100,8 @@
     },
     {
       "path": "components/FocusController.qml",
-      "sha256": "315ec11526be523387c4a48328e7c8662a654c5a287548d7106084330be28c44",
-      "size": 5059,
+      "sha256": "4ae8fe113f186c0d5d904a88705b6ccfdd633df38caa226306ea103a102bef72",
+      "size": 5185,
       "mode": "0644"
     },
     {
@@ -106,14 +112,14 @@
     },
     {
       "path": "components/OverviewList.qml",
-      "sha256": "792ced6742987dba60ff604df340804d29c55f9532e490fe430bc057e397720f",
-      "size": 1913,
+      "sha256": "aae4a89f5d65905a48e2a808f4557307398156578f8e3618bded4b8d475829df",
+      "size": 2936,
       "mode": "0644"
     },
     {
       "path": "components/PopupFooter.qml",
-      "sha256": "e6d17d37b91cebf045b8ce58c55d664b9dbc4d5e4e3e255609b5da6ece361f94",
-      "size": 4589,
+      "sha256": "412b17324c5fc74fcc47952125720d72cee0cbfe3bed16d3aa859c0feb6952aa",
+      "size": 2837,
       "mode": "0644"
     },
     {
@@ -130,8 +136,8 @@
     },
     {
       "path": "components/ProviderRow.qml",
-      "sha256": "995f8182c094a41abf38ac2f5650f218e67c8f1970bd378f2531fa428ffb737a",
-      "size": 13525,
+      "sha256": "5c8cec798cdb5ba984e27145267c37de31ab1d49f038fbaa7bf3df38f4bb3f8b",
+      "size": 10193,
       "mode": "0644"
     },
     {
@@ -172,8 +178,8 @@
     },
     {
       "path": "components/Tokens.js",
-      "sha256": "aa7f5bb5ecdab10700549d93ba51eb4ed25537d647c1f1c3f9a0a5c90b751c12",
-      "size": 2121,
+      "sha256": "3a5ead2ba908462c99a3080e3f77aa4bf67708a4fa06c6fc9c59f17d4c5d8982",
+      "size": 2040,
       "mode": "0644"
     },
     {
@@ -208,7 +214,7 @@
     },
     {
       "path": "manifest.json",
-      "sha256": "5da124ea1f5ebd02d29ca63e5af790626d55d064944856f5aa918dfc1750dd46",
+      "sha256": "60dc6bb23ea894e6f60496f1eef873793b7ce40c9169045ec276f2098e00e3a9",
       "size": 627,
       "mode": "0644"
     },
