@@ -142,6 +142,18 @@ It adds `UX-087` to `UX-089` and `A11Y-027`, supersedes `UX-077` to
 `UX-020D`, `UX-027`, `UX-028`, `UX-083`, `A11Y-002`, and `A11Y-004`:
 [docs/specs/v10/amendments/2026-10-31-popup-grid-layout-design.md](amendments/2026-10-31-popup-grid-layout-design.md).
 
+The popup compact cleanup, approved 2026-11-01, replaces the side column
+with a header line (icon, name, plan, note, actions) over one line per
+window, in label, bar, percentage, and reset columns shared by every group.
+It removes the group selection, the focus ring on groups, the arrow, Enter,
+`r`, and `s` shortcuts, and the footer key hints; the footer gains
+`Refresh` and `Settings` buttons, and every group action is tonal. Window
+labels drop the `(7d)` suffix. It adds `UX-090` and `UX-091`, supersedes
+`UX-087`, `A11Y-002`, `A11Y-005`, and `A11Y-006`, and amends `UX-020B`,
+`UX-023`, `UX-083`, `UX-088`, `UX-089`, `A11Y-004`, `A11Y-008`, `A11Y-027`,
+and `TEST-026`:
+[docs/specs/v10/amendments/2026-11-01-popup-compact-cleanup-design.md](amendments/2026-11-01-popup-compact-cleanup-design.md).
+
 ## Product statement
 
 Agent Bar v10 is an Omarchy Quattro Quickshell plugin. Its only graphical

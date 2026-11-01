@@ -42,7 +42,8 @@ Monitor 1 BarWidget   Monitor 2 BarWidget
 - `ARCH-003`: Each monitor receives a lightweight `bar-widget` instance.
 - `ARCH-004`: Only `Service.qml` owns polling, child-process scheduling,
   normalized provider state, settings synchronization, notification-evaluation
-  requests, selected provider, and logical popup ownership.
+  requests, the provider whose chip opened the popup, and logical popup
+  ownership.
 - `ARCH-005`: Per-monitor widgets own rendering, local anchor geometry, and the
   visible popup instance only.
 - `ARCH-006`: At most one agent-bar popup is visible across all monitors.
@@ -237,7 +238,7 @@ nonzero usage-command results are never retried. Adapter source fallback is
 not counted as a retry.
 
 Provider labels are fixed English copy: Claude `Session`/`Weekly`, Codex
-`Session`/`Weekly`, Grok `Weekly (7d)`/`Monthly`, and Antigravity
+`Session`/`Weekly`, Grok `Weekly`/`Monthly`, and Antigravity
 `Gemini · 7d`/`Gemini · 5h`/`Claude/GPT · 7d`/`Claude/GPT · 5h`. Dynamic model
 labels are
 sanitized plain text. A dynamic Claude model ID is lowercased, limited to
