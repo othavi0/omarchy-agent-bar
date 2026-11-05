@@ -149,10 +149,10 @@ rows are the band of popup floor between groups.
   accessible name carries the word `critical` even when the chip numeral
   belongs to a non-critical session window. Every level carries a word; no level is
   colour-only.
-- `UX-020D` (amended 2026-09-04, 2026-09-10, 2026-10-21, 2026-10-31): The
+- `UX-020D` (amended 2026-09-04, 2026-09-10, 2026-10-21, 2026-10-31, 2026-11-05): The
   popup shows every window in delivered order (`UX-087`); the lead election
   below feeds the bar chip numeral. The lead window is elected deterministically: a session window (window id
-  `session`, `gemini-5h`, or `3p-5h`) leads whenever present, and among
+  `session`, `gemini-5h`, `3p-5h`, `gemini-argon-wtu-5h`, or `gemini-argon-5h`) leads whenever present, and among
   several the one with the lowest remaining percentage, ties keeping the
   delivered order; otherwise a critical window wins, and among criticals the one
   with the lowest remaining percentage; otherwise a plan window (window id

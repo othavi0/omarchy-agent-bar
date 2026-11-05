@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- feat: report Antigravity Argon quota (`gemini-argon-wtu-weekly`, `gemini-argon-wtu-5h`)
+
 ## [11.0.6] - 2026-11-01
 
 ### Changed

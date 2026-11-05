@@ -161,9 +161,10 @@ always safe; the next `update status` then prints `none`.
   previous reading, when the cache holds one, stays on the bar as `stale`;
   a first collection with an expired token reports the session expired.
 - Antigravity uses its official `agy --print /usage --output-format json`
-  command, reads the Gemini (`gemini-weekly`, `gemini-5h`) and Claude/GPT
-  (`3p-weekly`, `3p-5h`) buckets by id, and reads no credential files. The
-  two families have separate quotas; the lower of the two session windows
+  command, reads the Gemini (`gemini-weekly`, `gemini-5h`), Claude/GPT
+  (`3p-weekly`, `3p-5h`), and Gemini 4 Argon (`gemini-argon-wtu-weekly`,
+  `gemini-argon-wtu-5h`) buckets by id, and reads no credential files. The
+  families have separate quotas; the lowest session window
   leads the chip. A full bucket shows no reset, because its window
   only starts on first use. It requires `agy` 1.1.11 or newer; older builds send
   `/usage` to the model as a prompt instead of printing usage data. Before
