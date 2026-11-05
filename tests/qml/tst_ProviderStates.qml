@@ -444,6 +444,30 @@ TestCase {
             "gemini-5h")
   }
 
+  function test_antigravity_argon_session_leads_when_lower() {
+    var windows = antigravityWindows(80, 70).concat([
+      { id: "gemini-argon-wtu-weekly", label: "Argon · 7d", usedPercent: 50,
+        remainingPercent: 50, resetsAt: "2026-09-10T12:00:00Z" },
+      { id: "gemini-argon-wtu-5h", label: "Argon · 5h", usedPercent: 80,
+        remainingPercent: 20, resetsAt: "2026-09-04T14:00:00Z" }
+    ])
+    var layout = layoutOf(windows, "2026-09-04T11:00:00Z")
+    compare(layout.lead.id, "gemini-argon-wtu-5h")
+    compare(Core.chipPercentText(readyWith(windows), "remaining",
+                                 Date.parse("2026-09-04T11:00:00Z")), "20%")
+  }
+
+  function test_antigravity_argon_exhausted_weekly_triggers_critical() {
+    var windows = antigravityWindows(100, 100).concat([
+      { id: "gemini-argon-wtu-weekly", label: "Argon · 7d", usedPercent: 100,
+        remainingPercent: 0, resetsAt: "2026-09-10T12:00:00Z" }
+    ])
+    var p = readyWith(windows)
+    compare(Core.providerSeverity(p), "critical")
+    compare(Core.chipStateCue(p), Tokens.GLYPH_ALERT)
+    compare(Core.chipSeverityUrgent(p), true)
+  }
+
   function test_lines_carry_raw_percentages_and_countdown() {
     var layout = layoutOf([
       { id: "session", label: "5-hour", usedPercent: 31, remainingPercent: 69,
