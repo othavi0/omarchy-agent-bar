@@ -502,7 +502,12 @@ function remainingRank(line) {
   return line.remainingPercent === null ? Infinity : line.remainingPercent
 }
 
-var SESSION_WINDOW_IDS = ["session", "gemini-5h", "3p-5h"]
+// UX-020D (amended 2026-09-04, 2026-09-10, 2026-11-05): the window ids the Rust mappers
+// emit for a provider's short rolling window (Claude/Codex `session`,
+// Antigravity `gemini-5h`, `3p-5h`, `gemini-argon-wtu-5h`, `gemini-argon-5h`). Typed schema data, like
+// the `plan-` prefix below — this list only promotes known ids; an id it does not know is
+// never demoted.
+var SESSION_WINDOW_IDS = ["session", "gemini-5h", "3p-5h", "gemini-argon-wtu-5h", "gemini-argon-5h"]
 
 function isSessionWindowId(id) {
   return SESSION_WINDOW_IDS.indexOf(String(id)) >= 0
