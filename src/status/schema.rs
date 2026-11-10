@@ -296,6 +296,17 @@ impl UsageWindow {
     }
 }
 
+/// What a banked reset gives back (JSON-022G). `Fable` returns only what
+/// Fable used to the weekly limit; it does not clear the weekly window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ResetKind {
+    Session,
+    Weekly,
+    Fable,
+    Full,
+}
+
 /// One banked usage reset a provider makes available (JSON-022D).
 ///
 /// `id` is `"cedar-ember:<grant id>"`, the literal `"juniper-tide"`, or the
@@ -304,6 +315,10 @@ impl UsageWindow {
 #[serde(rename_all = "camelCase")]
 pub struct UsageReset {
     id: String,
+    /// `None` when the provider does not say what the reset clears (Codex),
+    /// and for a cache row written before the field existed.
+    #[serde(default)]
+    kind: Option<ResetKind>,
     label: String,
     available: u32,
     total: Option<u32>,
@@ -321,6 +336,7 @@ impl UsageReset {
     #[allow(clippy::too_many_arguments)]
     pub fn try_new(
         id: impl Into<String>,
+        kind: Option<ResetKind>,
         label: impl Into<String>,
         available: u32,
         total: Option<u32>,
@@ -342,8 +358,16 @@ impl UsageReset {
         {
             require_utc(ts, "resets[].timestamp")?;
         }
+        let mut unique: Vec<String> = Vec::with_capacity(clears.len());
+        for window in clears {
+            if !unique.contains(&window) {
+                unique.push(window);
+            }
+        }
+        let clears = unique;
         Ok(Self {
             id,
+            kind,
             label,
             available,
             total,
@@ -357,6 +381,10 @@ impl UsageReset {
 
     pub fn id(&self) -> &str {
         &self.id
+    }
+
+    pub fn kind(&self) -> Option<ResetKind> {
+        self.kind
     }
 
     pub fn label(&self) -> &str {
@@ -1144,7 +1172,8 @@ mod tests {
     fn usage_reset_accepts_the_three_known_id_shapes() {
         for id in ["juniper-tide", "codex-credits", "cedar-ember:opus55-launch"] {
             assert!(
-                UsageReset::try_new(id, "Label", 1, None, vec![], None, None, None, true).is_ok(),
+                UsageReset::try_new(id, None, "Label", 1, None, vec![], None, None, None, true)
+                    .is_ok(),
                 "{id}"
             );
         }
@@ -1162,7 +1191,8 @@ mod tests {
             &format!("cedar-ember:{}", "a".repeat(49)),
         ] {
             assert!(
-                UsageReset::try_new(id, "Label", 1, None, vec![], None, None, None, true).is_err(),
+                UsageReset::try_new(id, None, "Label", 1, None, vec![], None, None, None, true)
+                    .is_err(),
                 "{id}"
             );
         }
@@ -1170,14 +1200,24 @@ mod tests {
 
     #[test]
     fn usage_reset_rejects_empty_label_and_non_utc_timestamps() {
-        assert!(
-            UsageReset::try_new("juniper-tide", "", 1, None, vec![], None, None, None, true)
-                .is_err()
-        );
+        assert!(UsageReset::try_new(
+            "juniper-tide",
+            None,
+            "",
+            1,
+            None,
+            vec![],
+            None,
+            None,
+            None,
+            true
+        )
+        .is_err());
         let local = datetime!(2026-07-26 22:00:00 +01:00:00);
         assert!(UsageReset::try_new(
             "juniper-tide",
-            "Weekly reset",
+            Some(ResetKind::Session),
+            "5-hour reset",
             1,
             None,
             vec![],
@@ -1192,9 +1232,19 @@ mod tests {
     #[test]
     fn usage_reset_label_is_sanitized_and_capped() {
         let raw = format!("\u{1b}[31m{}\u{07}", "x".repeat(100));
-        let reset =
-            UsageReset::try_new("juniper-tide", raw, 1, None, vec![], None, None, None, true)
-                .unwrap();
+        let reset = UsageReset::try_new(
+            "juniper-tide",
+            None,
+            raw,
+            1,
+            None,
+            vec![],
+            None,
+            None,
+            None,
+            true,
+        )
+        .unwrap();
         assert_eq!(reset.label().chars().count(), RESET_LABEL_MAX_CHARS);
         assert!(!reset.label().contains('\u{1b}'));
         assert!(!reset.label().contains('\u{07}'));
@@ -1510,6 +1560,7 @@ mod tests {
     fn provider_status_always_serializes_resets_array() {
         let claude_reset = UsageReset::try_new(
             "cedar-ember:opus55-launch-promax-20260921",
+            Some(ResetKind::Full),
             "Claude Opus 5.5 launch",
             1,
             Some(1),
@@ -1542,5 +1593,71 @@ mod tests {
         let status: ProviderStatus =
             serde_json::from_value(old_cache_row).expect("old row without resets must load");
         assert!(status.resets().is_empty());
+    }
+
+    fn reset_of_kind(id: &str, kind: Option<ResetKind>) -> UsageReset {
+        UsageReset::try_new(id, kind, "Label", 1, None, vec![], None, None, None, true).unwrap()
+    }
+
+    #[test]
+    fn usage_reset_kind_serializes_snake_case_and_null() {
+        for (kind, expected) in [
+            (Some(ResetKind::Session), "\"kind\":\"session\""),
+            (Some(ResetKind::Weekly), "\"kind\":\"weekly\""),
+            (Some(ResetKind::Fable), "\"kind\":\"fable\""),
+            (Some(ResetKind::Full), "\"kind\":\"full\""),
+            (None, "\"kind\":null"),
+        ] {
+            let text = serde_json::to_string(&reset_of_kind("juniper-tide", kind)).unwrap();
+            assert!(text.contains(expected), "{text}");
+        }
+    }
+
+    /// A cache row written before `kind` existed keeps its reset, untyped,
+    /// until the next collection.
+    #[test]
+    fn cache_reset_without_kind_loads_as_untyped() {
+        let old_cache_row = serde_json::json!({
+            "id": "claude", "name": "Claude", "state": "ready", "source": "live",
+            "plan": null, "windows": [],
+            "lastSuccessAt": "2026-11-10T12:00:00Z", "error": null, "action": null,
+            "resets": [{
+                "id": "cedar-ember:launch-2610-fable", "label": "Fable reset",
+                "available": 1, "total": 1, "clears": [], "expiresAt": null,
+                "refillsAt": null, "cooldownUntil": null, "claimable": true
+            }]
+        });
+        let status: ProviderStatus =
+            serde_json::from_value(old_cache_row).expect("pre-kind cache row must load");
+        assert_eq!(status.resets().len(), 1);
+        assert_eq!(status.resets()[0].kind(), None);
+    }
+
+    #[test]
+    fn usage_reset_rejects_an_unknown_kind() {
+        let row = serde_json::json!({
+            "id": "juniper-tide", "kind": "opus", "label": "Label", "available": 1,
+            "total": null, "clears": [], "expiresAt": null, "refillsAt": null,
+            "cooldownUntil": null, "claimable": true
+        });
+        assert!(serde_json::from_value::<UsageReset>(row).is_err());
+    }
+
+    #[test]
+    fn usage_reset_dedups_clears_in_order() {
+        let reset = UsageReset::try_new(
+            "juniper-tide",
+            Some(ResetKind::Full),
+            "Label",
+            1,
+            None,
+            vec!["weekly".into(), "session".into(), "weekly".into()],
+            None,
+            None,
+            None,
+            true,
+        )
+        .unwrap();
+        assert_eq!(reset.clears(), &["weekly".to_owned(), "session".to_owned()]);
     }
 }

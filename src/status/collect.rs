@@ -101,6 +101,7 @@ mod tests {
             last_success_at: datetime!(2026-07-26 18:42:00 UTC),
             resets: vec![UsageReset::try_new(
                 "codex-credits",
+                None,
                 "Rate-limit resets",
                 2,
                 None,

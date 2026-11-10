@@ -71,6 +71,8 @@ fn schema_contract_status_v2_valid_fixtures_pass() {
     let validator = compile_schema("schemas/status-v2.schema.json");
     let ready = workspace_root().join("tests/fixtures/status-v2/ready.json");
     assert_valid(&validator, &ready);
+    let reset_kinds = workspace_root().join("tests/fixtures/status-v2/valid-reset-kinds.json");
+    assert_valid(&validator, &reset_kinds);
 
     for path in fixture_paths("tests/fixtures/status-v2") {
         let name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
@@ -85,8 +87,10 @@ fn schema_contract_status_v2_invalid_fixtures_fail() {
     let validator = compile_schema("schemas/status-v2.schema.json");
     let over = workspace_root().join("tests/fixtures/status-v2/percent-over-100.json");
     let money = workspace_root().join("tests/fixtures/status-v2/money-field.json");
+    let reset_kind = workspace_root().join("tests/fixtures/status-v2/invalid-reset-kind.json");
     assert_invalid(&validator, &over);
     assert_invalid(&validator, &money);
+    assert_invalid(&validator, &reset_kind);
 
     for path in fixture_paths("tests/fixtures/status-v2") {
         let name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");

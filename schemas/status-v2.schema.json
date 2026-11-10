@@ -148,6 +148,7 @@
       "additionalProperties": false,
       "required": [
         "id",
+        "kind",
         "label",
         "available",
         "total",
@@ -159,6 +160,12 @@
       ],
       "properties": {
         "id": { "type": "string", "minLength": 1 },
+        "kind": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "string", "enum": ["session", "weekly", "fable", "full"] }
+          ]
+        },
         "label": { "type": "string", "minLength": 1 },
         "available": { "type": "integer", "minimum": 0 },
         "total": {
