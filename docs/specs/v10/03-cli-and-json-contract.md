@@ -211,6 +211,7 @@ provider_error
   ```json
   {
     "id": "cedar-ember:opus55-launch-promax-20260921",
+    "kind": "full",
     "label": "Claude Opus 5.5 launch",
     "available": 1,
     "total": 1,
@@ -232,6 +233,13 @@ provider_error
 - `JSON-022F`: `claimable` is true only when the helper can claim that reset
   through the `reset` command right now. Codex resets are never claimable
   here; Codex owns that action.
+- `JSON-022G`: `kind` is one of `session`, `weekly`, `fable`, `full`, or
+  `null`, and is always serialized. `fable` returns what Fable used to the
+  weekly limit; it does not clear the weekly window. Claude resets always
+  carry a kind; `codex-credits` carries `null`. A cache row written before
+  the field existed loads with `kind` `null`. Any other value is invalid.
+  On a `fable` reset, `clears` names the scoped weekly window whose use
+  goes back to the weekly limit. See the 2026-11-10 reset kinds amendment.
 
 ### Structural and semantic validation
 
@@ -528,7 +536,8 @@ amendment landed.
   only a fresh usage read tells.
   `resetsLeft` and `cooldownUntil` are null when the response does not
   carry them. `clears` lists the window ids the response reports as
-  cleared, mapped as in collection.
+  cleared, mapped as in collection against the fresh usage response and
+  the claimed grant (`JSON-022G`).
 - `CLI-037`: The command does not touch the cache. The popup forces a
   refresh of the provider after any result.
 

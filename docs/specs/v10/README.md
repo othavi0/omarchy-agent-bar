@@ -154,6 +154,16 @@ labels drop the `(7d)` suffix. It adds `UX-090` and `UX-091`, supersedes
 and `TEST-026`:
 [docs/specs/v10/amendments/2026-11-01-popup-compact-cleanup-design.md](amendments/2026-11-01-popup-compact-cleanup-design.md).
 
+The reset kinds amendment, approved 2026-11-10, gives every usage reset a
+closed `kind` (`session`, `weekly`, `fable`, `full`, or `null`). A Fable
+reset's `clears` names the scoped weekly window, and `juniper-tide` becomes
+the `5-hour reset`. The Claude note counts resets per kind without a date;
+`Use reset` opens a choice when several resets are claimable, and each
+option and the confirmation show the reset's effect and validity. It adds
+`JSON-022G` and amends `JSON-022D`, `CLI-036`, `UX-071`, `UX-072`,
+`UX-088`, and `UX-089`:
+[docs/specs/v10/amendments/2026-11-10-reset-kinds-design.md](amendments/2026-11-10-reset-kinds-design.md).
+
 ## Product statement
 
 Agent Bar v10 is an Omarchy Quattro Quickshell plugin. Its only graphical
@@ -195,7 +205,8 @@ application, an AUR product, or a cargo-binstall product.
    [2026-09-22 update apply in the popup](amendments/2026-09-22-update-apply-in-popup-design.md),
    [2026-09-22 update apply detached](amendments/2026-09-22-update-apply-detached-design.md),
    [2026-10-21 popup overview redesign](amendments/2026-10-21-popup-overview-redesign-design.md),
-   [2026-10-21 overview headline removed](amendments/2026-10-21-remove-overview-headline-design.md).
+   [2026-10-21 overview headline removed](amendments/2026-10-21-remove-overview-headline-design.md),
+   [2026-11-10 reset kinds](amendments/2026-11-10-reset-kinds-design.md).
 
    [2026-09-15 Codex app-server only](amendments/2026-09-15-codex-app-server-only-design.md).
 

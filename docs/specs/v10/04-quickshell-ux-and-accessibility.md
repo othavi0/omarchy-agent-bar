@@ -42,6 +42,7 @@ Amended 2026-10-21, 2026-10-31, and 2026-11-01: the rail and the
 single-provider pane are replaced by one group per enabled provider, and a
 footer. Every group shows every window; nothing folds. The popup starts
 directly with the groups; there is no headline band. See
+`docs/specs/v10/amendments/2026-11-10-reset-kinds-design.md`,
 `docs/specs/v10/amendments/2026-11-01-popup-compact-cleanup-design.md`,
 `docs/specs/v10/amendments/2026-10-31-popup-grid-layout-design.md`,
 `docs/specs/v10/amendments/2026-10-21-popup-overview-redesign-design.md`,
@@ -49,7 +50,7 @@ and `docs/specs/v10/amendments/2026-10-21-remove-overview-headline-design.md`.
 
 ```text
 +--------------------------------------------------------+
-| [C] Claude Max   1 reset left · until 11/6 [Use reset] |
+| [C] Claude Max            1 Fable · 1 full [Use reset] |
 | 5-hour       [==============    ]  76%  1h 32m (14:09) |
 | Weekly       [=======           ]  37%          2d 20h |
 +========================================================+

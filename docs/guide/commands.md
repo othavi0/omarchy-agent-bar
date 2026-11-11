@@ -264,7 +264,11 @@ JSON line:
 `provider_error`, or `unconfirmed`. Every one of them exits `0`, because they
 are typed data, not process failures. `unconfirmed` means the POST left the
 machine and the helper could not read a known result back, so the reset may
-have been consumed; the popup refreshes the provider to find out. `unavailable` means the claim cannot be made from this
+have been consumed; the popup refreshes the provider to find out. `clears`
+maps the response's `cleared` keys to window ids the way `status` maps a
+reset's `clears`: on a Fable reset (`kind` `fable` in `status`) it names the
+scoped weekly window whose use goes back to the weekly limit.
+`unavailable` means the claim cannot be made from this
 machine right now: the fresh usage response does not list the id as
 `claimable`, or `$HOME/.claude.json` has no valid
 `oauthAccount.organizationUuid`. Signing in again does not fix the second
