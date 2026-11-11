@@ -1142,7 +1142,7 @@ TestCase {
     compare(service.resetUi.confirmOpen, true)
     compare(service.resetUi.resetId, F.FABLE_RESET_ID)
     var confirm = one(popup, "resetConfirmDialog")
-    compare(confirm.title, "Use fable reset?")
+    compare(confirm.title, "Use Fable reset?")
     verify(confirm.message.indexOf("Valid " + env.providers[0].resets[1].untilText + ".") >= 0,
            confirm.message)
     verify(confirm.message.indexOf("Clears") < 0, confirm.message)
@@ -1201,6 +1201,6 @@ TestCase {
     compare(one(popup, "resetChoiceDialog").opened, false, "one reset needs no choice")
     compare(service.resetUi.confirmOpen, true)
     compare(service.resetUi.resetId, F.FABLE_RESET_ID)
-    compare(one(popup, "resetConfirmDialog").title, "Use fable reset?")
+    compare(one(popup, "resetConfirmDialog").title, "Use Fable reset?")
   }
 }

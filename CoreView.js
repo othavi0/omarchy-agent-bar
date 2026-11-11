@@ -832,7 +832,7 @@ function resetConfirmModel(provider, resetId, localeDateFormat, localeTimeFormat
     message += " Valid " + choice.dateText + "."
   return {
     resetId: choice.id,
-    title: choice.kind.length ? "Use " + RESET_KINDS[choice.kind].label.toLowerCase() + "?" : "Use reset?",
+    title: choice.kind.length ? "Use " + RESET_KINDS[choice.kind].noun + " reset?" : "Use reset?",
     message: message,
     confirmText: "Use reset"
   }

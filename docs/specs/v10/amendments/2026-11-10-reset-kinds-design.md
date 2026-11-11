@@ -107,7 +107,8 @@ Codex mappings, `CLI-036`, `UX-071`, and `UX-072` from
   over the kind's effect text. Choosing an option opens that reset's
   confirmation.
 - `UX-071` (amended): the confirmation is built from the chosen reset id.
-  Its title is `Use {kind label in lower case}?` (`Use reset?` for an
+  Its title is `Use {kind noun} reset?` (`Use 5-hour reset?`, `Use weekly
+  reset?`, `Use Fable reset?`, `Use full reset?`; `Use reset?` for an
   untyped reset), and its message is `{provider}: {label} ({count}).
   {effect} Valid until {date}.`; an untyped reset names what it clears,
   `Clears {windows}.`, in place of the effect. Confirming runs

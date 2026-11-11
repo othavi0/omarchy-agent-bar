@@ -748,11 +748,20 @@ TestCase {
     var model = Core.resetConfirmModel(accountProvider(), "cedar-ember:launch-2610-fable",
                                        "MM/dd/yyyy", "hh:mm")
     compare(model.resetId, "cedar-ember:launch-2610-fable")
-    compare(model.title, "Use fable reset?")
+    compare(model.title, "Use Fable reset?")
     compare(model.confirmText, "Use reset")
     verify(model.message.indexOf("Clears") < 0, model.message)
     verify(model.message.indexOf("Weekly does not go to zero.") >= 0, model.message)
     verify(model.message.indexOf("Valid " + untilDate(fableExpires) + ".") >= 0, model.message)
+  }
+
+  function test_reset_confirm_title_names_the_kind() {
+    var titles = ["session", "weekly", "fable", "full"].map(function (kind) {
+      var p = accountProvider()
+      p.resets = [typedReset("cedar-ember:" + kind, kind)]
+      return Core.resetConfirmModel(p, "cedar-ember:" + kind, "MM/dd/yyyy", "hh:mm").title
+    })
+    compare(titles, ["Use 5-hour reset?", "Use weekly reset?", "Use Fable reset?", "Use full reset?"])
   }
 
   function test_reset_confirm_needs_a_claimable_id() {
