@@ -369,11 +369,11 @@ TestCase {
     s.requestReset("claude", Harness.CLAUDE_RESET_ID)
     compare(s.resetUi.confirmOpen, true)
     var provider = View.findProvider(s.snapshot, s.resetUi.providerId)
-    var rows = View.resetRows(provider, "MM/dd/yyyy", "hh:mm")
-    compare(rows[0].id, s.resetUi.resetId)
-    var model = View.resetConfirmModel(provider, rows[0])
+    var model = View.resetConfirmModel(provider, s.resetUi.resetId, "MM/dd/yyyy", "hh:mm")
+    compare(model.resetId, Harness.CLAUDE_RESET_ID)
     compare(model.title, "Use reset?")
-    compare(model.message, "Claude: Launch reset (1/1). Clears 5-hour and weekly.")
+    compare(model.message, "Claude: Launch reset (1/1). Clears 5-hour and weekly. Valid until "
+        + Qt.formatDate(new Date(Date.parse("2026-10-22T16:00:00Z")), "MM/dd/yyyy") + ".")
     compare(model.confirmText, "Use reset")
 
     s.confirmReset()
@@ -390,6 +390,30 @@ TestCase {
     var argv = s.lanes.status.process.command
     compare(argv[argv.indexOf("provider") + 1], "claude")
     verify(argv.indexOf("bypass") >= 0)
+  }
+
+  function test_status_envelope_checks_the_reset_kind() {
+    function withKind(kind) {
+      var reset = { id: Harness.CLAUDE_RESET_ID, label: "Launch reset", available: 1, total: 1,
+                    clears: [], expiresAt: null, refillsAt: null, cooldownUntil: null,
+                    claimable: true }
+      if (kind !== undefined)
+        reset.kind = kind
+      return Core.parseStatusEnvelope(Harness.claudeResetEnvelope([reset]))
+    }
+    compare(withKind(undefined).ok, true, "a pre-kind cache row still loads")
+    compare(withKind(null).ok, true)
+    compare(withKind("session").ok, true)
+    compare(withKind("weekly").ok, true)
+    compare(withKind("fable").ok, true)
+    compare(withKind("full").ok, true)
+    compare(withKind("opus").ok, false)
+    compare(withKind("opus").reason, "invalid reset kind")
+    compare(withKind(3).ok, false)
+  }
+
+  function test_every_valid_reset_kind_has_its_words() {
+    compare(Object.keys(View.RESET_KINDS).sort(), Core.RESET_KIND_ORDER.slice().sort())
   }
 
   function test_cancelling_the_reset_confirm_starts_nothing() {

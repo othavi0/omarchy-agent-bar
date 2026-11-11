@@ -199,11 +199,17 @@ function isIsoOrNull(v) {
   return v === null || typeof v === "string"
 }
 
+// The closed JSON-022G vocabulary in display order; absent or null is an
+// untyped reset.
+var RESET_KIND_ORDER = ["session", "weekly", "fable", "full"]
+
 function validateReset(r) {
   if (!r || typeof r !== "object")
     return "reset not object"
   if (typeof r.id !== "string" || !r.id.length)
     return "invalid reset id"
+  if (r.kind !== undefined && r.kind !== null && RESET_KIND_ORDER.indexOf(r.kind) < 0)
+    return "invalid reset kind"
   if (typeof r.label !== "string" || !r.label.length)
     return "invalid reset label"
   if (!isNonNegNumber(r.available))

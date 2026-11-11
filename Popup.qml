@@ -55,8 +55,8 @@ KeyboardPanel {
       refreshing: agentService ? !!agentService.refreshing : false,
       resetUi: resetUi,
       resetBusy: !!(agentService && agentService.resetBusy),
-      dateFormat: Qt.locale().dateFormat(Locale.ShortFormat),
-      timeFormat: Qt.locale().timeFormat(Locale.ShortFormat)
+      dateFormat: dateFormat,
+      timeFormat: timeFormat
     }
   )
 
@@ -124,8 +124,10 @@ KeyboardPanel {
     if (!agentService || !action || !action.enabled)
       return
     if (action.kind === "use_reset") {
-      if (action.target)
-        agentService.requestReset(providerId, String(action.target))
+      var choices = Core.claimableResets(Core.findProvider(agentService.snapshot, providerId),
+          root.dateFormat, root.timeFormat)
+      if (choices.length)
+        agentService.requestReset(providerId, choices[0].id)
       return
     }
     agentService.dispatchAction(providerId, {
@@ -135,24 +137,15 @@ KeyboardPanel {
     })
   }
 
-  readonly property var resetConfirmRow: {
-    if (!resetUi || !resetUi.confirmOpen)
-      return null
-    var provider = Core.findProvider(agentService.snapshot, resetUi.providerId)
-    var rows = Core.resetRows(provider,
-        Qt.locale().dateFormat(Locale.ShortFormat), Qt.locale().timeFormat(Locale.ShortFormat))
-    for (var i = 0; i < rows.length; i++) {
-      if (rows[i].id === resetUi.resetId)
-        return rows[i]
-    }
-    return null
-  }
+  readonly property string dateFormat: Qt.locale().dateFormat(Locale.ShortFormat)
+  readonly property string timeFormat: Qt.locale().timeFormat(Locale.ShortFormat)
 
   readonly property var resetConfirmModel: {
-    if (!resetConfirmRow)
-      return { title: "", message: "", confirmText: "Use reset" }
-    var provider = Core.findProvider(agentService.snapshot, resetUi.providerId)
-    return Core.resetConfirmModel(provider, resetConfirmRow)
+    var model = resetUi && resetUi.confirmOpen
+        ? Core.resetConfirmModel(Core.findProvider(agentService.snapshot, resetUi.providerId),
+                                 resetUi.resetId, dateFormat, timeFormat)
+        : null
+    return model || { resetId: "", title: "", message: "", confirmText: "Use reset" }
   }
 
   FocusController {

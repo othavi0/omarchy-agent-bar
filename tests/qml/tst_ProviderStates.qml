@@ -565,7 +565,7 @@ TestCase {
           available: 1, total: 1, clears: ["session", "weekly"],
           expiresAt: "2026-10-22T16:00:00Z", refillsAt: null, cooldownUntil: null,
           claimable: true },
-        { id: "juniper-tide", label: "Weekly reset",
+        { id: "juniper-tide", label: "5-hour reset",
           available: 1, total: 1, clears: ["session"],
           expiresAt: null, refillsAt: "2026-09-25T12:00:00Z", cooldownUntil: null,
           claimable: true }
@@ -621,12 +621,11 @@ TestCase {
         "cooldown " + Qt.formatTime(new Date(Date.parse("2026-09-22T18:30:00Z")), "hh:mm"))
   }
 
-  function test_resets_summary_sums_available_and_finds_first_claimable() {
+  function test_resets_summary_sums_available() {
     var p = claudeResetsProvider()
     var summary = Core.resetsSummary(p)
     compare(summary.visible, true)
     compare(summary.availableTotal, 2)
-    compare(summary.claimableId, "cedar-ember:opus55-launch-promax-20260921")
   }
 
   function test_reset_outcome_text_table() {
@@ -653,14 +652,112 @@ TestCase {
             "On cooldown until " + Qt.formatTime(new Date(cooldownMs), "hh:mm") + ".")
   }
 
-  function test_reset_confirm_model_names_provider_label_and_clears() {
+  function test_untyped_reset_confirm_names_provider_label_and_clears() {
     var p = claudeResetsProvider()
-    var rows = Core.resetRows(p, "MM/dd/yyyy", "hh:mm")
-    var model = Core.resetConfirmModel(p, rows[0])
+    var model = Core.resetConfirmModel(p, "cedar-ember:opus55-launch-promax-20260921",
+                                       "MM/dd/yyyy", "hh:mm")
+    compare(model.resetId, "cedar-ember:opus55-launch-promax-20260921")
     compare(model.title, "Use reset?")
     compare(model.confirmText, "Use reset")
-    verify(model.message.indexOf("Claude") >= 0)
-    verify(model.message.indexOf("1/1") >= 0)
-    verify(model.message.indexOf("5-hour and weekly") >= 0)
+    compare(model.message, "Claude: Claude Opus 5.5 launch: one usage-limit reset for Pro and Max (1/1)."
+        + " Clears 5-hour and weekly. Valid until "
+        + Qt.formatDate(new Date(Date.parse("2026-10-22T16:00:00Z")), "MM/dd/yyyy") + ".")
+  }
+
+  readonly property string fableExpires: "2027-03-09T00:00:00Z"
+  readonly property string fullExpires: "2026-12-10T00:00:00Z"
+
+  function typedReset(id, kind, extra) {
+    var r = { id: id, kind: kind, label: "Grant " + id, available: 1, total: 1, clears: [],
+              expiresAt: null, refillsAt: null, cooldownUntil: null, claimable: true }
+    for (var k in (extra || {}))
+      r[k] = extra[k]
+    return r
+  }
+
+  // The provider lists the Fable reset first, so the nearest validity
+  // (the full reset's) is not the first row's.
+  function accountProvider(extraResets) {
+    return {
+      id: "claude", name: "Claude", state: "ready",
+      windows: [
+        { id: "weekly", label: "Weekly", usedPercent: 85, remainingPercent: 15 },
+        { id: "weekly-model:fable", label: "Fable", usedPercent: 70, remainingPercent: 30 }
+      ],
+      resets: [
+        typedReset("cedar-ember:launch-2610-fable", "fable",
+                   { clears: ["weekly-model:fable"], expiresAt: fableExpires }),
+        typedReset("cedar-ember:full-reset-2611", "full",
+                   { clears: ["weekly"], expiresAt: fullExpires })
+      ].concat(extraResets || [])
+    }
+  }
+
+  function untilDate(iso) {
+    return "until " + Qt.formatDate(new Date(Date.parse(iso)), "MM/dd/yyyy")
+  }
+
+  function test_reset_kind_counts_follow_the_kind_order() {
+    var counts = Core.resetKindCounts(accountProvider([
+      typedReset("cedar-ember:second-full", "full"),
+      typedReset("cedar-ember:spent-weekly", "weekly", { available: 0 })
+    ]))
+    compare(JSON.stringify(counts.map(function (c) { return [c.kind, c.available] })),
+            JSON.stringify([["fable", 1], ["full", 2]]))
+    compare(counts[0].label, "Fable reset")
+    compare(counts[0].noun, "Fable")
+  }
+
+  function test_reset_notes_count_each_kind_with_the_nearest_validity() {
+    compare(Core.resetNotes(accountProvider(), "MM/dd/yyyy", "hh:mm").join(" · "),
+            "1 Fable · 1 full · " + untilDate(fullExpires))
+
+    var fableOnly = accountProvider()
+    fableOnly.resets = [fableOnly.resets[0]]
+    compare(Core.resetNotes(fableOnly, "MM/dd/yyyy", "hh:mm").join(" · "),
+            "1 Fable reset · " + untilDate(fableExpires))
+    fableOnly.resets[0].available = 2
+    compare(Core.resetNotes(fableOnly, "MM/dd/yyyy", "hh:mm")[0], "2 Fable resets")
+  }
+
+  function test_untyped_codex_resets_keep_the_resets_left_note() {
+    var p = { id: "codex", name: "Codex", state: "ready", windows: [],
+              resets: [{ id: "codex-credits", kind: null, label: "Rate-limit resets",
+                         available: 2, total: null, clears: [],
+                         expiresAt: null, refillsAt: null, cooldownUntil: null,
+                         claimable: false }] }
+    compare(Core.resetNotes(p, "MM/dd/yyyy", "hh:mm"), ["2 resets left"])
+    compare(Core.resetKindCounts(p).length, 0)
+  }
+
+  function test_claimable_resets_list_kind_words_and_skip_the_rest() {
+    var choices = Core.claimableResets(accountProvider([
+      typedReset("cedar-ember:locked-session", "session", { claimable: false })
+    ]), "MM/dd/yyyy", "hh:mm")
+    compare(choices.map(function (c) { return c.id }),
+            ["cedar-ember:launch-2610-fable", "cedar-ember:full-reset-2611"])
+    compare(choices[0].kind, "fable")
+    compare(choices[0].kindLabel, "Fable reset")
+    verify(choices[0].effectText.indexOf("does not go to zero") >= 0, choices[0].effectText)
+    compare(choices[0].dateText, untilDate(fableExpires))
+    compare(choices[0].countText, "1/1")
+    compare(choices[1].kindLabel, "Full reset")
+  }
+
+  function test_fable_confirm_names_its_effect_and_validity() {
+    var model = Core.resetConfirmModel(accountProvider(), "cedar-ember:launch-2610-fable",
+                                       "MM/dd/yyyy", "hh:mm")
+    compare(model.resetId, "cedar-ember:launch-2610-fable")
+    compare(model.title, "Use fable reset?")
+    compare(model.confirmText, "Use reset")
+    verify(model.message.indexOf("Clears") < 0, model.message)
+    verify(model.message.indexOf("Weekly does not go to zero.") >= 0, model.message)
+    verify(model.message.indexOf("Valid " + untilDate(fableExpires) + ".") >= 0, model.message)
+  }
+
+  function test_reset_confirm_needs_a_claimable_id() {
+    var p = accountProvider([typedReset("cedar-ember:locked", "weekly", { claimable: false })])
+    compare(Core.resetConfirmModel(p, "cedar-ember:missing", "MM/dd/yyyy", "hh:mm"), null)
+    compare(Core.resetConfirmModel(p, "cedar-ember:locked", "MM/dd/yyyy", "hh:mm"), null)
   }
 }
