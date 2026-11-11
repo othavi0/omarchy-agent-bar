@@ -916,34 +916,24 @@ function actionsFor(provider, ui) {
   return out
 }
 
-// "1 full · 1 Fable · until <nearest validity>" when every reset has a kind;
-// "<n> resets left" otherwise, so an untyped reset is never left uncounted.
+// "1 Fable · 1 full" when every reset has a kind, with no date: each reset's
+// validity shows in the choice and the confirmation. Otherwise "<n> resets
+// left" and the first reset's date, so an untyped reset is never uncounted.
 function resetNotes(provider, dateFormat, timeFormat) {
   var resets = resetsOf(provider)
   if (!resets.length)
     return []
   var counts = resetKindCounts(provider)
   var allTyped = resets.every(function (r) { return resetKindOf(r).length > 0 })
-  var notes
   if (allTyped && counts.length === 1) {
     var only = counts[0]
-    notes = [only.available + " " + only.noun + (only.available === 1 ? " reset" : " resets")]
-  } else if (allTyped) {
-    notes = counts.map(function (c) { return c.available + " " + c.noun })
-  } else {
-    var n = resetsSummary(provider).availableTotal
-    notes = [n + (n === 1 ? " reset left" : " resets left")]
+    return [only.available + " " + only.noun + (only.available === 1 ? " reset" : " resets")]
   }
-  var nearest = null
-  var nearestMs = Infinity
-  for (var i = 0; i < resets.length; i++) {
-    var ms = resets[i].expiresAt ? parseIsoMs(resets[i].expiresAt) : NaN
-    if (isFinite(ms) && ms < nearestMs) {
-      nearestMs = ms
-      nearest = resets[i]
-    }
-  }
-  var dateText = resetDateText(nearest || resets[0], dateFormat, timeFormat)
+  if (allTyped)
+    return counts.map(function (c) { return c.available + " " + c.noun })
+  var n = resetsSummary(provider).availableTotal
+  var notes = [n + (n === 1 ? " reset left" : " resets left")]
+  var dateText = resetDateText(resets[0], dateFormat, timeFormat)
   if (dateText.length)
     notes.push(dateText)
   return notes

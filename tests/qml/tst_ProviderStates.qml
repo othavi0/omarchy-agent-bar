@@ -708,16 +708,16 @@ TestCase {
     compare(counts[0].noun, "Fable")
   }
 
-  function test_reset_notes_count_each_kind_with_the_nearest_validity() {
-    compare(Core.resetNotes(accountProvider(), "MM/dd/yyyy", "hh:mm").join(" · "),
-            "1 Fable · 1 full · " + untilDate(fullExpires))
+  function test_reset_notes_count_each_kind_without_a_date() {
+    var note = Core.resetNotes(accountProvider(), "MM/dd/yyyy", "hh:mm").join(" · ")
+    compare(note, "1 Fable · 1 full")
+    verify(note.indexOf("until") < 0, note)
 
     var fableOnly = accountProvider()
     fableOnly.resets = [fableOnly.resets[0]]
-    compare(Core.resetNotes(fableOnly, "MM/dd/yyyy", "hh:mm").join(" · "),
-            "1 Fable reset · " + untilDate(fableExpires))
+    compare(Core.resetNotes(fableOnly, "MM/dd/yyyy", "hh:mm"), ["1 Fable reset"])
     fableOnly.resets[0].available = 2
-    compare(Core.resetNotes(fableOnly, "MM/dd/yyyy", "hh:mm")[0], "2 Fable resets")
+    compare(Core.resetNotes(fableOnly, "MM/dd/yyyy", "hh:mm"), ["2 Fable resets"])
   }
 
   function test_untyped_codex_resets_keep_the_resets_left_note() {
