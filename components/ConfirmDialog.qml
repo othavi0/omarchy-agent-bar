@@ -14,6 +14,8 @@ Item {
   property string confirmText: "Confirm"
   property bool destructive: false
   property bool confirmEnabled: true
+  // A choice dialog acts through its own extra content and offers only Cancel.
+  property bool confirmVisible: true
   property color foreground: Commons.Color.foreground
   property string fontFamily: Style.font.family
 
@@ -80,6 +82,7 @@ Item {
 
       Text {
         width: parent.width
+        visible: root.message.length > 0
         text: root.message
         color: Util.alpha(root.foreground, Tokens.TEXT_SECONDARY)
         font.family: root.fontFamily
@@ -108,6 +111,7 @@ Item {
         }
 
         Button {
+          visible: root.confirmVisible
           text: root.confirmText
           bordered: true
           focusable: true

@@ -8,6 +8,7 @@ import "CoreView.js" as Core
 import "CoreScroll.js" as Scroll
 import "CoreSettings.js" as Settings
 import "components"
+import "components/Tokens.js" as Tokens
 
 // Do NOT redeclare KeyboardPanel's required anchorItem/bar here. Redeclaring
 // them as required on this derived type makes Loader/createObject treat the
@@ -126,8 +127,10 @@ KeyboardPanel {
     if (action.kind === "use_reset") {
       var choices = Core.claimableResets(Core.findProvider(agentService.snapshot, providerId),
           root.dateFormat, root.timeFormat)
-      if (choices.length)
+      if (choices.length === 1)
         agentService.requestReset(providerId, choices[0].id)
+      else if (choices.length > 1)
+        root.resetChoiceProviderId = providerId
       return
     }
     agentService.dispatchAction(providerId, {
@@ -139,6 +142,22 @@ KeyboardPanel {
 
   readonly property string dateFormat: Qt.locale().dateFormat(Locale.ShortFormat)
   readonly property string timeFormat: Qt.locale().timeFormat(Locale.ShortFormat)
+
+  // The provider whose "Use reset" asked which reset to use; "" when no
+  // choice is open. A refresh that leaves fewer choices updates the list.
+  property string resetChoiceProviderId: ""
+
+  readonly property var resetChoices: resetChoiceProviderId.length && agentService
+      ? Core.claimableResets(Core.findProvider(agentService.snapshot, resetChoiceProviderId),
+                             dateFormat, timeFormat)
+      : []
+
+  function chooseReset(resetId) {
+    var providerId = resetChoiceProviderId
+    resetChoiceProviderId = ""
+    if (agentService && providerId.length)
+      agentService.requestReset(providerId, resetId)
+  }
 
   readonly property var resetConfirmModel: {
     var model = resetUi && resetUi.confirmOpen
@@ -204,8 +223,10 @@ KeyboardPanel {
   onFocusShapeChanged: scheduleFocusRebuild()
   onAgentServiceChanged: scheduleFocusRebuild()
   onIsOpenChanged: {
-    if (!isOpen)
+    if (!isOpen) {
+      resetChoiceProviderId = ""
       return
+    }
     root.nowMs = Date.now()
     contentFlick.contentY = 0
     focusController.index = -1
@@ -437,7 +458,66 @@ KeyboardPanel {
     }
 
     ConfirmDialog {
+      id: resetChoiceDialog
+      objectName: "resetChoiceDialog"
+      opened: root.resetChoices.length > 0 && !(root.resetUi && root.resetUi.confirmOpen)
+      title: "Which reset do you want to use?"
+      confirmVisible: false
+      foreground: Commons.Color.foreground
+      fontFamily: Style.font.family
+      onCanceled: root.resetChoiceProviderId = ""
+
+      Repeater {
+        model: root.resetChoices
+        delegate: ActionButton {
+          id: choiceButton
+          objectName: "resetChoice"
+          required property var modelData
+          property string choiceId: modelData.id
+          width: parent ? parent.width : 0
+          height: choiceText.implicitHeight + Style.space(12)
+          tonal: false
+          bordered: true
+          Accessible.name: modelData.accessibleName
+          onActivated: root.chooseReset(choiceId)
+
+          Column {
+            id: choiceText
+            x: Style.space(8)
+            width: choiceButton.width - Style.space(16)
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: Style.space(2)
+
+            Text {
+              width: parent.width
+              text: choiceButton.modelData.dateText.length
+                  ? choiceButton.modelData.kindLabel + " · " + choiceButton.modelData.dateText
+                  : choiceButton.modelData.kindLabel
+              color: Commons.Color.foreground
+              font.family: Style.font.family
+              font.pixelSize: Style.font.bodySmall
+              elide: Text.ElideRight
+              textFormat: Text.PlainText
+            }
+
+            Text {
+              width: parent.width
+              visible: text.length > 0
+              text: choiceButton.modelData.effectText
+              color: Util.alpha(Commons.Color.foreground, Tokens.TEXT_SECONDARY)
+              font.family: Style.font.family
+              font.pixelSize: Style.font.caption
+              wrapMode: Text.WordWrap
+              textFormat: Text.PlainText
+            }
+          }
+        }
+      }
+    }
+
+    ConfirmDialog {
       id: resetConfirmDialog
+      objectName: "resetConfirmDialog"
       opened: !!(root.resetUi && root.resetUi.confirmOpen)
       title: root.resetConfirmModel.title
       message: root.resetConfirmModel.message
