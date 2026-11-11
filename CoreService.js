@@ -199,11 +199,17 @@ function isIsoOrNull(v) {
   return v === null || typeof v === "string"
 }
 
+// The closed JSON-022G vocabulary in display order; absent or null is an
+// untyped reset.
+var RESET_KIND_ORDER = ["session", "weekly", "fable", "full"]
+
 function validateReset(r) {
   if (!r || typeof r !== "object")
     return "reset not object"
   if (typeof r.id !== "string" || !r.id.length)
     return "invalid reset id"
+  if (r.kind !== undefined && r.kind !== null && RESET_KIND_ORDER.indexOf(r.kind) < 0)
+    return "invalid reset kind"
   if (typeof r.label !== "string" || !r.label.length)
     return "invalid reset label"
   if (!isNonNegNumber(r.available))
@@ -352,7 +358,7 @@ function resetUiOnClose(ui, laneOccupied) {
   return laneOccupied ? resetUiAwaiting(ui) : resetUiIdle()
 }
 
-function snapshotHasReset(snapshot, providerId, resetId) {
+function snapshotHasClaimableReset(snapshot, providerId, resetId) {
   var providers = snapshot && Array.isArray(snapshot.providers) ? snapshot.providers : []
   for (var i = 0; i < providers.length; i++) {
     var p = providers[i]
@@ -360,14 +366,14 @@ function snapshotHasReset(snapshot, providerId, resetId) {
       continue
     for (var j = 0; j < p.resets.length; j++) {
       if (p.resets[j] && String(p.resets[j].id) === String(resetId))
-        return true
+        return p.resets[j].claimable === true
     }
   }
   return false
 }
 
 function resetUiAfterSnapshot(ui, snapshot) {
-  if (ui && ui.confirmOpen && !snapshotHasReset(snapshot, ui.providerId, ui.resetId))
+  if (ui && ui.confirmOpen && !snapshotHasClaimableReset(snapshot, ui.providerId, ui.resetId))
     return resetUiIdle()
   return ui
 }

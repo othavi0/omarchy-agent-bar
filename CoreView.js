@@ -577,6 +577,30 @@ function windowLayout(provider, metric, nowMs) {
   return layout
 }
 
+// The one place a reset kind gets its words: the group note, the choice
+// dialog and the confirmation all read this table.
+var RESET_KINDS = {
+  session: { noun: "5-hour", label: "5-hour reset", effect: "Clears your 5-hour limit." },
+  weekly: { noun: "weekly", label: "Weekly reset", effect: "Clears your weekly limits." },
+  fable: {
+    noun: "Fable",
+    label: "Fable reset",
+    effect: "Returns what Fable used to your weekly limit. Weekly does not go to zero."
+  },
+  full: { noun: "full", label: "Full reset", effect: "Clears your limits." }
+}
+
+// "" for a reset without a kind (Codex, or a cache row from before kinds).
+function resetKindOf(reset) {
+  var kind = reset && typeof reset.kind === "string" ? reset.kind : ""
+  return Object.prototype.hasOwnProperty.call(RESET_KINDS, kind) ? kind : ""
+}
+
+function resetKindRank(kind) {
+  var rank = Kernel.RESET_KIND_ORDER.indexOf(kind)
+  return rank < 0 ? Kernel.RESET_KIND_ORDER.length : rank
+}
+
 // A reset with none left is nothing the user can act on, so the popup skips it.
 function resetsOf(provider) {
   if (!provider || !Kernel.isArrayLike(provider.resets))
@@ -676,6 +700,7 @@ function resetRows(provider, localeDateFormat, localeTimeFormat) {
       accessibleParts.push(dateText)
     out.push({
       id: String(r.id || ""),
+      kind: resetKindOf(r),
       label: label,
       clearsText: clearsText,
       countText: countText,
@@ -690,20 +715,72 @@ function resetRows(provider, localeDateFormat, localeTimeFormat) {
 function resetsSummary(provider) {
   var resets = resetsOf(provider)
   var availableTotal = 0
-  var claimableId = null
   for (var i = 0; i < resets.length; i++) {
-    var r = resets[i]
-    var n = Number(r.available)
+    var n = Number(resets[i].available)
     if (isFinite(n))
       availableTotal += Math.max(0, n)
-    if (claimableId === null && r.claimable)
-      claimableId = String(r.id || "")
   }
   return {
     visible: resets.length > 0,
-    availableTotal: Math.floor(availableTotal),
-    claimableId: claimableId
+    availableTotal: Math.floor(availableTotal)
   }
+}
+
+// [{ kind, noun, label, available }] in Kernel.RESET_KIND_ORDER, one entry per kind
+// with resets left. Untyped resets are not counted here.
+function resetKindCounts(provider) {
+  var resets = resetsOf(provider)
+  var totals = {}
+  for (var i = 0; i < resets.length; i++) {
+    var kind = resetKindOf(resets[i])
+    var n = Number(resets[i].available)
+    if (kind.length && isFinite(n))
+      totals[kind] = (totals[kind] || 0) + Math.max(0, Math.floor(n))
+  }
+  var out = []
+  for (var k = 0; k < Kernel.RESET_KIND_ORDER.length; k++) {
+    var id = Kernel.RESET_KIND_ORDER[k]
+    if (totals[id] > 0)
+      out.push({ kind: id, noun: RESET_KINDS[id].noun, label: RESET_KINDS[id].label,
+                 available: totals[id] })
+  }
+  return out
+}
+
+// One choice per claimable reset, ordered by kind and then by the provider's
+// order. An untyped reset keeps its own label and what it clears.
+function claimableResets(provider, localeDateFormat, localeTimeFormat) {
+  var rows = resetRows(provider, localeDateFormat, localeTimeFormat)
+  var ranked = []
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i].claimable)
+      ranked.push({ row: rows[i], index: i })
+  }
+  ranked.sort(function (a, b) {
+    return resetKindRank(a.row.kind) - resetKindRank(b.row.kind) || a.index - b.index
+  })
+  return ranked.map(function (entry) {
+    var row = entry.row
+    var words = row.kind.length ? RESET_KINDS[row.kind] : null
+    var kindLabel = words ? words.label : row.label
+    var effectText = words ? words.effect
+        : (row.clearsText.length ? "Clears " + row.clearsText + "." : "")
+    var spoken = [kindLabel]
+    if (row.dateText.length)
+      spoken.push(row.dateText)
+    if (effectText.length)
+      spoken.push(effectText)
+    return {
+      id: row.id,
+      kind: row.kind,
+      kindLabel: kindLabel,
+      effectText: effectText,
+      label: row.label,
+      countText: row.countText,
+      dateText: row.dateText,
+      accessibleName: spoken.join(", ")
+    }
+  })
 }
 
 var RESET_OUTCOME_TEXT = {
@@ -732,20 +809,30 @@ function resetOutcomeText(outcome, localeShortFormat) {
   return RESET_OUTCOME_TEXT[result] || "Claude did not accept the reset."
 }
 
-function resetConfirmModel(provider, row) {
-  var name = plainText(provider ? (provider.name || providerDisplayName(provider.id)) : "")
-  var label = row && row.label ? String(row.label) : ""
-  var count = row && row.countText ? String(row.countText) : ""
-  var clears = row && row.clearsText ? String(row.clearsText) : ""
+// The confirmation for one claimable reset, or null when `resetId` is not a
+// reset the user can claim right now.
+function resetConfirmModel(provider, resetId, localeDateFormat, localeTimeFormat) {
+  var choices = claimableResets(provider, localeDateFormat, localeTimeFormat)
+  var choice = null
+  for (var i = 0; i < choices.length; i++) {
+    if (choices[i].id === String(resetId || ""))
+      choice = choices[i]
+  }
+  if (!choice)
+    return null
+  var name = plainText(provider.name || providerDisplayName(provider.id))
   var message = name.length ? name + ": " : ""
-  message += label
-  if (count.length)
-    message += " (" + count + ")"
+  message += choice.label
+  if (choice.countText.length)
+    message += " (" + choice.countText + ")"
   message += "."
-  if (clears.length)
-    message += " Clears " + clears + "."
+  if (choice.effectText.length)
+    message += " " + choice.effectText
+  if (choice.dateText.indexOf("until ") === 0)
+    message += " Valid " + choice.dateText + "."
   return {
-    title: "Use reset?",
+    resetId: choice.id,
+    title: choice.kind.length ? "Use " + RESET_KINDS[choice.kind].noun + " reset?" : "Use reset?",
     message: message,
     confirmText: "Use reset"
   }
@@ -815,28 +902,40 @@ function actionsFor(provider, ui) {
       enabled: true
     })
   }
-  var summary = resetsSummary(provider)
-  if (summary.visible) {
+  // The popup picks the reset when the user clicks: straight to its
+  // confirmation with one claimable, a choice with several.
+  if (resetsSummary(provider).visible) {
     out.push({
       id: "use_reset",
       kind: "use_reset",
       label: opts.resetBusy ? "Using reset…" : "Use reset",
-      target: summary.claimableId,
-      enabled: summary.claimableId !== null && !opts.resetBusy
+      target: null,
+      enabled: claimableResets(provider, "", "").length > 0 && !opts.resetBusy
     })
   }
   return out
 }
 
+// "1 Fable · 1 full" when every reset has a kind, with no date: each reset's
+// validity shows in the choice and the confirmation. Otherwise "<n> resets
+// left" and the first reset's date, so an untyped reset is never uncounted.
 function resetNotes(provider, dateFormat, timeFormat) {
-  var summary = resetsSummary(provider)
-  if (!summary.visible)
+  var resets = resetsOf(provider)
+  if (!resets.length)
     return []
-  var n = summary.availableTotal
+  var counts = resetKindCounts(provider)
+  var allTyped = resets.every(function (r) { return resetKindOf(r).length > 0 })
+  if (allTyped && counts.length === 1) {
+    var only = counts[0]
+    return [only.available + " " + only.noun + (only.available === 1 ? " reset" : " resets")]
+  }
+  if (allTyped)
+    return counts.map(function (c) { return c.available + " " + c.noun })
+  var n = resetsSummary(provider).availableTotal
   var notes = [n + (n === 1 ? " reset left" : " resets left")]
-  var rows = resetRows(provider, dateFormat, timeFormat)
-  if (rows.length && rows[0].dateText.length)
-    notes.push(rows[0].dateText)
+  var dateText = resetDateText(resets[0], dateFormat, timeFormat)
+  if (dateText.length)
+    notes.push(dateText)
   return notes
 }
 

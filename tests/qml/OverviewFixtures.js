@@ -90,6 +90,34 @@ function claudeUltraNoSession() {
   ], { plan: { id: "default_claude_max_20x", label: "Ultra" } })
 }
 
+var FABLE_RESET_ID = "cedar-ember:launch-2610-fable"
+var FULL_RESET_ID = "cedar-ember:full-reset-2611"
+
+// The account the reset kinds were designed on: weekly and Fable windows,
+// one full reset and one Fable reset, both claimable.
+function claudeResetKinds() {
+  function typed(id, kind, label, clears, expiresInDays) {
+    return { id: id, kind: kind, label: label, available: 1, total: 1, clears: clears,
+             expiresAt: at(expiresInDays * 1440), refillsAt: null, cooldownUntil: null,
+             claimable: true }
+  }
+  return provider("claude", "Claude", "ready", [
+    win("weekly", "Weekly", 85, 10080, 3680),
+    win("weekly-model:fable", "Fable", 70, 10080, 3680)
+  ], {
+    plan: { id: "default_claude_max_20x", label: "Ultra" },
+    resets: [
+      typed(FULL_RESET_ID, "full", "One full limit reset (November 2026)", ["weekly"], 50),
+      typed(FABLE_RESET_ID, "fable", "New model launch: one Fable reset for Max",
+            ["weekly-model:fable"], 139)
+    ]
+  })
+}
+
+function resetKinds() {
+  return envelope([claudeResetKinds(), codexReady(), grokReady(), antigravityReady()])
+}
+
 function codexReady() {
   return provider("codex", "Codex", "ready", [
     win("session", "5-hour", 2, 300, 250),

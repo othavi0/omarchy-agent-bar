@@ -195,7 +195,8 @@ TestCase {
     var claude = rowOf(model(F.normal(), "used"), "claude")
     compare(actionIds(claude), ["use_reset"])
     compare(claude.actions[0].label, "Use reset")
-    compare(claude.actions[0].target, "spring")
+    compare(claude.actions[0].enabled, true)
+    compare(claude.actions[0].target, null, "the popup picks the reset on click")
     compare(rowOf(model(F.normal(), "used"), "codex").actions, [])
 
     var spent = F.normal()

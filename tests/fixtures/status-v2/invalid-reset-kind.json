@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 2,
+  "helperVersion": "10.0.0",
+  "generatedAt": "2026-11-10T12:00:00Z",
+  "request": {
+    "provider": null,
+    "cache": "use"
+  },
+  "providers": [
+    {
+      "id": "claude",
+      "name": "Claude",
+      "state": "ready",
+      "source": "live",
+      "plan": null,
+      "windows": [
+        {
+          "id": "weekly",
+          "label": "Weekly",
+          "usedPercent": 85.0,
+          "remainingPercent": 15.0,
+          "resetsAt": "2026-11-13T12:00:00Z",
+          "windowMinutes": 10080
+        }
+      ],
+      "lastSuccessAt": "2026-11-10T12:00:00Z",
+      "error": null,
+      "action": null,
+      "resets": [
+        {
+          "id": "cedar-ember:launch-2610-fable",
+          "kind": "opus",
+          "label": "New model launch: one Fable reset for Max",
+          "available": 1,
+          "total": 1,
+          "clears": [],
+          "expiresAt": null,
+          "refillsAt": null,
+          "cooldownUntil": null,
+          "claimable": true
+        }
+      ]
+    }
+  ]
+}

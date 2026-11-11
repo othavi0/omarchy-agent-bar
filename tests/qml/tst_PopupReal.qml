@@ -1096,4 +1096,111 @@ TestCase {
     settle()
     compare(popup.isOpen, false, "Esc closes the popup")
   }
+
+  function untilText(iso) {
+    return "until " + Qt.formatDate(new Date(Date.parse(iso)), Qt.locale().dateFormat(Locale.ShortFormat))
+  }
+
+  function resetKindsEnv() {
+    var env = F.resetKinds()
+    env.providers[0].resets.forEach(function (r) { r.untilText = untilText(r.expiresAt) })
+    return env
+  }
+
+  function test_group_note_counts_each_reset_kind() {
+    var env = resetKindsEnv()
+    openRealPopup(env)
+    var texts = visibleTexts(rowById("claude"))
+    compare(texts.filter(function (t) { return t.indexOf("Fable ·") >= 0 }), ["1 Fable · 1 full"],
+            "the note names each kind")
+    compare(texts.filter(function (t) { return t.indexOf("until") >= 0 }), [],
+            "the header shows no validity")
+    compare(ViewHarness.buttonsWithText(rowById("claude"), ["Use reset"]).length, 1,
+            "one Use reset button for every kind")
+    grab("reset-kinds-header.png")
+  }
+
+  function test_choosing_the_fable_reset_claims_that_reset() {
+    var env = resetKindsEnv()
+    openRealPopup(env)
+    var choice = one(popup, "resetChoiceDialog")
+    compare(choice.opened, false)
+    mouseClick(buttonIn("claude", "Use reset"))
+    settle()
+    compare(choice.opened, true, "two claimable resets ask which one")
+    verify(!service.resetUi.confirmOpen, "nothing to confirm before a choice")
+    var options = shown(popup, "resetChoice")
+    compare(options.map(function (o) { return o.choiceId }), [F.FABLE_RESET_ID, F.FULL_RESET_ID])
+    var fableTexts = visibleTexts(options[0])
+    compare(fableTexts[0], "Fable reset · " + env.providers[0].resets[1].untilText)
+    verify(fableTexts[1].indexOf("Weekly does not go to zero.") >= 0, fableTexts[1])
+    grab("reset-kinds-choice.png")
+
+    mouseClick(options[0])
+    settle()
+    compare(choice.opened, false, "choosing closes the choice")
+    compare(service.resetUi.confirmOpen, true)
+    compare(service.resetUi.resetId, F.FABLE_RESET_ID)
+    var confirm = one(popup, "resetConfirmDialog")
+    compare(confirm.title, "Use Fable reset?")
+    verify(confirm.message.indexOf("Valid " + env.providers[0].resets[1].untilText + ".") >= 0,
+           confirm.message)
+    verify(confirm.message.indexOf("Clears") < 0, confirm.message)
+    grab("reset-kinds-fable-confirm.png")
+
+    var use = ViewHarness.buttonsWithText(confirm, ["Use reset"])
+    compare(use.length, 1)
+    mouseClick(use[0])
+    settle()
+    var argv = service.lanes.reset.process.command
+    compare(JSON.stringify(argv.slice(1)), JSON.stringify(["reset", "claude", F.FABLE_RESET_ID]))
+  }
+
+  function test_cancelling_the_choice_claims_nothing() {
+    openRealPopup(resetKindsEnv())
+    mouseClick(buttonIn("claude", "Use reset"))
+    settle()
+    var choice = one(popup, "resetChoiceDialog")
+    var cancel = ViewHarness.buttonsWithText(choice, ["Cancel"])
+    compare(cancel.length, 1)
+    mouseClick(cancel[0])
+    settle()
+    compare(choice.opened, false)
+    verify(!service.resetUi || !service.resetUi.confirmOpen)
+    compare(service.lanes.reset.runId, 0)
+  }
+
+  function test_an_emptied_choice_stays_closed_when_resets_return() {
+    var env = resetKindsEnv()
+    openRealPopup(env)
+    mouseClick(buttonIn("claude", "Use reset"))
+    settle()
+    var choice = one(popup, "resetChoiceDialog")
+    compare(choice.opened, true)
+
+    var locked = resetKindsEnv()
+    locked.providers[0].resets.forEach(function (r) { r.claimable = false })
+    service.snapshot = locked
+    settle()
+    compare(choice.opened, false, "no reset left to choose closes the choice")
+
+    service.snapshot = resetKindsEnv()
+    settle()
+    compare(choice.opened, false, "only a new click reopens the choice")
+    mouseClick(buttonIn("claude", "Use reset"))
+    settle()
+    compare(choice.opened, true)
+  }
+
+  function test_one_claimable_reset_opens_its_confirmation() {
+    var env = resetKindsEnv()
+    env.providers[0].resets[0].claimable = false
+    openRealPopup(env)
+    mouseClick(buttonIn("claude", "Use reset"))
+    settle()
+    compare(one(popup, "resetChoiceDialog").opened, false, "one reset needs no choice")
+    compare(service.resetUi.confirmOpen, true)
+    compare(service.resetUi.resetId, F.FABLE_RESET_ID)
+    compare(one(popup, "resetConfirmDialog").title, "Use Fable reset?")
+  }
 }

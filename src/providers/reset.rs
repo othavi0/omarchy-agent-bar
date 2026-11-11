@@ -18,7 +18,7 @@ use super::catalog::{
 };
 use super::process::ProcessRunner;
 use super::retry::http_get_with_retry;
-use super::v2_map::{claude_cedar_ember_raw_grant_id, claude_from_usage_json, claude_reset_clears};
+use super::v2_map::{claude_cedar_ember_raw_grant_id, claude_claim_clears, claude_from_usage_json};
 use crate::status::schema::{ProviderResult, UsageReset};
 use crate::support::{Clock, FileSystem};
 
@@ -102,8 +102,13 @@ pub struct ResetContext<'a> {
 
 /// Reads a 2xx claim response. The POST already had its side effect, so only
 /// `result` is required; every other field is read leniently and a
-/// malformed one is simply absent from the report.
-fn report_from_claim_body(body: &[u8]) -> ResetReport {
+/// malformed one is simply absent from the report. `cleared` maps against
+/// the fresh `usage_body` the claim was checked on.
+fn report_from_claim_body(
+    body: &[u8],
+    usage_body: &[u8],
+    sanitized_grant_id: Option<&str>,
+) -> ResetReport {
     // The POST already had its side effect: a 2xx body the helper cannot
     // read is an unconfirmed claim, not a refusal.
     let Ok(value) = serde_json::from_slice::<serde_json::Value>(body) else {
@@ -140,7 +145,7 @@ fn report_from_claim_body(body: &[u8]) -> ResetReport {
             .and_then(serde_json::Value::as_u64)
             .and_then(|n| u32::try_from(n).ok()),
         cooldown_until: timestamp("cooldown_until").or_else(|| timestamp("next_available_at")),
-        clears: claude_reset_clears(&cleared),
+        clears: claude_claim_clears(usage_body, sanitized_grant_id, &cleared),
     }
 }
 
@@ -322,7 +327,11 @@ pub async fn claim_claude_reset(ctx: &ResetContext<'_>, reset_id: &str) -> Reset
         Err(_) => return ResetReport::simple(ResetResult::Unconfirmed),
     };
 
-    report_from_claim_body(&response.body)
+    let sanitized_grant_id = match target {
+        ClaimTarget::CedarEmber { sanitized_id } => Some(sanitized_id),
+        ClaimTarget::JuniperTide => None,
+    };
+    report_from_claim_body(&response.body, &usage.body, sanitized_grant_id)
 }
 
 #[cfg(test)]
@@ -692,6 +701,35 @@ mod tests {
         assert!(headers
             .iter()
             .any(|(k, v)| k == "Content-Type" && v == "application/json"));
+    }
+
+    #[tokio::test]
+    async fn fable_claim_cleared_key_maps_to_the_fable_window() {
+        let fs = creds_and_org_fs();
+        let env = test_env();
+        let clock = FixedClock(datetime!(2026-11-10 12:00:00 UTC));
+        let process = version_process("2.1.280");
+        let usage =
+            include_bytes!("../../tests/fixtures/providers/claude/usage-with-reset-kinds.json");
+        let cases = [
+            ("cedar-ember:launch-2610-fable", "weekly-model:fable"),
+            ("cedar-ember:full-reset-2611", "weekly"),
+        ];
+        for (reset_id, window) in cases {
+            let claim_body =
+                br#"{"result":"reset","resets_left":0,"cleared":["seven_day_overage_included"]}"#;
+            let http = scripted_http(ok(usage), ok(claim_body));
+            let ctx = ResetContext {
+                env: &env,
+                clock: &clock,
+                fs: &fs,
+                process: &process,
+                http: &http,
+            };
+            let report = claim_claude_reset(&ctx, reset_id).await;
+            assert_eq!(report.result, ResetResult::Reset, "{reset_id}");
+            assert_eq!(report.clears, vec![window.to_owned()], "{reset_id}");
+        }
     }
 
     #[tokio::test]

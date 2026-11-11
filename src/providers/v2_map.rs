@@ -6,7 +6,7 @@ use time::format_description::well_known::Rfc3339;
 use time::{OffsetDateTime, UtcOffset};
 
 use crate::cli::ProviderId;
-use crate::status::schema::{DataSource, Plan, ProviderResult, UsageReset, UsageWindow};
+use crate::status::schema::{DataSource, Plan, ProviderResult, ResetKind, UsageReset, UsageWindow};
 use crate::support::redact::strip_ansi_and_controls;
 
 use super::catalog::{ANTIGRAVITY, CLAUDE, CODEX, GROK};
@@ -350,6 +350,7 @@ pub fn codex_from_rate_limits_json(bytes: &[u8], now: OffsetDateTime) -> Provide
     let resets = match doc.reset_credits_available.filter(|&n| n > 0) {
         Some(n) => UsageReset::try_new(
             "codex-credits",
+            None,
             "Rate-limit resets",
             n,
             None,
@@ -544,6 +545,77 @@ struct ClaudeCedarEmberGrantRaw {
     usable_now: bool,
     #[serde(default)]
     cooldown_until: Option<String>,
+    #[serde(
+        default,
+        rename = "type",
+        deserialize_with = "lenient_declared_reset_type"
+    )]
+    declared_type: Option<DeclaredResetType>,
+    #[serde(default)]
+    gives_back_weekly: bool,
+}
+
+/// The raw grant `type`. Fable is never declared here: it comes only from
+/// `gives_back_weekly`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DeclaredResetType {
+    Session,
+    Weekly,
+    Full,
+}
+
+/// An unknown or non-string `type` reads as absent, so the kind falls back to
+/// what the grant clears instead of dropping the grant.
+fn lenient_declared_reset_type<'de, D>(
+    deserializer: D,
+) -> Result<Option<DeclaredResetType>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let raw = Option::<Value>::deserialize(deserializer)?;
+    Ok(match raw.as_ref().and_then(Value::as_str) {
+        Some("session") => Some(DeclaredResetType::Session),
+        Some("weekly") => Some(DeclaredResetType::Weekly),
+        Some("full") => Some(DeclaredResetType::Full),
+        _ => None,
+    })
+}
+
+/// The reset kind rule of the official client: `gives_back_weekly` wins, then
+/// the declared `type`, then what the raw `clears` keys cover.
+fn claude_reset_kind(
+    gives_back_weekly: bool,
+    declared: Option<DeclaredResetType>,
+    raw_clears: &[String],
+) -> ResetKind {
+    if gives_back_weekly {
+        return ResetKind::Fable;
+    }
+    match declared {
+        Some(DeclaredResetType::Session) => ResetKind::Session,
+        Some(DeclaredResetType::Weekly) => ResetKind::Weekly,
+        Some(DeclaredResetType::Full) => ResetKind::Full,
+        None => {
+            let session = raw_clears.iter().any(|key| key == "five_hour");
+            let other = raw_clears.iter().any(|key| key != "five_hour");
+            match (session, other) {
+                (true, false) => ResetKind::Session,
+                (false, true) => ResetKind::Weekly,
+                _ => ResetKind::Full,
+            }
+        }
+    }
+}
+
+/// Emitted window ids that raw `clears` keys other than `five_hour` and
+/// `seven_day` can point at, collected while the windows are emitted.
+#[derive(Debug, Default)]
+struct ClaudeClearsTargets {
+    /// The window emitted from the only `weekly_scoped` limit; `None` with
+    /// zero or several, because the key must not guess between them.
+    scoped_weekly: Option<String>,
+    opus: Option<String>,
+    sonnet: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -560,22 +632,66 @@ struct ClaudeJuniperTideRaw {
     resets_per_week: Option<u32>,
 }
 
-/// Maps `five_hour`/`seven_day` to this provider's window vocabulary; any
-/// other key (a grant clearing an unmodeled window) is dropped, per the
-/// amendment's `clears` mapping.
-pub(crate) fn claude_reset_clears(raw: &[String]) -> Vec<String> {
-    raw.iter()
-        .filter_map(|key| match key.as_str() {
-            "five_hour" => Some("session".to_owned()),
-            "seven_day" => Some("weekly".to_owned()),
+/// Maps raw `clears`/`cleared` keys to emitted window ids, deduplicated in
+/// order. A Fable grant's `seven_day_overage_included` names the scoped
+/// weekly window Fable used; on any other grant it is the weekly window.
+/// A key without an emitted window, and every unmodeled key, is dropped.
+fn claude_reset_clears(
+    raw: &[String],
+    targets: &ClaudeClearsTargets,
+    gives_back_weekly: bool,
+) -> Vec<String> {
+    let mut clears: Vec<String> = Vec::new();
+    for key in raw {
+        let window = match key.as_str() {
+            "five_hour" => Some("session"),
+            "seven_day" => Some("weekly"),
+            "seven_day_overage_included" if gives_back_weekly => targets.scoped_weekly.as_deref(),
+            "seven_day_overage_included" => Some("weekly"),
+            "seven_day_opus" => targets.opus.as_deref(),
+            "seven_day_sonnet" => targets.sonnet.as_deref(),
             _ => None,
-        })
-        .collect()
+        };
+        if let Some(window) = window {
+            if !clears.iter().any(|known| known == window) {
+                clears.push(window.to_owned());
+            }
+        }
+    }
+    clears
+}
+
+/// The windows a claim response's `cleared` keys name, mapped against the
+/// same fresh usage payload the claim checked. `sanitized_grant_id` is the
+/// claimed `cedar_ember` grant; `None` for `juniper_tide`.
+pub(crate) fn claude_claim_clears(
+    usage_bytes: &[u8],
+    sanitized_grant_id: Option<&str>,
+    cleared: &[String],
+) -> Vec<String> {
+    let Ok(doc) = serde_json::from_slice::<ClaudeUsageDoc>(usage_bytes) else {
+        return Vec::new();
+    };
+    let (_, targets) = claude_windows(&doc);
+    let gives_back_weekly = sanitized_grant_id.is_some_and(|sanitized| {
+        doc.cedar_ember
+            .clone()
+            .and_then(|raw| serde_json::from_value::<ClaudeCedarEmberRaw>(raw).ok())
+            .is_some_and(|raw| {
+                raw.grants
+                    .iter()
+                    .any(|g| g.gives_back_weekly && sanitize_bucket_id(&g.id) == sanitized)
+            })
+    });
+    claude_reset_clears(cleared, &targets, gives_back_weekly)
 }
 
 /// One `UsageReset` per eligible, unpaused `cedar_ember` grant with resets
 /// left or a live cooldown, `next_grant_id` ordered first.
-fn claude_cedar_ember_resets(raw: &ClaudeCedarEmberRaw) -> Vec<UsageReset> {
+fn claude_cedar_ember_resets(
+    raw: &ClaudeCedarEmberRaw,
+    targets: &ClaudeClearsTargets,
+) -> Vec<UsageReset> {
     if !raw.eligible {
         return Vec::new();
     }
@@ -596,10 +712,15 @@ fn claude_cedar_ember_resets(raw: &ClaudeCedarEmberRaw) -> Vec<UsageReset> {
             let claimable = g.usable_now && cooldown_until.is_none();
             UsageReset::try_new(
                 id,
+                Some(claude_reset_kind(
+                    g.gives_back_weekly,
+                    g.declared_type,
+                    &g.clears,
+                )),
                 label,
                 g.resets_left.unwrap_or(0),
                 g.resets_total,
-                claude_reset_clears(&g.clears),
+                claude_reset_clears(&g.clears, targets, g.gives_back_weekly),
                 g.ends_at.as_deref().and_then(parse_reset_timestamp),
                 None,
                 cooldown_until,
@@ -627,8 +748,8 @@ pub(crate) fn claude_cedar_ember_raw_grant_id(bytes: &[u8], sanitized_id: &str) 
     Some(grant.id)
 }
 
-/// One `UsageReset` for the weekly `juniper_tide` reset, when eligible and
-/// either due now or scheduled.
+/// One `UsageReset` for `juniper_tide`, the weekly-refilled 5-hour reset,
+/// when eligible and either due now or scheduled.
 fn claude_juniper_tide_reset(raw: &ClaudeJuniperTideRaw) -> Option<UsageReset> {
     if !raw.eligible || (!raw.available && raw.next_available_at.is_none()) {
         return None;
@@ -640,7 +761,8 @@ fn claude_juniper_tide_reset(raw: &ClaudeJuniperTideRaw) -> Option<UsageReset> {
         .and_then(parse_reset_timestamp);
     UsageReset::try_new(
         "juniper-tide",
-        "Weekly reset",
+        Some(ResetKind::Session),
+        "5-hour reset",
         u32::from(raw.available),
         raw.resets_per_week,
         vec!["session".to_owned()],
@@ -689,9 +811,38 @@ pub fn claude_from_usage_json(
         };
     }
 
+    let (windows, targets) = claude_windows(&doc);
     let _ = (doc.spend, doc.extra_usage);
 
+    // Ordering: next_grant_id first (handled inside the cedar_ember mapper),
+    // then remaining cedar_ember grants, then juniper_tide last.
+    let mut resets = doc
+        .cedar_ember
+        .and_then(|raw| serde_json::from_value::<ClaudeCedarEmberRaw>(raw).ok())
+        .map(|raw| claude_cedar_ember_resets(&raw, &targets))
+        .unwrap_or_default();
+    if let Some(reset) = doc
+        .juniper_tide
+        .and_then(|raw| serde_json::from_value::<ClaudeJuniperTideRaw>(raw).ok())
+        .and_then(|raw| claude_juniper_tide_reset(&raw))
+    {
+        resets.push(reset);
+    }
+
+    ProviderResult::Ready {
+        id: ProviderId::Claude,
+        name: CLAUDE.display_name.to_owned(),
+        source: DataSource::Live,
+        plan,
+        windows,
+        last_success_at: now,
+        resets,
+    }
+}
+
+fn claude_windows(doc: &ClaudeUsageDoc) -> (Vec<UsageWindow>, ClaudeClearsTargets) {
     let mut windows = Vec::new();
+    let mut scoped_weekly: Vec<String> = Vec::new();
     if let Some(w) = doc.five_hour.as_ref() {
         if let Some(window) = claude_window("session", LABEL_SESSION, w, minutes(SESSION_MINUTES)) {
             push_window_unique(&mut windows, window);
@@ -761,7 +912,9 @@ pub fn claude_from_usage_json(
             }
         };
         if let Some(window) = claude_window(&id, &label, &raw, window_minutes) {
-            push_window_unique(&mut windows, window);
+            if push_window_unique(&mut windows, window) && kind == "weekly_scoped" {
+                scoped_weekly.push(id);
+            }
         }
     }
     for (suffix, label, field) in [
@@ -776,37 +929,28 @@ pub fn claude_from_usage_json(
         }
     }
 
-    // Ordering: next_grant_id first (handled inside the cedar_ember mapper),
-    // then remaining cedar_ember grants, then juniper_tide last.
-    let mut resets = doc
-        .cedar_ember
-        .and_then(|raw| serde_json::from_value::<ClaudeCedarEmberRaw>(raw).ok())
-        .map(|raw| claude_cedar_ember_resets(&raw))
-        .unwrap_or_default();
-    if let Some(reset) = doc
-        .juniper_tide
-        .and_then(|raw| serde_json::from_value::<ClaudeJuniperTideRaw>(raw).ok())
-        .and_then(|raw| claude_juniper_tide_reset(&raw))
-    {
-        resets.push(reset);
-    }
-
-    ProviderResult::Ready {
-        id: ProviderId::Claude,
-        name: CLAUDE.display_name.to_owned(),
-        source: DataSource::Live,
-        plan,
-        windows,
-        last_success_at: now,
-        resets,
-    }
+    let emitted = |suffix: &str| {
+        let id = weekly_model_id(suffix, 0);
+        windows.iter().any(|w| w.id() == id).then_some(id)
+    };
+    let targets = ClaudeClearsTargets {
+        scoped_weekly: match scoped_weekly.as_slice() {
+            [only] => Some(only.clone()),
+            _ => None,
+        },
+        opus: emitted("opus"),
+        sonnet: emitted("sonnet"),
+    };
+    (windows, targets)
 }
 
-fn push_window_unique(windows: &mut Vec<UsageWindow>, window: UsageWindow) {
+/// Pushes `window` unless its id is already emitted; `true` when pushed.
+fn push_window_unique(windows: &mut Vec<UsageWindow>, window: UsageWindow) -> bool {
     if windows.iter().any(|w| w.id() == window.id()) {
-        return;
+        return false;
     }
     windows.push(window);
+    true
 }
 
 /// Parse a reset timestamp that may be RFC3339, epoch seconds, or epoch millis.
@@ -1102,6 +1246,7 @@ mod tests {
                 );
                 assert_eq!(reset.available(), 1);
                 assert_eq!(reset.total(), Some(1));
+                assert_eq!(reset.kind(), Some(ResetKind::Full));
                 assert_eq!(reset.clears(), &["session".to_owned(), "weekly".to_owned()]);
                 assert!(reset.claimable());
                 assert!(reset.cooldown_until().is_none());
@@ -1167,14 +1312,15 @@ mod tests {
     }
 
     #[test]
-    fn claude_juniper_tide_weekly_reset_maps_when_available() {
+    fn claude_juniper_tide_is_a_five_hour_reset() {
         let body = br#"{"juniper_tide":{"eligible":true,"available":true,"weekly_resets_at":"2026-09-25T12:00:00Z","resets_per_week":1}}"#;
         let result = claude_from_usage_json(body, datetime!(2026-09-22 18:00:00 UTC), None, true);
         match result {
             ProviderResult::Ready { resets, .. } => {
                 assert_eq!(resets.len(), 1);
                 assert_eq!(resets[0].id(), "juniper-tide");
-                assert_eq!(resets[0].label(), "Weekly reset");
+                assert_eq!(resets[0].label(), "5-hour reset");
+                assert_eq!(resets[0].kind(), Some(ResetKind::Session));
                 assert_eq!(resets[0].available(), 1);
                 assert_eq!(resets[0].total(), Some(1));
                 assert_eq!(resets[0].clears(), &["session".to_owned()]);
@@ -1192,6 +1338,178 @@ mod tests {
             ProviderResult::Ready { resets, .. } => assert!(resets.is_empty(), "{resets:?}"),
             other => panic!("expected ready, got {other:?}"),
         }
+    }
+
+    fn fable_usage_body(scoped_limits: &str, grants: &str) -> String {
+        format!(
+            r#"{{"seven_day":{{"utilization":85.0,"resets_at":"2026-11-13T12:00:00Z"}},
+            "limits":[{{"kind":"weekly_all","percent":85,"resets_at":"2026-11-13T12:00:00Z"}}{scoped_limits}],
+            "cedar_ember":{{"eligible":true,"grants":[{grants}]}}}}"#
+        )
+    }
+
+    fn scoped_limit(display_name: &str) -> String {
+        format!(
+            r#",{{"kind":"weekly_scoped","percent":70,"resets_at":"2026-11-13T12:00:00Z",
+            "scope":{{"model":{{"id":null,"display_name":"{display_name}"}}}}}}"#
+        )
+    }
+
+    const FABLE_GRANT: &str = r#"{"id":"launch-2610-fable","label":"Fable reset","resets_left":1,
+        "usable_now":true,"gives_back_weekly":true,"clears":["seven_day_overage_included"]}"#;
+
+    fn mapped_resets(body: &str) -> Vec<UsageReset> {
+        match claude_from_usage_json(
+            body.as_bytes(),
+            datetime!(2026-11-10 12:00:00 UTC),
+            None,
+            true,
+        ) {
+            ProviderResult::Ready { resets, .. } => resets,
+            other => panic!("expected ready, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn fable_reset_clears_point_at_the_scoped_window() {
+        let resets = mapped_resets(&fable_usage_body(&scoped_limit("Fable"), FABLE_GRANT));
+        assert_eq!(resets.len(), 1, "{resets:?}");
+        assert_eq!(resets[0].clears(), &["weekly-model:fable".to_owned()]);
+
+        let resets = mapped_resets(&fable_usage_body(&scoped_limit("Zephyr"), FABLE_GRANT));
+        assert_eq!(resets[0].kind(), Some(ResetKind::Fable));
+        assert_eq!(resets[0].clears(), &["weekly-model:zephyr".to_owned()]);
+    }
+
+    #[test]
+    fn fable_reset_without_one_scoped_window_keeps_kind_and_drops_the_key() {
+        let two = format!("{}{}", scoped_limit("Fable"), scoped_limit("Zephyr"));
+        for scoped in [String::new(), two] {
+            let resets = mapped_resets(&fable_usage_body(&scoped, FABLE_GRANT));
+            assert_eq!(resets.len(), 1, "{resets:?}");
+            assert_eq!(resets[0].kind(), Some(ResetKind::Fable));
+            assert!(resets[0].clears().is_empty(), "{:?}", resets[0].clears());
+        }
+    }
+
+    #[test]
+    fn full_reset_overage_key_is_weekly_not_the_fable_window() {
+        let grant = r#"{"id":"full-reset-2611","label":"Full","resets_left":1,"usable_now":true,
+            "type":"full","clears":["seven_day","seven_day_overage_included"]}"#;
+        let resets = mapped_resets(&fable_usage_body(&scoped_limit("Fable"), grant));
+        assert_eq!(resets[0].kind(), Some(ResetKind::Full));
+        assert_eq!(resets[0].clears(), &["weekly".to_owned()]);
+    }
+
+    #[test]
+    fn opus_and_sonnet_keys_need_their_emitted_window() {
+        let grant = r#"{"id":"g","label":"G","resets_left":1,"usable_now":true,
+            "clears":["seven_day_opus","seven_day_sonnet","seven_day_cowork"]}"#;
+        let resets = mapped_resets(&fable_usage_body("", grant));
+        assert!(resets[0].clears().is_empty(), "{:?}", resets[0].clears());
+
+        let body = format!(
+            r#"{{"seven_day_opus":{{"utilization":10.0}},"cedar_ember":{{"eligible":true,"grants":[{grant}]}}}}"#
+        );
+        let resets = mapped_resets(&body);
+        assert_eq!(resets[0].clears(), &["weekly-model:opus".to_owned()]);
+    }
+
+    #[test]
+    fn reset_kind_follows_the_official_rule() {
+        use DeclaredResetType as T;
+        let keys = |raw: &[&str]| raw.iter().map(|k| (*k).to_owned()).collect::<Vec<_>>();
+        let cases = [
+            (
+                true,
+                Some(T::Weekly),
+                keys(&["five_hour"]),
+                ResetKind::Fable,
+            ),
+            (
+                false,
+                Some(T::Session),
+                keys(&["seven_day"]),
+                ResetKind::Session,
+            ),
+            (
+                false,
+                Some(T::Weekly),
+                keys(&["five_hour"]),
+                ResetKind::Weekly,
+            ),
+            (false, Some(T::Full), keys(&["seven_day"]), ResetKind::Full),
+            (false, None, keys(&["five_hour"]), ResetKind::Session),
+            (
+                false,
+                None,
+                keys(&["seven_day_overage_included"]),
+                ResetKind::Weekly,
+            ),
+            (
+                false,
+                None,
+                keys(&["five_hour", "seven_day"]),
+                ResetKind::Full,
+            ),
+            (false, None, keys(&[]), ResetKind::Full),
+        ];
+        for (gives_back_weekly, declared, clears, expected) in cases {
+            assert_eq!(
+                claude_reset_kind(gives_back_weekly, declared, &clears),
+                expected,
+                "{gives_back_weekly} {declared:?} {clears:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn unknown_declared_type_falls_back_to_clears() {
+        for declared in [r#""opus""#, "7", "null"] {
+            let grant = format!(
+                r#"{{"id":"g","label":"G","resets_left":1,"usable_now":true,
+                "type":{declared},"clears":["five_hour"]}}"#
+            );
+            let resets = mapped_resets(&fable_usage_body("", &grant));
+            assert_eq!(resets.len(), 1, "{declared}");
+            assert_eq!(resets[0].kind(), Some(ResetKind::Session), "{declared}");
+        }
+    }
+
+    #[test]
+    fn real_account_shape_maps_a_full_and_a_fable_reset() {
+        let body =
+            include_bytes!("../../tests/fixtures/providers/claude/usage-with-reset-kinds.json");
+        let result = claude_from_usage_json(body, datetime!(2026-11-10 12:00:00 UTC), None, true);
+        let ProviderResult::Ready {
+            windows, resets, ..
+        } = &result
+        else {
+            panic!("expected ready, got {result:?}");
+        };
+        let ids: Vec<&str> = windows.iter().map(|w| w.id()).collect();
+        assert_eq!(ids, ["weekly", "weekly-model:fable"]);
+        let shape: Vec<(&str, Option<ResetKind>, &[String], bool)> = resets
+            .iter()
+            .map(|r| (r.id(), r.kind(), r.clears(), r.claimable()))
+            .collect();
+        assert_eq!(
+            shape,
+            [
+                (
+                    "cedar-ember:full-reset-2611",
+                    Some(ResetKind::Full),
+                    &["weekly".to_owned()][..],
+                    true
+                ),
+                (
+                    "cedar-ember:launch-2610-fable",
+                    Some(ResetKind::Fable),
+                    &["weekly-model:fable".to_owned()][..],
+                    true
+                ),
+            ]
+        );
     }
 
     #[test]
