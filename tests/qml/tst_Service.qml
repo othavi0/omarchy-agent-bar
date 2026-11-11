@@ -442,4 +442,22 @@ TestCase {
     s.confirmReset()
     compare(s.lanes.reset.runId, 0)
   }
+
+  function test_a_refresh_that_locks_the_target_closes_the_reset_confirm() {
+    var s = createService()
+    s.beginCollection()
+    finishLane(s, "status", 0, Harness.claudeResetEnvelope())
+    s.requestReset("claude", Harness.CLAUDE_RESET_ID)
+    compare(s.resetUi.confirmOpen, true)
+
+    s.kickStatus()
+    finishLane(s, "status", 0, Harness.claudeResetEnvelope([{
+      id: Harness.CLAUDE_RESET_ID, label: "Launch reset", available: 0, total: 1,
+      clears: ["session", "weekly"], expiresAt: "2026-10-22T16:00:00Z", refillsAt: null,
+      cooldownUntil: null, claimable: false
+    }]))
+    compare(s.resetUi.confirmOpen, false, "a reset no longer claimable closes the dialog")
+    s.confirmReset()
+    compare(s.lanes.reset.runId, 0)
+  }
 }
