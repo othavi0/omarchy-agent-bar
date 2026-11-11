@@ -144,13 +144,27 @@ KeyboardPanel {
   readonly property string timeFormat: Qt.locale().timeFormat(Locale.ShortFormat)
 
   // The provider whose "Use reset" asked which reset to use; "" when no
-  // choice is open. A refresh that leaves fewer choices updates the list.
+  // choice is open. A refresh that leaves fewer choices updates the list; one
+  // that leaves none ends the choice, so a reset that comes back later does
+  // not reopen it without a click.
   property string resetChoiceProviderId: ""
 
   readonly property var resetChoices: resetChoiceProviderId.length && agentService
       ? Core.claimableResets(Core.findProvider(agentService.snapshot, resetChoiceProviderId),
                              dateFormat, timeFormat)
       : []
+
+  property Connections resetChoiceWatch: Connections {
+    target: root.agentService
+    ignoreUnknownSignals: true
+    function onSnapshotChanged() {
+      if (root.resetChoiceProviderId.length
+          && !Core.claimableResets(Core.findProvider(root.agentService.snapshot,
+                                                     root.resetChoiceProviderId),
+                                   root.dateFormat, root.timeFormat).length)
+        root.resetChoiceProviderId = ""
+    }
+  }
 
   function chooseReset(resetId) {
     var providerId = resetChoiceProviderId

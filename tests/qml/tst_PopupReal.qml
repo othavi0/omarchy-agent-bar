@@ -1170,6 +1170,28 @@ TestCase {
     compare(service.lanes.reset.runId, 0)
   }
 
+  function test_an_emptied_choice_stays_closed_when_resets_return() {
+    var env = resetKindsEnv()
+    openRealPopup(env)
+    mouseClick(buttonIn("claude", "Use reset"))
+    settle()
+    var choice = one(popup, "resetChoiceDialog")
+    compare(choice.opened, true)
+
+    var locked = resetKindsEnv()
+    locked.providers[0].resets.forEach(function (r) { r.claimable = false })
+    service.snapshot = locked
+    settle()
+    compare(choice.opened, false, "no reset left to choose closes the choice")
+
+    service.snapshot = resetKindsEnv()
+    settle()
+    compare(choice.opened, false, "only a new click reopens the choice")
+    mouseClick(buttonIn("claude", "Use reset"))
+    settle()
+    compare(choice.opened, true)
+  }
+
   function test_one_claimable_reset_opens_its_confirmation() {
     var env = resetKindsEnv()
     env.providers[0].resets[0].claimable = false
