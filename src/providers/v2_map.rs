@@ -21,7 +21,6 @@ const LABEL_GEMINI_SESSION: &str = "Gemini · 5h";
 const LABEL_THIRD_PARTY_WEEKLY: &str = "Claude/GPT · 7d";
 const LABEL_THIRD_PARTY_SESSION: &str = "Claude/GPT · 5h";
 const LABEL_ARGON_WEEKLY: &str = "Argon · 7d";
-const LABEL_ARGON_SESSION: &str = "Argon · 5h";
 
 #[derive(Debug, Deserialize, Default)]
 struct GrokBillingDoc {
@@ -1099,10 +1098,10 @@ fn antigravity_error(message: &str) -> ProviderResult {
 
 /// Parse `agy --print /usage --output-format json` into a domain result.
 ///
-/// `agy` meters model families: Gemini (`gemini-*`), Claude/GPT (`3p-*`), and
-/// Gemini 4 Argon (`gemini-argon-*`), each on its own weekly and/or five-hour
-/// quota. Buckets map to windows in a fixed order; any other bucket id is
-/// ignored. A run without any window is `Ready` with an empty list — a connected
+/// `agy` meters three model families on separate quotas. Gemini
+/// (`gemini-*`) and Claude/GPT (`3p-*`) each have a weekly and a five-hour
+/// bucket; Gemini 4 Argon has only `gemini-argon-wtu-weekly`. Buckets map to
+/// windows in a fixed order; any other bucket id is ignored. A run without any window is `Ready` with an empty list — a connected
 /// provider without a percentage window is valid.
 ///
 /// A window starts on first use. A full bucket has none running, and `agy`
@@ -1123,7 +1122,6 @@ pub fn antigravity_from_usage_json(stdout: &str, now: OffsetDateTime) -> Provide
     let mut third_party_weekly: Option<UsageWindow> = None;
     let mut third_party_session: Option<UsageWindow> = None;
     let mut argon_weekly: Option<UsageWindow> = None;
-    let mut argon_session: Option<UsageWindow> = None;
 
     for bucket in usage
         .command
@@ -1145,12 +1143,7 @@ pub fn antigravity_from_usage_json(stdout: &str, now: OffsetDateTime) -> Provide
                 SESSION_MINUTES,
                 &mut third_party_session,
             ),
-            "gemini-argon-wtu-weekly" | "gemini-argon-weekly" => {
-                (LABEL_ARGON_WEEKLY, WEEK_MINUTES, &mut argon_weekly)
-            }
-            "gemini-argon-wtu-5h" | "gemini-argon-5h" => {
-                (LABEL_ARGON_SESSION, SESSION_MINUTES, &mut argon_session)
-            }
+            "gemini-argon-wtu-weekly" => (LABEL_ARGON_WEEKLY, WEEK_MINUTES, &mut argon_weekly),
             _ => continue,
         };
         if slot.is_some() {
@@ -1191,7 +1184,6 @@ pub fn antigravity_from_usage_json(stdout: &str, now: OffsetDateTime) -> Provide
             .chain(third_party_weekly)
             .chain(third_party_session)
             .chain(argon_weekly)
-            .chain(argon_session)
             .collect(),
         last_success_at: now,
         resets: Vec::new(),
@@ -2201,34 +2193,15 @@ mod tests {
     }
 
     #[test]
-    fn antigravity_argon_session_window() {
-        let payload = r#"{"status":"SUCCESS","command":{"name":"usage","data":{"groups":[
-            {"name":"Gemini 4 Argon","buckets":[
-              {"id":"gemini-argon-wtu-5h","window":"5h","remaining_fraction":0.6,
-               "reset_time":"2026-11-05T16:00:00Z"}]}]}}}"#;
-        match antigravity_from_usage_json(payload, datetime!(2026-11-05 12:00:00 UTC)) {
-            ProviderResult::Ready { windows, .. } => {
-                assert_eq!(windows.len(), 1);
-                assert_eq!(windows[0].id(), "gemini-argon-wtu-5h");
-                assert_eq!(windows[0].label(), "Argon · 5h");
-                assert!((windows[0].remaining_percent() - 60.0).abs() < 0.01);
-                assert!((windows[0].used_percent() - 40.0).abs() < 0.01);
-                assert_eq!(
-                    windows[0].resets_at(),
-                    Some(datetime!(2026-11-05 16:00:00 UTC))
-                );
-                assert_eq!(windows[0].window_minutes().map(|m| m.get()), Some(300));
-            }
-            other => panic!("expected ready, got {other:?}"),
-        }
-    }
-
-    #[test]
     fn antigravity_ignores_unknown_bucket_ids() {
         let payload = r#"{"status":"SUCCESS","command":{"name":"usage","data":{"groups":[
             {"name":"Claude and GPT models","buckets":[
               {"id":"claude-weekly","window":"weekly","remaining_fraction":0.5},
-              {"id":"claude-5h","window":"5h","remaining_fraction":0.5}]}]}}}"#;
+              {"id":"claude-5h","window":"5h","remaining_fraction":0.5}]},
+            {"name":"Gemini 4 Argon","buckets":[
+              {"id":"gemini-argon-weekly","window":"weekly","remaining_fraction":0.5},
+              {"id":"gemini-argon-wtu-5h","window":"5h","remaining_fraction":0.5},
+              {"id":"gemini-argon-5h","window":"5h","remaining_fraction":0.5}]}]}}}"#;
         match antigravity_from_usage_json(payload, datetime!(2026-08-21 12:00:00 UTC)) {
             ProviderResult::Ready { windows, .. } => assert!(windows.is_empty(), "{windows:?}"),
             other => panic!("expected ready, got {other:?}"),
@@ -2344,7 +2317,6 @@ mod tests {
     fn antigravity_orders_windows_by_family_then_weekly_first() {
         let payload = r#"{"status":"SUCCESS","command":{"name":"usage","data":{"groups":[
             {"name":"Gemini 4 Argon","buckets":[
-              {"id":"gemini-argon-wtu-5h","window":"5h","remaining_fraction":1},
               {"id":"gemini-argon-wtu-weekly","window":"weekly","remaining_fraction":1}]},
             {"name":"Claude and GPT models","buckets":[
               {"id":"3p-5h","window":"5h","remaining_fraction":1},
@@ -2362,8 +2334,7 @@ mod tests {
                         "gemini-5h",
                         "3p-weekly",
                         "3p-5h",
-                        "gemini-argon-wtu-weekly",
-                        "gemini-argon-wtu-5h"
+                        "gemini-argon-wtu-weekly"
                     ]
                 );
                 assert_eq!(windows[0].resets_at(), None);
@@ -2545,23 +2516,6 @@ mod tests {
                 pair("gemini-5h", Some(300)),
                 pair("3p-weekly", Some(10_080)),
                 pair("3p-5h", Some(300)),
-            ]
-        );
-    }
-
-    #[test]
-    fn antigravity_windows_with_argon_carry_family_minutes() {
-        let fixture = include_str!("../../tests/fixtures/antigravity/usage-with-argon.json");
-        let now = datetime!(2026-11-05 12:00:00 UTC);
-        let windows = ready_windows(antigravity_from_usage_json(fixture, now));
-        assert_eq!(
-            minutes_of(&windows),
-            vec![
-                pair("gemini-weekly", Some(10_080)),
-                pair("gemini-5h", Some(300)),
-                pair("3p-weekly", Some(10_080)),
-                pair("3p-5h", Some(300)),
-                pair("gemini-argon-wtu-weekly", Some(10_080)),
             ]
         );
     }
