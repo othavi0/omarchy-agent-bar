@@ -14,14 +14,6 @@ use super::catalog::{ANTIGRAVITY, CLAUDE, CODEX, GROK};
 const LABEL_SESSION: &str = "5-hour";
 const LABEL_WEEKLY: &str = "Weekly";
 
-// Antigravity meters model families on separate quotas, so each window names
-// its family.
-const LABEL_GEMINI_WEEKLY: &str = "Gemini · 7d";
-const LABEL_GEMINI_SESSION: &str = "Gemini · 5h";
-const LABEL_THIRD_PARTY_WEEKLY: &str = "Claude/GPT · 7d";
-const LABEL_THIRD_PARTY_SESSION: &str = "Claude/GPT · 5h";
-const LABEL_ARGON_WEEKLY: &str = "Argon · 7d";
-
 #[derive(Debug, Deserialize, Default)]
 struct GrokBillingDoc {
     #[serde(default, rename = "creditUsagePercent")]
@@ -1096,13 +1088,74 @@ fn antigravity_error(message: &str) -> ProviderResult {
     }
 }
 
+struct AntigravityWindowSpec {
+    id: &'static str,
+    label: &'static str,
+    minutes: u32,
+}
+
+// Each family has its own quota, so each label names its family. The table
+// order is the delivered order: family, then weekly before five-hour.
+const ANTIGRAVITY_WINDOWS: [AntigravityWindowSpec; 5] = [
+    AntigravityWindowSpec {
+        id: "gemini-weekly",
+        label: "Gemini · 7d",
+        minutes: WEEK_MINUTES,
+    },
+    AntigravityWindowSpec {
+        id: "gemini-5h",
+        label: "Gemini · 5h",
+        minutes: SESSION_MINUTES,
+    },
+    AntigravityWindowSpec {
+        id: "3p-weekly",
+        label: "Claude/GPT · 7d",
+        minutes: WEEK_MINUTES,
+    },
+    AntigravityWindowSpec {
+        id: "3p-5h",
+        label: "Claude/GPT · 5h",
+        minutes: SESSION_MINUTES,
+    },
+    AntigravityWindowSpec {
+        id: "gemini-argon-wtu-weekly",
+        label: "Argon · 7d",
+        minutes: WEEK_MINUTES,
+    },
+];
+
+fn antigravity_window(
+    spec: &AntigravityWindowSpec,
+    bucket: &AntigravityBucket,
+) -> Option<UsageWindow> {
+    let fraction = bucket.remaining_fraction.filter(|f| f.is_finite())?;
+    let remaining_percent = (fraction * 100.0).clamp(0.0, 100.0);
+    let used_percent = (100.0 - remaining_percent).clamp(0.0, 100.0);
+    let resets_at = bucket
+        .reset_time
+        .as_deref()
+        .filter(|_| fraction < 1.0)
+        .and_then(|ts| OffsetDateTime::parse(ts, &Rfc3339).ok())
+        .map(|ts| ts.to_offset(UtcOffset::UTC));
+    UsageWindow::try_new(
+        spec.id,
+        spec.label,
+        used_percent,
+        remaining_percent,
+        resets_at,
+    )
+    .ok()
+    .map(|window| window.with_window_minutes(minutes(spec.minutes)))
+}
+
 /// Parse `agy --print /usage --output-format json` into a domain result.
 ///
 /// `agy` meters three model families on separate quotas. Gemini
 /// (`gemini-*`) and Claude/GPT (`3p-*`) each have a weekly and a five-hour
 /// bucket; Gemini 4 Argon has only `gemini-argon-wtu-weekly`. Buckets map to
-/// windows in a fixed order; any other bucket id is ignored. A run without any window is `Ready` with an empty list — a connected
-/// provider without a percentage window is valid.
+/// windows in a fixed order; any other bucket id is ignored. A run without
+/// any window is `Ready` with an empty list — a connected provider without a
+/// percentage window is valid.
 ///
 /// A window starts on first use. A full bucket has none running, and `agy`
 /// reports its `reset_time` as now plus the whole window, a moving target, so
@@ -1117,74 +1170,29 @@ pub fn antigravity_from_usage_json(stdout: &str, now: OffsetDateTime) -> Provide
         return antigravity_error("Antigravity usage command failed.");
     }
 
-    let mut gemini_weekly: Option<UsageWindow> = None;
-    let mut gemini_session: Option<UsageWindow> = None;
-    let mut third_party_weekly: Option<UsageWindow> = None;
-    let mut third_party_session: Option<UsageWindow> = None;
-    let mut argon_weekly: Option<UsageWindow> = None;
-
-    for bucket in usage
-        .command
-        .data
-        .groups
+    let buckets = || {
+        usage
+            .command
+            .data
+            .groups
+            .iter()
+            .flat_map(|group| group.buckets.iter())
+    };
+    let windows = ANTIGRAVITY_WINDOWS
         .iter()
-        .flat_map(|group| group.buckets.iter())
-    {
-        let (label, window_minutes, slot) = match bucket.id.as_str() {
-            "gemini-weekly" => (LABEL_GEMINI_WEEKLY, WEEK_MINUTES, &mut gemini_weekly),
-            "gemini-5h" => (LABEL_GEMINI_SESSION, SESSION_MINUTES, &mut gemini_session),
-            "3p-weekly" => (
-                LABEL_THIRD_PARTY_WEEKLY,
-                WEEK_MINUTES,
-                &mut third_party_weekly,
-            ),
-            "3p-5h" => (
-                LABEL_THIRD_PARTY_SESSION,
-                SESSION_MINUTES,
-                &mut third_party_session,
-            ),
-            "gemini-argon-wtu-weekly" => (LABEL_ARGON_WEEKLY, WEEK_MINUTES, &mut argon_weekly),
-            _ => continue,
-        };
-        if slot.is_some() {
-            continue;
-        }
-        let Some(fraction) = bucket.remaining_fraction.filter(|f| f.is_finite()) else {
-            continue;
-        };
-
-        let remaining_percent = (fraction * 100.0).clamp(0.0, 100.0);
-        let used_percent = (100.0 - remaining_percent).clamp(0.0, 100.0);
-        let resets_at = bucket
-            .reset_time
-            .as_deref()
-            .filter(|_| fraction < 1.0)
-            .and_then(|ts| OffsetDateTime::parse(ts, &Rfc3339).ok())
-            .map(|ts| ts.to_offset(UtcOffset::UTC));
-
-        if let Ok(window) = UsageWindow::try_new(
-            bucket.id.as_str(),
-            label,
-            used_percent,
-            remaining_percent,
-            resets_at,
-        ) {
-            *slot = Some(window.with_window_minutes(minutes(window_minutes)));
-        }
-    }
+        .filter_map(|spec| {
+            buckets()
+                .filter(|bucket| bucket.id == spec.id)
+                .find_map(|bucket| antigravity_window(spec, bucket))
+        })
+        .collect();
 
     ProviderResult::Ready {
         id: ProviderId::Antigravity,
         name: ANTIGRAVITY.display_name.to_owned(),
         source: DataSource::Live,
         plan: None,
-        windows: gemini_weekly
-            .into_iter()
-            .chain(gemini_session)
-            .chain(third_party_weekly)
-            .chain(third_party_session)
-            .chain(argon_weekly)
-            .collect(),
+        windows,
         last_success_at: now,
         resets: Vec::new(),
     }
