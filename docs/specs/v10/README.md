@@ -206,7 +206,8 @@ application, an AUR product, or a cargo-binstall product.
    [2026-09-22 update apply detached](amendments/2026-09-22-update-apply-detached-design.md),
    [2026-10-21 popup overview redesign](amendments/2026-10-21-popup-overview-redesign-design.md),
    [2026-10-21 overview headline removed](amendments/2026-10-21-remove-overview-headline-design.md),
-   [2026-11-10 reset kinds](amendments/2026-11-10-reset-kinds-design.md).
+   [2026-11-10 reset kinds](amendments/2026-11-10-reset-kinds-design.md),
+   [2026-11-18 Antigravity Argon window](amendments/2026-11-18-antigravity-argon-window-design.md).
 
    [2026-09-15 Codex app-server only](amendments/2026-09-15-codex-app-server-only-design.md).
 
