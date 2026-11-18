@@ -2201,6 +2201,22 @@ mod tests {
     }
 
     #[test]
+    fn antigravity_takes_the_first_usable_bucket_per_id() {
+        let payload = r#"{"status":"SUCCESS","command":{"name":"usage","data":{"groups":[
+            {"name":"Gemini Models","buckets":[
+              {"id":"gemini-weekly","window":"weekly"},
+              {"id":"gemini-weekly","window":"weekly","remaining_fraction":0.4},
+              {"id":"gemini-weekly","window":"weekly","remaining_fraction":0.9}]}]}}}"#;
+        match antigravity_from_usage_json(payload, datetime!(2026-08-21 12:00:00 UTC)) {
+            ProviderResult::Ready { windows, .. } => {
+                assert_eq!(windows.len(), 1);
+                assert!((windows[0].remaining_percent() - 40.0).abs() < 0.01);
+            }
+            other => panic!("expected ready, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn antigravity_ignores_unknown_bucket_ids() {
         let payload = r#"{"status":"SUCCESS","command":{"name":"usage","data":{"groups":[
             {"name":"Claude and GPT models","buckets":[
