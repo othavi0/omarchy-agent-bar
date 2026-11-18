@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [11.0.8] - 2026-11-18
+
+### Changed
+
+- test(antigravity): pin first usable bucket per id
+- docs(antigravity): describe the Argon window
+- refactor(antigravity): map buckets from a table
+- fix(antigravity): drop guessed Argon bucket ids
+- feat: report Antigravity Argon quota
+
 ## [11.0.7] - 2026-11-11
 
 ### Changed
